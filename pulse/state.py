@@ -71,6 +71,8 @@ def aggregate() -> dict[str, Any]:
         "repos": repos,
         "worktree_drift": _read_json_or_default(PULSE_STATE_DIR / "worktree_drift.json", {}),
         "script_timing": _read_json_or_default(PULSE_STATE_DIR / "script_timing.json", {}),
+        "test_run": _read_json_or_default(PULSE_STATE_DIR / "test_run.json", {}),
+        "version_skew": _read_json_or_default(PULSE_STATE_DIR / "version_skew.json", {}),
     }
     atomic_write_json(PULSE_STATE_FILE, snapshot)
     return snapshot

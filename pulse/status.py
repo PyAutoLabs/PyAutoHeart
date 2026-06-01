@@ -7,7 +7,7 @@ import datetime
 import json
 import sys
 
-from pulse import state
+from pulse import readiness, state
 from pulse.pulse_color import (
     c_bold, c_dim, c_fail, c_info, c_meta, c_ok, c_warn,
     glyph_fail, glyph_ok, glyph_warn,
@@ -92,6 +92,11 @@ def render(snapshot: dict, quiet: bool = False) -> None:
     print(c_bold("PyAutoPulse status") + "  " + c_meta(f"snapshot {ts}  ({_format_age(age)})"))
     print()
 
+    # Release-readiness verdict — the headline, at the very top.
+    for line in readiness.render_block(readiness.load_verdict(), quiet=quiet):
+        print(line)
+    print()
+
     # Per-repo table.
     repos = snapshot.get("repos", {})
     if repos:
@@ -155,6 +160,43 @@ def render(snapshot: dict, quiet: bool = False) -> None:
                     f"  ! {entry['project']}/{entry['file'].split('/')[-1]}  "
                     f"{entry['latest_seconds']:.1f}s vs baseline {entry['baseline_seconds']:.1f}s  "
                     f"({entry['ratio']}×)"
+                ))
+        print()
+
+    # Latest Build test-run block.
+    test_run = snapshot.get("test_run") or {}
+    if test_run:
+        ready = test_run.get("ready")
+        failed = test_run.get("failed", 0)
+        passed = test_run.get("passed", 0)
+        skipped = test_run.get("skipped", 0)
+        label = test_run.get("run_label", "?")
+        counts = c_meta(f"{passed}p / {failed}f / {skipped}s  @ {label}")
+        if ready is False or failed:
+            print(c_info("TEST RUN") + " " + glyph_fail() + " " + c_fail("NOT ready") + "  " + counts)
+        elif ready is True:
+            print(c_info("TEST RUN") + " " + glyph_ok() + " " + c_ok("ready") + "  " + counts)
+        else:
+            print(c_info("TEST RUN") + " " + glyph_warn() + " " + c_warn("ready unknown") + "  " + counts)
+        stale = test_run.get("parked_stale_count", 0)
+        if stale:
+            print("  " + c_warn(f"  ! {stale} stale parked script(s)"))
+        print()
+
+    # Version-skew block — only shown when something is out of sync.
+    skew = (snapshot.get("version_skew") or {}).get("workspaces", [])
+    off = [w for w in skew if w.get("status") not in ("MATCH", None)]
+    if off:
+        ahead = [w for w in off if w.get("status") == "AHEAD"]
+        glyph = glyph_fail() if ahead else glyph_warn()
+        print(c_info("VERSION SKEW") + " " + glyph + " "
+              + (c_fail(f"{len(ahead)} ahead") if ahead else c_warn(f"{len(off)} skewed")))
+        if not quiet:
+            for w in off[:8]:
+                colour = c_fail if w.get("status") == "AHEAD" else c_warn
+                print("  " + colour(
+                    f"  {w.get('status')}: {w.get('workspace')} pinned {w.get('pinned')} "
+                    f"vs installed {w.get('installed')}"
                 ))
         print()
 

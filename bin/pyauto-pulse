@@ -21,6 +21,7 @@ SUBCOMMAND_ORDER=(
   tick
   "# Reporting"
   status
+  readiness
   logs
   fix
   "# Meta"
@@ -33,6 +34,7 @@ declare -A SHORT_DESC=(
   [stop]="Stop a running daemon via pidfile"
   [tick]="One-shot refresh of the state cache"
   [status]="Print the cached state with green/yellow/red colouring"
+  [readiness]="Print the release-readiness verdict (green/yellow/red + score)"
   [logs]="Tail the daemon log"
   [fix]="Bundle context for a specific topic and emit a Claude command"
   [help]="Show this help or details for a subcommand"
@@ -123,6 +125,26 @@ EOF
 }
 cmd_status() {
   exec env PYTHONPATH="$PULSE_HOME" python3 -m pulse.status "$@"
+}
+
+help_readiness() { cat <<EOF
+pyauto-pulse readiness [--json] [--quiet] [--no-color]
+
+Print the composite release-readiness verdict (green / yellow / red + a
+0–100 score and the reasons behind it), computed from the cached state on
+the last tick and persisted to \$PULSE_STATE_DIR/release_ready.json.
+
+RED  = a real release blocker (a library's CI failing / off main / dirty /
+       behind; the latest Build test run not ready; a workspace pinned ahead
+       of its installed library).
+YELLOW = caution (timing regressions, stale PRs/parked scripts, a workspace
+       pinned behind, or an unknown such as a missing test-run report).
+
+Advisory only — PyAutoBuild keeps its own authoritative release gates.
+EOF
+}
+cmd_readiness() {
+  exec env PYTHONPATH="$PULSE_HOME" python3 -m pulse.readiness "$@"
 }
 
 help_logs() { cat <<EOF

@@ -4,13 +4,22 @@ Continuous-monitoring daemon for the PyAuto ecosystem.
 
 ## What it does
 
-Polls 18 PyAuto repos every N minutes for:
+Polls 19 PyAuto repos every N minutes for:
 
 - **Repo state** — branch / dirty / ahead / behind
 - **CI status** — latest workflow conclusion per repo (via `gh run list`)
 - **Open PRs** — count + max age, classified by staleness
 - **Worktree drift** — `~/Code/PyAutoLabs-wt/` dirs vs `active.md` claims
 - **Script timing** — per-script duration regressions vs a rolling baseline
+- **Test run** — the latest PyAutoBuild release-run verdict (ready / counts /
+  stale parked scripts), read from `test_results/latest/report.json`
+- **Version skew** — each workspace's pinned version vs the installed library
+  (AHEAD = a release blocker; BEHIND = caution)
+
+…then rolls them into a single **release-readiness verdict**
+(`pyauto-pulse readiness`): green / yellow / red + a 0–100 score and the
+reasons behind it. This is **advisory** — PyAutoBuild keeps its own
+authoritative release gates; Pulse just makes the picture continuous.
 
 Caches results to `~/.pyauto-pulse/state.json` for fast `status` reads.
 Surfaces drift the day it appears instead of the day before a release.
@@ -71,12 +80,62 @@ autobuild tick
 autobuild fix ci PyAutoFit
 ```
 
-## Daily usage pattern
+## Release readiness
 
-Open a WSL tab in the morning:
+`pyauto-pulse readiness` answers "is it safe to release?" from the cached
+state, as a single verdict computed on every tick (and shown at the top of
+`status`):
 
 ```bash
-pyauto-pulse watch &
+pyauto-pulse readiness            # verdict + score + reasons
+pyauto-pulse readiness --json     # machine-readable (for scripts / skills)
+```
+
+- **RED** — a real release blocker: any of the 5 libraries has failing CI, is
+  off `main`, has uncommitted source changes, or is behind origin; the latest
+  Build test run is not ready; or a workspace is pinned **ahead** of its
+  installed library.
+- **YELLOW** — caution: timing regressions, stale PRs, stale parked scripts, a
+  workspace pinned **behind**, or an *unknown* (e.g. no recent test-run report
+  — never silently treated as green).
+- **GREEN** — none of the above.
+
+Red always dominates yellow. The verdict is written to
+`~/.pyauto-pulse/release_ready.json`. It is **advisory**: PyAutoBuild keeps its
+own authoritative gates (`verify_workspace_versions`, the release pipeline) —
+Pulse just surfaces the same signals continuously so drift is visible the day
+it appears, not the day of a release.
+
+## Automation (hybrid CI layer)
+
+Pulse runs in two places so it doesn't need a babysat terminal:
+
+- **Cloud** — `.github/workflows/pulse-health.yml` runs the cloud-safe checks
+  (CI status + open PRs, pure `gh` API) on a daily schedule and opens-or-updates
+  a single `[pulse-health]` tracking issue when anything is red/degraded,
+  closing it when clean. No agent, no Slack, no secret beyond `GITHUB_TOKEN`.
+- **Local** — a guarded block in `~/.bashrc` starts `pyauto-pulse watch` in the
+  background on your first interactive login, so the local-only checks
+  (repo state, worktree drift, script timing, test run, version skew) keep
+  refreshing while a shell is open. It's idempotent (the daemon's pidfile guard
+  prevents duplicates); opt out with `PYAUTO_PULSE_NO_AUTOSTART=1`.
+
+  The bashrc daemon only ticks while a WSL shell is open. For reboot-survival,
+  register a Windows Task Scheduler job that calls the local tick on a timer:
+
+  ```powershell
+  # From an elevated PowerShell, runs every 15 min even with no shell open:
+  schtasks /create /tn "PyAutoPulse tick" /sc minute /mo 15 ^
+    /tr "wsl -u jammy bash -lc 'pyauto-pulse tick'"
+  ```
+
+## Daily usage pattern
+
+The bashrc auto-start usually means a daemon is already running. To watch it
+live in a tab:
+
+```bash
+pyauto-pulse live                 # live clear-and-redraw board
 ```
 
 …and leave it running. Glance at the tab to see the current state.
@@ -104,18 +163,25 @@ pulse/
   tick.sh                        # one refresh cycle
   state.py                       # atomic JSON cache I/O
   status.py                      # pretty-print cached state
+  readiness.py                   # composite release-readiness verdict
   fix.py                         # emit Claude invocations on demand
+  noise.py                       # dirty real-vs-generated classifier
   checks/
     repo_state.sh
     ci_status.sh
     open_prs.sh
     worktree_drift.sh
     script_timing.py
+    test_run.py                  # latest PyAutoBuild report.json verdict
+    version_skew.py              # workspace pin vs installed library
 
 config/
-  repos.yaml                     # the 18 polled repos + thresholds
+  repos.yaml                     # polled repos + thresholds + noise globs
 
-tests/                           # pytest, runs in <1s
+.github/workflows/
+  pulse-health.yml               # scheduled cloud-safe checks → tracking issue
+
+tests/                           # pytest, runs in <3s
 ```
 
 State cache at runtime:
@@ -123,12 +189,15 @@ State cache at runtime:
 ```
 ~/.pyauto-pulse/
   state.json                     # aggregated latest snapshot
+  release_ready.json             # the readiness verdict
   pulse.pid                      # daemon pidfile
   per-repo/<name>.<check>.json   # per-repo sidecars
   timings/<workspace>__<dir>__<file>.json  # rolling per-script duration history
   logs/pulse.log                 # daemon stderr + tick events
   worktree_drift.json
   script_timing.json
+  test_run.json
+  version_skew.json
 ```
 
 ## Configuration
@@ -146,13 +215,14 @@ pytest tests/ -v
 
 ## Roadmap
 
-- v2: desktop notification dispatch; smarter PR/issue checks; stash staleness
-- v3: TUI panel (textual/rich) with hotkey drill-down
-- v4: cross-machine sync (sqlite); team-shared cache
+- v1.3: `stop --all` (pgrep-based) to recover a daemon whose pidfile was lost;
+  desktop notification dispatch; stash staleness
+- v2: TUI panel (textual/rich) with hotkey drill-down
+- v3: cross-machine sync (sqlite); team-shared cache
 
 ## Relationship to other PyAuto repos
 
-- **PyAutoBuild** — provides the primitives (`autobuild run_all`, `autobuild url_check`, etc.). Pulse shells out to these but never imports PyAutoBuild Python.
+- **PyAutoBuild** — provides the primitives (`autobuild run_all`, `autobuild url_check`, etc.) and writes `test_results/latest/report.json`, which Pulse reads for the test-run check and readiness verdict. Pulse shells out / reads files but never imports PyAutoBuild Python. The readiness verdict is advisory — Build keeps its own release gates.
 - **PyAutoPrompt** — Pulse reads `active.md` for worktree drift detection (read-only).
 - **admin_jammy** — Pulse sources `software/worktree.sh` for `PYAUTO_WT_ROOT` etc.
 

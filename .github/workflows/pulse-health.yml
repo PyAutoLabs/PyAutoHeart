@@ -1,0 +1,112 @@
+name: Pulse Health
+
+# Scheduled cloud-safe half of the PyAutoPulse hybrid CI layer.
+#
+# Runs the two checks that need only the GitHub API (no local working tree) —
+# CI status and open PRs — across every polled repo, then opens-or-updates a
+# single "[pulse-health]" tracking issue when anything is red/degraded, and
+# closes it when everything is clean again. No agent, no Slack, no secret
+# beyond the auto-provisioned GITHUB_TOKEN — mirrors the url_check.yml pattern.
+#
+# The local-only checks (repo_state, worktree_drift, script_timing, test_run,
+# version_skew) run on the developer box via the bashrc-started `watch` daemon.
+
+on:
+  schedule:
+    - cron: "0 6 * * *"   # daily 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  pulse-health:
+    name: Cloud health checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PyAutoPulse
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PyYAML
+        run: pip install --quiet pyyaml
+
+      - name: Run cloud-safe checks (ci_status, open_prs)
+        id: checks
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Force colour off; write sidecars under a workspace-local state dir.
+          NO_COLOR: "1"
+          PULSE_STATE_DIR: ${{ github.workspace }}/.pulse-state
+        run: |
+          set +e
+          bash pulse/checks/ci_status.sh
+          bash pulse/checks/open_prs.sh
+          exit 0
+
+      - name: Classify results
+        id: classify
+        env:
+          PULSE_STATE_DIR: ${{ github.workspace }}/.pulse-state
+        run: |
+          python3 - <<'PY'
+          import json, os, glob, pathlib
+          state = pathlib.Path(os.environ["PULSE_STATE_DIR"]) / "per-repo"
+          red, yellow = [], []
+          for f in sorted(state.glob("*.ci_status.json")):
+              d = json.loads(f.read_text())
+              if d.get("conclusion") not in (None, "", "success"):
+                  red.append(f"- **{d['name']}**: CI {d.get('conclusion')} ({d.get('workflow','?')})")
+          for f in sorted(state.glob("*.open_prs.json")):
+              d = json.loads(f.read_text())
+              age = d.get("max_age_days", 0)
+              if d.get("open_count", 0) and age >= 30:
+                  red.append(f"- **{d['name']}**: open PR {age}d old (>30d)")
+              elif d.get("open_count", 0) and age >= 7:
+                  yellow.append(f"- {d['name']}: open PR {age}d old")
+          lines = ["# Pulse health report", ""]
+          if red:
+              lines += ["## 🔴 Red", *red, ""]
+          if yellow:
+              lines += ["## 🟡 Yellow", *yellow, ""]
+          if not red and not yellow:
+              lines += ["✅ All cloud checks green (CI passing, no stale PRs)."]
+          body = "\n".join(lines)
+          pathlib.Path("/tmp/pulse_health_body.md").write_text(body + "\n")
+          status = "red" if red else ("yellow" if yellow else "green")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write(f"status={status}\n")
+          print(body)
+          PY
+
+      - name: Open or update [pulse-health] tracking issue
+        if: steps.classify.outputs.status != 'green'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          existing=$(gh issue list --search '"[pulse-health]"' --state open --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body-file /tmp/pulse_health_body.md
+          else
+            gh issue create \
+              --title "[pulse-health] Degraded ecosystem health" \
+              --body-file /tmp/pulse_health_body.md \
+              --label pulse-health 2>/dev/null \
+              || gh issue create \
+                --title "[pulse-health] Degraded ecosystem health" \
+                --body-file /tmp/pulse_health_body.md
+          fi
+
+      - name: Close [pulse-health] issue when clean
+        if: steps.classify.outputs.status == 'green'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for n in $(gh issue list --search '"[pulse-health]"' --state open --json number --jq '.[].number'); do
+            gh issue close "$n" --comment "Cloud health checks are green — closing automatically."
+          done

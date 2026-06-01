@@ -23,14 +23,24 @@ bash "$PULSE_HOME/pulse/checks/worktree_drift.sh"  || pulse_log WARN "$(c_warn '
 # Python: script timing regressions. Only runs if PyAutoBuild test_results/latest exists.
 if [[ -d "$PYAUTO_ROOT/PyAutoBuild/test_results/latest" ]]; then
   PYTHONPATH="$PULSE_HOME" python3 -m pulse.checks.script_timing || pulse_log WARN "$(c_warn 'script_timing failed')"
+  PYTHONPATH="$PULSE_HOME" python3 -m pulse.checks.test_run     || pulse_log WARN "$(c_warn 'test_run failed')"
 else
-  pulse_log INFO "$(c_meta 'script_timing: skipped (no PyAutoBuild/test_results/latest)')"
+  pulse_log INFO "$(c_meta 'script_timing/test_run: skipped (no PyAutoBuild/test_results/latest)')"
 fi
+
+# Python: workspace-vs-library version skew (cheap file reads; no heavy imports).
+PYTHONPATH="$PULSE_HOME" python3 -m pulse.checks.version_skew || pulse_log WARN "$(c_warn 'version_skew failed')"
 
 # Aggregate into state.json.
 PYTHONPATH="$PULSE_HOME" python3 -c "
 from pulse import state
 state.aggregate()
 "
+
+# Compute the composite release-readiness verdict from the aggregated state.
+PYTHONPATH="$PULSE_HOME" python3 -c "
+from pulse import readiness
+readiness.run()
+" || pulse_log WARN "$(c_warn 'readiness failed')"
 
 pulse_log OK "$(c_bold "==== tick complete") $(c_meta "(state at $PULSE_STATE_FILE)") $(c_bold "====")"
