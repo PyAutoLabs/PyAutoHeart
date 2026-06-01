@@ -215,8 +215,9 @@ pytest tests/ -v
 
 ## Roadmap
 
-- v1.3: `stop --all` (pgrep-based) to recover a daemon whose pidfile was lost;
-  desktop notification dispatch; stash staleness
+- v1.3 (shipped): `stop --all` (pgrep-based) to recover a daemon whose pidfile
+  was lost
+- next: desktop notification dispatch; stash staleness
 - v2: TUI panel (textual/rich) with hotkey drill-down
 - v3: cross-machine sync (sqlite); team-shared cache
 
