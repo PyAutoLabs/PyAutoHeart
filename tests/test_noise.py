@@ -14,6 +14,11 @@ GLOBS = [
     "*.fits",
     "*tracer.json",
     "*point_dataset*.json",
+    "*data.json",
+    "*model.json",
+    "*model_*.json",
+    "*max_log_likelihood.json",
+    "*.png",
     "*README.md",
     "*test_report.md",
 ]
@@ -76,6 +81,65 @@ def test_untracked_source_file_is_real():
     real, noise_files = noise.classify_dirty(SAMPLE, GLOBS)
     assert "new_module.py" in real
     assert "new_module.py" not in noise_files
+
+
+# --- v1.4: generated json/png artifacts (the HowToFit dirty=315 fix) ---
+
+GENERATED_SAMPLE = [
+    " M dataset/example_1d/gaussian_x5/data.json",
+    " M dataset/example_1d/gaussian_x5/model.json",
+    " M output/imaging/model_0.json",
+    " M output/imaging/model_1.json",
+    " M output/x/max_log_likelihood.json",
+    " M dataset/example_1d/gaussian_x5/image.png",
+    " M docs/figure.png",
+    # genuine source that MUST stay real even though it sits under results/:
+    " M source_science/results/1_with_lens_light/fit_compare.py",
+    " M source_science/results/make_cross_experiment_plot.py",
+    " M config/general.yaml",
+]
+
+
+def test_generated_json_and_png_are_noise():
+    real, noise_files = noise.classify_dirty(GENERATED_SAMPLE, GLOBS)
+    for expected in [
+        "dataset/example_1d/gaussian_x5/data.json",
+        "dataset/example_1d/gaussian_x5/model.json",
+        "output/imaging/model_0.json",
+        "output/imaging/model_1.json",
+        "output/x/max_log_likelihood.json",
+        "dataset/example_1d/gaussian_x5/image.png",
+        "docs/figure.png",
+    ]:
+        assert expected in noise_files, expected
+        assert expected not in real, expected
+
+
+def test_py_under_results_stays_real_despite_generated_neighbours():
+    # The load-bearing guard: file-type globs must NOT swallow hand-edited .py
+    # that happens to live under a results/ path. A directory rule would.
+    real, noise_files = noise.classify_dirty(GENERATED_SAMPLE, GLOBS)
+    for expected in [
+        "source_science/results/1_with_lens_light/fit_compare.py",
+        "source_science/results/make_cross_experiment_plot.py",
+        "config/general.yaml",
+    ]:
+        assert expected in real, expected
+        assert expected not in noise_files, expected
+
+
+def test_config_json_not_matched_by_data_or_model_globs():
+    # A config-ish json that isn't a generated artifact stays real.
+    real, noise_files = noise.classify_dirty([" M dataset/example_1d/info.json"], GLOBS)
+    assert real == ["dataset/example_1d/info.json"]
+    assert noise_files == []
+
+
+def test_globs_in_sync_with_repo_config():
+    # The test GLOBS constant must match what's actually shipped in repos.yaml.
+    from pathlib import Path
+    here = Path(__file__).resolve().parents[1]
+    assert set(noise.load_noise_globs(here / "config" / "repos.yaml")) == set(GLOBS)
 
 
 def test_all_test_workspace_dirty_is_noise():

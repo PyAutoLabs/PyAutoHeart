@@ -76,10 +76,20 @@ excluded:
 # excluded from the dirty_yellow/dirty_red drift signal. Matched with
 # fnmatch, where `*` crosses `/` (so `*.fits` matches dataset/.../x.fits).
 # Tune freely; remove a pattern to make those changes surface as real drift.
+#
+# Deliberately FILE-TYPE scoped, not directory scoped: a blanket `dataset/*`
+# or `*/results/*` rule would wrongly hide genuine hand-edited source — e.g.
+# autolens_workspace_developer has real `.py` under `source_science/results/`.
+# Matching by generated filename/extension keeps those `.py` edits visible.
 noise_globs:
   - "*.fits"
   - "*tracer.json"          # tracer.json, g_tracer.json, r_tracer.json
   - "*point_dataset*.json"
+  - "*data.json"            # regenerated dataset payloads
+  - "*model.json"           # model snapshots
+  - "*model_*.json"         # model_0.json, model_1.json, …
+  - "*max_log_likelihood.json"  # result snapshots
+  - "*.png"                 # generated plots / figures (global; PNGs here are always generated)
   - "*README.md"            # build-regenerated workspace docs
   - "*test_report.md"
 
