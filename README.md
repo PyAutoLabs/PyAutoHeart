@@ -1,6 +1,11 @@
 # PyAutoPulse
 
-Continuous-monitoring daemon for the PyAuto ecosystem.
+The **health authority** of the PyAuto ecosystem: a continuous-monitoring daemon
+that also owns all release-readiness checking. `pyauto-pulse readiness` is the
+authoritative "is it safe to release?" gate — [PyAutoBuild](https://github.com/PyAutoLabs/PyAutoBuild)
+is a pure executor and the [PyAutoAgent](https://github.com/PyAutoLabs/PyAutoAgent)
+release agent dispatches a release only on a green verdict. See `AGENTS.md` for
+the boundary.
 
 ## What it does
 

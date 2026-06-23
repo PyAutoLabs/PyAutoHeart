@@ -5,16 +5,20 @@ discovering this repository.
 
 ## What this repo is
 
-PyAutoPulse is a continuous-monitoring daemon for the PyAuto ecosystem.
-It polls 18 PyAuto repos every N minutes and surfaces drift (CI status,
-dirty checkouts, branch ahead/behind, open PRs, worktree state, script
-timing regressions) with green/yellow/red colour coding.
+PyAutoPulse is the **health authority** of the PyAuto ecosystem. It owns all
+health and release-readiness checking: continuous monitoring (CI status, dirty
+checkouts, branch ahead/behind, open PRs, worktree state, script-timing
+regressions, version skew) plus deep on-demand/cloud checks (install
+verification, URL hygiene), all green/yellow/red colour coded. `pyauto-pulse
+readiness` is the **authoritative** "is it safe to release?" gate.
 
-It is **separate** from PyAutoBuild on purpose: PyAutoBuild produces
-PyPI releases; Pulse monitors developer state continuously. Pulse shells
-out to `autobuild` primitives but never imports PyAutoBuild Python.
+It is **separate** from PyAutoBuild on purpose: PyAutoBuild is a pure executor
+(it produces PyPI releases and runs no readiness checks); Pulse owns the
+checking. Pulse shells out to `autobuild` primitives but never imports
+PyAutoBuild Python, never writes into other repos, and never triggers Build.
 
-See `README.md` for user-facing docs.
+See [`AGENTS.md`](AGENTS.md) for the canonical Build/Pulse/Agent boundary and the
+`Agent → Pulse → Build` call chain, and `README.md` for user-facing docs.
 
 ## Hard rules
 
