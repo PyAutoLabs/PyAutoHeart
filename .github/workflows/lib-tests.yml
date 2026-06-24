@@ -6,9 +6,13 @@ name: Library Tests (reusable)
 #
 #   jobs:
 #     unittest:
-#       uses: PyAutoLabs/PyAutoHeart/.github/workflows/lib-tests.yml@main
+#       uses: PyAutoLabs/PyAutoPulse/.github/workflows/lib-tests.yml@main
 #       with: { package: autolens }
 #       secrets: inherit
+#
+# Keep the PyAutoPulse owner/repo in copy-paste examples until the GitHub
+# repository rename is complete and redirects are confirmed. The workflow
+# filename is intentionally stable for downstream callers.
 #
 # PR-time gating is preserved: the caller's `unittest` job runs on push/PR and is
 # the required status check. Heart owns the test definition; the library just
