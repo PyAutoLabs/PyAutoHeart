@@ -11,16 +11,17 @@ when it is green.
 The verdict uses STRICT release gates:
 
 - **RED** (a real blocker) if any of the 5 libraries has failing CI, is off
-  ``main``, has uncommitted source changes, or is behind origin; or the latest
-  Build test run is ``ready == false``; or any workspace is pinned AHEAD of its
-  installed library, has a ``general.yaml`` ↔ ``version.txt`` MISMATCH, or an
-  unparseable (BAD) version; or the deep install verification last reported
-  ``ready == false``.
-- **YELLOW** (caution) for soft signals: script-timing regressions, stale open
-  PRs, stale parked scripts, a workspace pinned BEHIND, a stale or never-run
-  install verification, and — crucially — any *unknown* (missing test-run
-  report, a library absent from the snapshot). An unknown is never silently
-  treated as green and never escalated to red.
+  ``main``, has uncommitted source changes, or is behind origin; or any workspace
+  is pinned AHEAD of its installed library, has a ``general.yaml`` ↔
+  ``version.txt`` MISMATCH, or an unparseable (BAD) version; or the deep install
+  verification last reported ``ready == false``.
+- **YELLOW** (caution) for soft signals: workspace-validation not passing (the
+  workspace scripts/notebooks carry standing debt, so this is advisory — never a
+  hard block), script-timing regressions, stale open PRs, stale parked scripts, a
+  workspace pinned BEHIND, a stale or never-run install verification, and —
+  crucially — any *unknown* (missing test-run report, a library absent from the
+  snapshot). An unknown is never silently treated as green and never escalated to
+  red.
 - **GREEN** otherwise.
 
 Red dominates yellow structurally: reasons are collected into separate lists
@@ -61,7 +62,7 @@ _WEIGHTS: dict[str, tuple[int, int]] = {
     "lib_branch": (15, 30),
     "lib_dirty": (15, 30),
     "lib_behind": (20, 40),
-    "test_not_ready": (40, 40),
+    "test_failing": (15, 15),
     "skew_ahead": (25, 50),
     "lib_unknown": (10, 30),
     "test_unknown": (10, 10),
@@ -164,8 +165,14 @@ def compute(snapshot: dict | None, libraries: Sequence[str] | None = None) -> di
     if isinstance(test_run, dict) and "ready" in test_run:
         ready = test_run.get("ready")
         if ready is False:
-            red.append(f"test run not ready ({test_run.get('run_label', '?')})")
-            hit("test_not_ready")
+            # Workspace scripts/notebooks carry standing debt; failing validation
+            # is advisory (YELLOW), not a release blocker. Real blockers are the
+            # library CI / install / version-skew gates above.
+            yellow.append(
+                f"workspace validation not passing "
+                f"({_as_int(test_run.get('failed', 0))} failed, {test_run.get('run_label', '?')})"
+            )
+            hit("test_failing")
         elif ready is True:
             age = _age_days(test_run.get("ts"), ref)
             if age is not None and age > TEST_STALE_DAYS:

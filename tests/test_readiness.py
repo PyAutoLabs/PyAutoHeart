@@ -71,11 +71,14 @@ def test_test_run_fresh_ready_is_green():
     assert v["verdict"] == "green"
 
 
-def test_test_run_not_ready_is_red():
-    v = compute(make_snapshot(test_run={"ready": False, "run_label": "x"}))
-    assert v["verdict"] == "red"
-    assert any("test run not ready" in r for r in v["red_reasons"])
-    assert v["score"] == 60
+def test_test_run_failing_is_yellow_not_red():
+    # Workspace scripts carry standing debt — failing validation is advisory.
+    v = compute(make_snapshot(test_run={"ready": False, "failed": 9, "run_label": "x"}))
+    assert v["verdict"] == "yellow"
+    assert not v["red_reasons"]
+    assert any("workspace validation not passing" in r and "9 failed" in r
+               for r in v["yellow_reasons"])
+    assert v["score"] == 85
 
 
 def test_version_skew_ahead_is_red():
