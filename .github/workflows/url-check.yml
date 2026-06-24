@@ -4,10 +4,10 @@ name: URL Check (central)
 #
 # Replaces the 12 per-repo .github/workflows/url_check.yml workflows: instead of
 # each repo running its own offline + live URL audit and opening its own
-# [url-check] issue, PyAutoPulse sweeps every repo here and consolidates into a
-# SINGLE [url-check] tracking issue. Mirrors the pulse-health.yml pattern.
+# [url-check] issue, PyAutoHeart sweeps every repo here and consolidates into a
+# SINGLE [url-check] tracking issue. Mirrors the heart-health.yml pattern.
 #
-# Monitoring only — URL hygiene does not gate releases (Pulse owns the release
+# Monitoring only — URL hygiene does not gate releases (Heart owns the release
 # gate via `readiness`, which this does not touch).
 
 on:
@@ -31,10 +31,10 @@ jobs:
     name: Central URL sweep
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout PyAutoPulse
+      - name: Checkout PyAutoHeart
         uses: actions/checkout@v4
         with:
-          path: pulse
+          path: heart
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -60,10 +60,10 @@ jobs:
               continue
             fi
             # Offline forbidden-pattern guard.
-            off="$(bash pulse/pulse/checks/url_check.sh "checkout/$repo" 2>/dev/null)"
+            off="$(bash heart/heart/checks/url_check.sh "checkout/$repo" 2>/dev/null)"
             off_rc=$?
             # Live HTTP audit (honours the repo's .url_check_allowlist.txt).
-            live="$(bash pulse/pulse/checks/url_check_live.sh "checkout/$repo" 2>/dev/null)"
+            live="$(bash heart/heart/checks/url_check_live.sh "checkout/$repo" 2>/dev/null)"
             live_rc=$?
             if [ "$off_rc" -ne 0 ] || [ "$live_rc" -ne 0 ]; then
               body+=$'\n'"## $repo"$'\n'

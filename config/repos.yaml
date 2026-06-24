@@ -1,8 +1,8 @@
-# PyAutoPulse polled-repo registry.
+# PyAutoHeart polled-repo registry.
 #
 # Repos listed here are polled every `tick` for CI / drift / timing.
 # Repos NOT listed are silently ignored. To add/remove a repo, edit
-# this file and reload the daemon (`pyauto-pulse stop && pyauto-pulse watch`).
+# this file and reload the daemon (`pyauto-heart stop && pyauto-heart watch`).
 
 repos:
   libraries:

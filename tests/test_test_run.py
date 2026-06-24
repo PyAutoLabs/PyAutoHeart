@@ -1,10 +1,10 @@
-"""tests/test_test_run.py — parse PyAutoBuild test-run report into Pulse JSON."""
+"""tests/test_test_run.py — parse PyAutoBuild test-run report into Heart JSON."""
 
 from __future__ import annotations
 
 import json
 
-from pulse.checks import test_run as tr
+from heart.checks import test_run as tr
 
 
 def test_from_report_extracts_ready_counts_and_stale_parked():

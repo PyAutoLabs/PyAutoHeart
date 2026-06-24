@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from pulse import noise
+from heart import noise
 
 # The default workspace noise globs (kept in sync with config/repos.yaml).
 GLOBS = [

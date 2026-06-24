@@ -1,53 +1,54 @@
-# PyAutoPulse — Agent Guidance
+# PyAutoHeart — Agent Guidance
 
 This file is for AI coding agents (Claude Code, Codex, Cursor, etc.)
 discovering this repository.
 
 ## What this repo is
 
-PyAutoPulse is the **health authority** of the PyAuto ecosystem. It owns all
-health and release-readiness checking: continuous monitoring (CI status, dirty
-checkouts, branch ahead/behind, open PRs, worktree state, script-timing
+PyAutoHeart is the **health and vital-signs authority** of the PyAuto organism.
+It owns health and release-readiness checking: continuous monitoring (CI status,
+dirty checkouts, branch ahead/behind, open PRs, worktree state, script-timing
 regressions, version skew) plus deep on-demand/cloud checks (install
-verification, URL hygiene), all green/yellow/red colour coded. `pyauto-pulse
-readiness` is the **authoritative** "is it safe to release?" gate.
+verification, URL hygiene), workspace validation, and generated-artifact/noise
+classification, all green/yellow/red colour coded. `pyauto-heart readiness` is
+the **authoritative** "is it safe to release?" gate.
 
-It is **separate** from PyAutoBuild on purpose: PyAutoBuild is a pure executor
-(it produces PyPI releases and runs no readiness checks); Pulse owns the
-checking. Pulse shells out to `autobuild` primitives but never imports
-PyAutoBuild Python, never writes into other repos, and never triggers Build.
+It is **separate** from PyAutoHands / PyAutoBuild on purpose: Hands is a pure
+executor (it produces PyPI releases and runs no readiness checks); Heart owns
+the checking. Heart shells out to `autobuild` primitives but never imports
+PyAutoBuild Python, never writes into other repos, and never triggers Hands.
 
-See [`AGENTS.md`](AGENTS.md) for the canonical Build/Pulse/Agent boundary and the
-`Agent → Pulse → Build` call chain, and `README.md` for user-facing docs.
+See [`AGENTS.md`](AGENTS.md) for the canonical Brain/Heart/Hands boundary and
+the `Brain → Heart → Hands` call chain, and `README.md` for user-facing docs.
 
 ## Hard rules
 
 1. **Color coding everywhere**: green = passing, yellow = warning,
    red = failing. Use the `c_ok / c_warn / c_fail / c_info / c_meta`
-   helpers in `pulse/_color.sh` (bash) and `pulse/pulse_color.py`
+   helpers in `heart/_color.sh` (bash) and `heart/heart_color.py`
    (Python). Honour `NO_COLOR` and `--no-color`.
-2. **Never write outside `~/.pyauto-pulse/`** in any check module.
+2. **Never write outside `~/.pyauto-heart/`** in any check module.
    The daemon must be a pure observer; mutations belong in
-   `pyauto-pulse fix <topic>` which only EMITS context for a fresh
+   `pyauto-heart fix <topic>` which only EMITS context for a fresh
    Claude session.
 3. **Polling must be cheap**. A full `tick` should complete in <30s
    total. If a check would take longer, run it less often (move to a
    v2 daily cron, not the watch loop).
-4. **No JAX in tests** — library convention. Pulse tests run with
+4. **No JAX in tests** — library convention. Heart tests run with
    stdlib + PyYAML only.
-5. **State writes are atomic**. Use `pulse.state.atomic_write_json` or
-   the bash equivalent (`pulse_write_json` in `_common.sh`). Concurrent
+5. **State writes are atomic**. Use `heart.state.atomic_write_json` or
+   the bash equivalent (`heart_write_json` in `_common.sh`). Concurrent
    ticks must not corrupt `state.json`.
 
 ## Repo structure
 
 ```
-bin/pyauto-pulse                 # bash dispatcher
-pulse/                           # all logic, shell-first
+bin/pyauto-heart                 # bash dispatcher
+heart/                           # all logic, shell-first
   _color.sh, _common.sh
   daemon.sh, tick.sh             # the loop + one cycle
   state.py, status.py, fix.py    # Python side
-  pulse_color.py
+  heart_color.py
   checks/                        # one file per check class
 config/repos.yaml                # polled repo registry + thresholds
 tests/                           # pytest
@@ -55,23 +56,23 @@ tests/                           # pytest
 
 ## Adding a new check
 
-1. Create `pulse/checks/<name>.{sh,py}` following the existing patterns.
+1. Create `heart/checks/<name>.{sh,py}` following the existing patterns.
 2. Each check writes per-repo JSON sidecars to
-   `$PULSE_PER_REPO_DIR/<repo>.<check_kind>.json` OR a global file at
-   `$PULSE_STATE_DIR/<check_name>.json`.
+   `$HEART_PER_REPO_DIR/<repo>.<check_kind>.json` OR a global file at
+   `$HEART_STATE_DIR/<check_name>.json`.
 3. Print a single colour-coded summary line to stdout (logged to the
-   daemon log by `pulse_log`).
-4. Add a section to `pulse/status.py:render` that surfaces the result.
+   daemon log by `heart_log`).
+4. Add a section to `heart/status.py:render` that surfaces the result.
 5. Add tests in `tests/test_<name>.py` covering classification edges.
-6. Wire into `pulse/tick.sh` in the appropriate position.
+6. Wire into `heart/tick.sh` in the appropriate position.
 
 ## Running locally
 
 ```bash
 pip install -e .[dev]
 pytest tests/ -v
-PULSE_FORCE_COLOR=1 pyauto-pulse tick     # one cycle, with colour
-pyauto-pulse status
+HEART_FORCE_COLOR=1 pyauto-heart tick     # one cycle, with colour
+pyauto-heart status
 ```
 
 ## Codex / sandboxed runs

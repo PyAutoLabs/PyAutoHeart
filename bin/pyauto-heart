@@ -1,0 +1,369 @@
+#!/usr/bin/env bash
+# bin/pyauto-heart — the PyAutoHeart CLI dispatcher.
+#
+# Subcommand pattern mirrors PyAutoBuild/bin/autobuild so users see a
+# familiar shape. Help is auto-generated from SHORT_DESC.
+
+set -u
+
+# Locate the repo root via this script's path.
+_self="$(readlink -f "${BASH_SOURCE[0]}")"
+HEART_HOME="$(cd "$(dirname "$_self")/.." && pwd)"
+export HEART_HOME
+
+source "$HEART_HOME/heart/_common.sh"
+
+SUBCOMMAND_ORDER=(
+  "# Daemon"
+  watch
+  live
+  stop
+  tick
+  "# Reporting"
+  status
+  readiness
+  logs
+  fix
+  "# Deep checks (on-demand; too slow for the tick)"
+  verify_install
+  "# URL hygiene (monitoring only — does not gate releases)"
+  url_check
+  url_sweep
+  "# Meta"
+  help
+)
+
+declare -A SHORT_DESC=(
+  [watch]="Run the foreground monitoring loop (Ctrl-C to stop)"
+  [live]="Like watch, but force the live clear-and-redraw dashboard"
+  [stop]="Stop a running daemon via pidfile"
+  [tick]="One-shot refresh of the state cache"
+  [status]="Print the cached state with green/yellow/red colouring"
+  [readiness]="Print the release-readiness verdict (green/yellow/red + score)"
+  [logs]="Tail the daemon log"
+  [fix]="Bundle context for a specific topic and emit a Claude command"
+  [verify_install]="Deep install-readiness: pip & conda install-path checks (slow)"
+  [url_check]="Offline forbidden-URL regex guard for one directory (default cwd)"
+  [url_sweep]="Sweep all PyAuto repos for forbidden URL patterns; write the sidecar"
+  [help]="Show this help or details for a subcommand"
+)
+
+# ---------- subcommand implementations ----------
+
+help_watch() { cat <<EOF
+pyauto-heart watch [interval_seconds]
+
+Run the daemon loop in the foreground. Each tick refreshes the cached
+state at \$HEART_STATE_DIR/state.json (default: ~/.pyauto-heart/state.json).
+
+Interval defaults to 300s (5 min). Override via positional arg or the
+HEART_INTERVAL env var.
+
+Exits cleanly on Ctrl-C; removes the pidfile.
+EOF
+}
+cmd_watch() {
+  exec bash "$HEART_HOME/heart/daemon.sh" "$@"
+}
+
+help_live() { cat <<EOF
+pyauto-heart live [interval_seconds]
+
+Same as \`watch\`, but forces the live dashboard: each cycle clears the
+screen, streams the tick's per-repo progress, renders the colour-coded
+board, then shows a countdown to the next tick.
+
+\`watch\` auto-detects this when stdout is a terminal; \`live\` forces it on
+(HEART_LIVE=1) even when output is redirected. Use plain \`watch\` (or
+HEART_LIVE=0) for append-only streamed logs when run by an agent or piped
+to a file.
+EOF
+}
+cmd_live() {
+  exec env HEART_LIVE=1 bash "$HEART_HOME/heart/daemon.sh" "$@"
+}
+
+help_stop() { cat <<EOF
+pyauto-heart stop [--all]
+
+Kill a running pyauto-heart daemon via its pidfile.
+
+  --all   Also sweep for any daemon process whose pidfile was lost
+          (matches 'heart/daemon.sh' via pgrep) and kill it, then clear
+          the pidfile. Use this when 'stop' reports "not running" but a
+          daemon is in fact still alive — e.g. after the pidfile was
+          deleted out from under a running daemon.
+EOF
+}
+
+# Kill every heart daemon process regardless of pidfile state. Used by
+# 'stop --all'. Sends TERM, waits briefly, escalates to KILL for stragglers.
+# Returns the number of processes it killed.
+_heart_kill_all_daemons() {
+  local pids killed=0 pid
+  # -f matches the full command line; the script path is the stable signature.
+  pids="$(pgrep -f "$HEART_HOME/heart/daemon.sh" 2>/dev/null || true)"
+  [[ -z "$pids" ]] && { echo 0; return 0; }
+  for pid in $pids; do
+    kill "$pid" 2>/dev/null && killed=$((killed + 1))
+  done
+  # Give them a moment to honour TERM (their EXIT trap clears the pidfile),
+  # then KILL anything still standing.
+  sleep 1
+  for pid in $pids; do
+    if kill -0 "$pid" 2>/dev/null; then
+      kill -9 "$pid" 2>/dev/null
+    fi
+  done
+  echo "$killed"
+}
+
+cmd_stop() {
+  local all=0
+  [[ "${1:-}" == "--all" ]] && all=1
+
+  local stopped_via_pidfile=0
+  if [[ -f "$HEART_PID_FILE" ]]; then
+    local pid
+    pid="$(cat "$HEART_PID_FILE")"
+    if [[ -z "$pid" ]]; then
+      echo "$(c_warn 'empty pidfile')"
+      rm -f "$HEART_PID_FILE"
+    elif ! kill -0 "$pid" 2>/dev/null; then
+      echo "$(c_warn "pid $pid not running; cleaning up stale pidfile")"
+      rm -f "$HEART_PID_FILE"
+    else
+      kill "$pid" && { echo "$(c_ok "stopped pid $pid")"; stopped_via_pidfile=1; }
+    fi
+  elif [[ "$all" -eq 0 ]]; then
+    echo "$(c_meta 'no pidfile — daemon not running')"
+    echo "$(c_meta '(use `pyauto-heart stop --all` to sweep for an orphan daemon)')"
+  fi
+
+  if [[ "$all" -eq 1 ]]; then
+    local killed
+    killed="$(_heart_kill_all_daemons)"
+    rm -f "$HEART_PID_FILE"
+    if [[ "$killed" -gt 0 ]]; then
+      echo "$(c_ok "swept $killed daemon process(es)")"
+    elif [[ "$stopped_via_pidfile" -eq 0 ]]; then
+      echo "$(c_meta 'no daemon processes found')"
+    fi
+  fi
+}
+
+help_tick() { cat <<EOF
+pyauto-heart tick
+
+Run one refresh cycle: every check (repo state, CI status, open PRs,
+worktree drift, script timing) runs and the aggregated snapshot is
+written to \$HEART_STATE_DIR/state.json.
+
+Safe to invoke from cron, from the daemon, or by hand for an
+on-demand force-refresh.
+EOF
+}
+cmd_tick() {
+  exec bash "$HEART_HOME/heart/tick.sh"
+}
+
+help_status() { cat <<EOF
+pyauto-heart status [--json] [--quiet] [--no-color]
+
+Pretty-print the most recent cached state with green/yellow/red.
+Exits non-zero if no cache exists yet (run \`tick\` first).
+EOF
+}
+cmd_status() {
+  exec env PYTHONPATH="$HEART_HOME" python3 -m heart.status "$@"
+}
+
+help_readiness() { cat <<EOF
+pyauto-heart readiness [--json] [--quiet] [--no-color]
+
+Print the composite release-readiness verdict (green / yellow / red + a
+0–100 score and the reasons behind it), computed from the cached state on
+the last tick and persisted to \$HEART_STATE_DIR/release_ready.json.
+
+RED  = a real release blocker (a library's CI failing / off main / dirty /
+       behind; the latest Build test run not ready; a workspace pinned ahead
+       of its installed library, or with a general.yaml/version.txt mismatch).
+YELLOW = caution (timing regressions, stale PRs/parked scripts, a workspace
+       pinned behind, or an unknown such as a missing test-run report).
+
+This is the authoritative release gate: PyAutoBuild is a pure executor and
+runs no readiness checks of its own. The release agent dispatches release.yml
+only when this verdict is green.
+EOF
+}
+cmd_readiness() {
+  exec env PYTHONPATH="$HEART_HOME" python3 -m heart.readiness "$@"
+}
+
+help_logs() { cat <<EOF
+pyauto-heart logs [--tail N] [--follow]
+
+Tail \$HEART_LOG_DIR/heart.log (default: last 50 lines).
+EOF
+}
+cmd_logs() {
+  local n=50
+  local follow=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --tail) n="$2"; shift 2 ;;
+      --follow|-f) follow=1; shift ;;
+      *) shift ;;
+    esac
+  done
+  if [[ ! -f "$HEART_TICK_LOG" ]]; then
+    echo "$(c_meta "(no log yet at $HEART_TICK_LOG)")"
+    return 0
+  fi
+  if [[ "$follow" -eq 1 ]]; then
+    exec tail -n "$n" -f "$HEART_TICK_LOG"
+  else
+    tail -n "$n" "$HEART_TICK_LOG"
+  fi
+}
+
+help_fix() { cat <<EOF
+pyauto-heart fix <topic>
+
+Bundle context for a specific failing topic and emit a Claude Code
+invocation you can paste/run.
+
+Topics:
+  ci <repo>              — the latest red CI run on that repo
+  dirty <repo>           — clean up a dirty working tree (real vs generated)
+  drift                  — current worktree drift entries
+  timing <project>       — script timing regressions for that project
+EOF
+}
+cmd_fix() {
+  if [[ $# -eq 0 ]]; then
+    help_fix
+    return 2
+  fi
+  local topic="$1"; shift
+  case "$topic" in
+    ci|dirty|drift|timing)
+      env PYTHONPATH="$HEART_HOME" python3 -m heart.fix "$topic" "$@"
+      ;;
+    *)
+      echo "$(c_fail "unknown topic '$topic'")" >&2
+      help_fix
+      return 2
+      ;;
+  esac
+}
+
+help_verify_install() { cat <<EOF
+pyauto-heart verify_install [CHECKS...] [--version V] [--testpypi] [--keep]
+
+Deep release-readiness check for PyAutoLens: runs independent pip & conda
+install-path checks (A–E) in throwaway venvs/conda envs and reports a
+PASS/FAIL/SKIP table.
+
+This is SLOW (it installs from PyPI across several Python versions) — it is an
+**on-demand** check, never part of the <30s \`tick\` loop. It writes a JSON
+sidecar to \$HEART_STATE_DIR/verify_install.json that \`readiness\` consumes:
+a FAIL makes readiness RED; a result older than 14 days (or never run) is
+YELLOW.
+
+Checks:
+  A  pip install autolens (default python3) + start_here.py + welcome.py
+  B  pip install autolens + import on python3.9 / 3.10 / 3.11 / 3.13
+  C  conda install flow (python=3.12) + start_here.py + welcome.py
+  D  pip install "autolens[optional]" resolves and imports
+  E  pip install autolens==<pinned> installs by explicit pin
+
+Arguments are forwarded to the underlying check; see \`-h\` on the script.
+EOF
+}
+cmd_verify_install() {
+  mkdir -p "$HEART_STATE_DIR"
+  exec bash "$HEART_HOME/heart/checks/verify_install.sh" \
+    --report-json "$HEART_STATE_DIR/verify_install.json" "$@"
+}
+
+help_url_check() { cat <<EOF
+pyauto-heart url_check [directory]
+
+Offline regex guard: scan rst/md/ipynb/py files under <directory> (default cwd)
+and exit non-zero if any forbidden Binder/Colab/owner URL pattern is present.
+
+Monitoring only — this is the per-directory check; \`url_sweep\` runs it across
+every PyAuto repo. URL hygiene does not gate releases.
+EOF
+}
+cmd_url_check() {
+  exec bash "$HEART_HOME/heart/checks/url_check.sh" "${1:-.}"
+}
+
+help_url_sweep() { cat <<EOF
+pyauto-heart url_sweep
+
+Run the offline url_check across every PyAuto repo that used to carry its own
+url_check.yml, and write \$HEART_STATE_DIR/url_check.json (consumed by
+\`pyauto-heart status\`). Monitoring only — does not feed \`readiness\`.
+
+Takes a few seconds; runs on-demand and from the central url-check.yml cloud
+workflow, never in the <30s tick.
+EOF
+}
+cmd_url_sweep() {
+  mkdir -p "$HEART_STATE_DIR"
+  exec bash "$HEART_HOME/heart/checks/url_sweep.sh"
+}
+
+# ---------- help dispatcher ----------
+
+cmd_help() {
+  if [[ $# -gt 0 ]] && declare -f "help_$1" > /dev/null; then
+    "help_$1"
+    return 0
+  fi
+  cat <<EOF
+$(c_bold "pyauto-heart") — continuous-monitoring daemon for the PyAuto ecosystem.
+
+Usage: pyauto-heart <subcommand> [args...]
+       pyauto-heart help [subcommand]
+
+Subcommands:
+EOF
+  for item in "${SUBCOMMAND_ORDER[@]}"; do
+    if [[ "$item" == "#"* ]]; then
+      printf "\n  %s\n" "$(c_meta "${item#\# }")"
+    else
+      local desc="${SHORT_DESC[$item]:-}"
+      printf "    %-12s %s\n" "$item" "$desc"
+    fi
+  done
+}
+
+# ---------- main ----------
+
+main() {
+  local sub="${1:-}"
+  case "$sub" in
+    ""|-h|--help|help)
+      shift 2>/dev/null || true
+      cmd_help "$@"
+      return $?
+      ;;
+  esac
+  shift
+  if ! declare -f "cmd_$sub" > /dev/null; then
+    echo "pyauto-heart: unknown subcommand '$sub'" >&2
+    cmd_help
+    return 2
+  fi
+  if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+    "help_$sub"
+    return 0
+  fi
+  "cmd_$sub" "$@"
+}
+
+main "$@"

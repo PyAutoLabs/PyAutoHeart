@@ -11,12 +11,12 @@ import pytest
 
 @pytest.fixture
 def temp_state_dir(tmp_path, monkeypatch):
-    """Redirect PULSE_STATE_DIR to a tmp path; reload pulse.state to use it."""
-    monkeypatch.setenv("PULSE_STATE_DIR", str(tmp_path))
+    """Redirect HEART_STATE_DIR to a tmp path; reload heart.state to use it."""
+    monkeypatch.setenv("HEART_STATE_DIR", str(tmp_path))
     # Force a fresh import so the module-level constants pick up the env.
     import importlib
 
-    import pulse.state as state_mod
+    import heart.state as state_mod
     importlib.reload(state_mod)
     return tmp_path, state_mod
 

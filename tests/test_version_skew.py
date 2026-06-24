@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from pulse.checks import version_skew as vs
+from heart.checks import version_skew as vs
 
 
 @pytest.mark.parametrize("pinned,installed,expected", [

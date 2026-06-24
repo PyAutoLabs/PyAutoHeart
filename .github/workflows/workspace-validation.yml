@@ -1,14 +1,14 @@
 name: Workspace Validation
 
-# Pulse-owned workspace-integration validation (Stage 4 Phase B).
+# Heart-owned workspace-integration validation (Stage 4 Phase B).
 #
 # This is the "heavy validation CI" that used to live in PyAutoBuild's
 # release.yml (find_scripts / generate_notebooks / run_scripts / run_notebooks /
-# analyze_results). Pulse owns it now: Build is a pure executor. It runs every
+# analyze_results). Heart owns it now: Build is a pure executor. It runs every
 # workspace's scripts AND generated notebooks against the CURRENT source `main`
 # of the 5 libraries (source-shadowed via PYTHONPATH), aggregates into the same
 # report.json contract, and uploads it as the `workspace-validation-report`
-# artifact. Pulse's test_run check reads that run's
+# artifact. Heart's test_run check reads that run's
 # conclusion + timestamp into the authoritative `readiness` verdict (with a
 # staleness window).
 #
@@ -17,7 +17,7 @@ name: Workspace Validation
 #
 # Triggers: weekly schedule (the continuous readiness signal), manual dispatch,
 # and workflow_call (so a release path can invoke it on demand). Heavy, so never
-# in the <30s pulse tick.
+# in the <30s heart tick.
 
 on:
   schedule:
@@ -299,7 +299,7 @@ jobs:
       - name: Post summary
         if: always()
         run: cat report.md >> "$GITHUB_STEP_SUMMARY" || true
-      - name: Upload report (consumed by pyauto-pulse readiness)
+      - name: Upload report (consumed by pyauto-heart readiness)
         if: always()
         uses: actions/upload-artifact@v4
         with:

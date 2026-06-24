@@ -11,17 +11,17 @@ import pytest
 
 @pytest.fixture
 def tmp_state(tmp_path, monkeypatch):
-    """Redirect PULSE_STATE_DIR to a tmp dir and reload pulse.checks.script_timing."""
-    monkeypatch.setenv("PULSE_STATE_DIR", str(tmp_path))
-    import pulse.state as state_mod
+    """Redirect HEART_STATE_DIR to a tmp dir and reload heart.checks.script_timing."""
+    monkeypatch.setenv("HEART_STATE_DIR", str(tmp_path))
+    import heart.state as state_mod
     importlib.reload(state_mod)
-    import pulse.checks.script_timing as st
+    import heart.checks.script_timing as st
     # The script_timing module also has module-level constants — reload it.
     importlib.reload(st)
     # Override TIMINGS dir to live under the tmp dir.
-    st.PULSE_STATE_DIR = tmp_path
-    st.PULSE_TIMINGS_DIR = tmp_path / "timings"
-    st.PULSE_TIMINGS_DIR.mkdir(parents=True, exist_ok=True)
+    st.HEART_STATE_DIR = tmp_path
+    st.HEART_TIMINGS_DIR = tmp_path / "timings"
+    st.HEART_TIMINGS_DIR.mkdir(parents=True, exist_ok=True)
     return tmp_path, st
 
 
@@ -109,7 +109,7 @@ def test_rolling_window_caps_history_length(tmp_state):
         ])
         st.run(rdir)
     # Default window is 7 → history should be trimmed.
-    history_files = list(st.PULSE_TIMINGS_DIR.glob("*.json"))
+    history_files = list(st.HEART_TIMINGS_DIR.glob("*.json"))
     assert len(history_files) == 1
     history = json.loads(history_files[0].read_text())
     assert len(history) == 7

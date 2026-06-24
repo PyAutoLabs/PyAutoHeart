@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from pulse import readiness
+from heart import readiness
 
 LIBS = ["PyAutoConf", "PyAutoFit", "PyAutoArray", "PyAutoGalaxy", "PyAutoLens"]
 
@@ -278,10 +278,10 @@ def test_malformed_version_skew_is_skipped():
 
 def test_run_writes_release_ready_json(tmp_path, monkeypatch):
     import importlib
-    monkeypatch.setenv("PULSE_STATE_DIR", str(tmp_path))
-    import pulse.state as state_mod
+    monkeypatch.setenv("HEART_STATE_DIR", str(tmp_path))
+    import heart.state as state_mod
     importlib.reload(state_mod)
-    import pulse.readiness as r_mod
+    import heart.readiness as r_mod
     importlib.reload(r_mod)
     # seed a state.json
     (tmp_path / "state.json").write_text(json.dumps(make_snapshot()))
@@ -297,10 +297,10 @@ def test_run_writes_release_ready_json(tmp_path, monkeypatch):
 
 def test_run_with_no_state_cache_still_writes(tmp_path, monkeypatch):
     import importlib
-    monkeypatch.setenv("PULSE_STATE_DIR", str(tmp_path))
-    import pulse.state as state_mod
+    monkeypatch.setenv("HEART_STATE_DIR", str(tmp_path))
+    import heart.state as state_mod
     importlib.reload(state_mod)
-    import pulse.readiness as r_mod
+    import heart.readiness as r_mod
     importlib.reload(r_mod)
     v = r_mod.run()
     assert (tmp_path / "release_ready.json").is_file()
