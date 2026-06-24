@@ -68,3 +68,38 @@ def test_run_falls_back_to_per_job_when_no_report(tmp_path):
 def test_run_empty_dir_returns_empty(tmp_path):
     out = tr.run(results_dir=tmp_path)
     assert out == {}
+
+
+def test_cloud_verdict_parses_completed_run(monkeypatch):
+    import types
+    monkeypatch.setattr(tr.subprocess, "run", lambda *a, **k: types.SimpleNamespace(
+        stdout=json.dumps([{"conclusion": "success", "status": "completed",
+                            "createdAt": "2026-06-23T00:00:00Z", "databaseId": 42, "url": "u"}])))
+    v = tr._cloud_verdict()
+    assert v["ready"] is True and v["run_id"] == 42 and v["ts"] == "2026-06-23T00:00:00Z"
+
+
+def test_cloud_verdict_in_progress_is_unknown(monkeypatch):
+    import types
+    monkeypatch.setattr(tr.subprocess, "run", lambda *a, **k: types.SimpleNamespace(
+        stdout=json.dumps([{"conclusion": None, "status": "in_progress",
+                            "createdAt": "t", "databaseId": 1, "url": "u"}])))
+    assert tr._cloud_verdict()["ready"] is None
+
+
+def test_cloud_verdict_no_runs_is_none(monkeypatch):
+    import types
+    monkeypatch.setattr(tr.subprocess, "run", lambda *a, **k: types.SimpleNamespace(stdout="[]"))
+    assert tr._cloud_verdict() is None
+
+
+def test_run_cloud_overrides_ready_keeps_local_detail(monkeypatch, tmp_path):
+    (tmp_path / "report.json").write_text(json.dumps({
+        "ready": True, "run_label": "local", "summary": {"passed": 5, "failed": 0}}))
+    monkeypatch.setattr(tr, "_cloud_verdict", lambda: {
+        "ready": False, "ts": "2026-06-20T00:00:00Z", "run_id": 7, "url": "U"})
+    out = tr.run(results_dir=tmp_path, fetch_cloud=True)
+    assert out["ready"] is False                  # cloud is authoritative
+    assert out["ts"] == "2026-06-20T00:00:00Z"
+    assert out["source"] == "cloud"
+    assert out["passed"] == 5                      # detail retained from local report

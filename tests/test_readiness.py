@@ -55,6 +55,22 @@ def test_one_library_ci_failing_is_red():
     assert v["score"] == 70
 
 
+def test_test_run_stale_is_yellow():
+    # ready but ~31 days before the snapshot ts → stale caution, not a blocker.
+    snap = make_snapshot(test_run={"ready": True, "ts": "2026-05-01T00:00:00+00:00",
+                                   "parked_stale_count": 0})
+    v = compute(snap)
+    assert v["verdict"] == "yellow"
+    assert any("test run stale" in r for r in v["yellow_reasons"])
+
+
+def test_test_run_fresh_ready_is_green():
+    snap = make_snapshot(test_run={"ready": True, "ts": "2026-06-01T00:00:00+00:00",
+                                   "parked_stale_count": 0})
+    v = compute(snap)
+    assert v["verdict"] == "green"
+
+
 def test_test_run_not_ready_is_red():
     v = compute(make_snapshot(test_run={"ready": False, "run_label": "x"}))
     assert v["verdict"] == "red"

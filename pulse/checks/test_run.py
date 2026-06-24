@@ -20,7 +20,9 @@ the parked-script counts unknown.
 
 from __future__ import annotations
 
+import datetime
 import json
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -31,6 +33,46 @@ _p3 = Path(__file__).resolve().parents[3]
 PYAUTO_ROOT = _p3 if _p3.name == "PyAutoLabs" else Path.home() / "Code" / "PyAutoLabs"
 TEST_RESULTS_LATEST = PYAUTO_ROOT / "PyAutoBuild" / "test_results" / "latest"
 PULSE_STATE_DIR = Path.home() / ".pyauto-pulse"
+
+# The cloud workspace-validation workflow (Pulse-owned) is the continuous source
+# of the workspace-integration verdict. The tick reads only its conclusion +
+# timestamp via one `gh run list` call (cheap, same budget as ci_status); the
+# full report.json detail still comes from a local `autobuild run_all`.
+VALIDATION_REPO = "PyAutoLabs/PyAutoPulse"
+VALIDATION_WORKFLOW = "workspace-validation.yml"
+
+
+def _cloud_verdict() -> dict[str, Any] | None:
+    """Latest cloud workspace-validation run: {ready, ts, run_id, url} or None.
+
+    ready is True/False on a completed run, None while in progress. Never raises;
+    returns None if gh is unavailable or no run exists."""
+    try:
+        out = subprocess.run(
+            ["gh", "run", "list", "--repo", VALIDATION_REPO,
+             "--workflow", VALIDATION_WORKFLOW, "--limit", "1",
+             "--json", "conclusion,status,createdAt,databaseId,url"],
+            capture_output=True, text=True, timeout=30,
+        )
+        runs = json.loads(out.stdout or "[]")
+    except Exception:
+        return None
+    if not runs:
+        return None
+    r = runs[0]
+    conclusion = r.get("conclusion")
+    status = r.get("status")
+    ready: bool | None
+    if status != "completed":
+        ready = None
+    else:
+        ready = conclusion == "success"
+    return {
+        "ready": ready,
+        "ts": r.get("createdAt"),
+        "run_id": r.get("databaseId"),
+        "url": r.get("url"),
+    }
 
 
 def _read_json(path: Path) -> Any:
@@ -100,14 +142,39 @@ def _from_per_job(results_dir: Path) -> dict[str, Any]:
     }
 
 
-def run(results_dir: Path | None = None) -> dict[str, Any]:
+def run(results_dir: Path | None = None, fetch_cloud: bool | None = None) -> dict[str, Any]:
+    default_path = results_dir is None
     results_dir = results_dir or TEST_RESULTS_LATEST
+    if fetch_cloud is None:
+        fetch_cloud = default_path  # only hit the network on the real tick path
+
     summary: dict[str, Any]
     report = _read_json(results_dir / "report.json")
     if isinstance(report, dict):
         summary = _from_report(report)
     else:
         summary = _from_per_job(results_dir)
+
+    report_path = results_dir / "report.json"
+    if summary and report_path.is_file():
+        summary["ts"] = datetime.datetime.fromtimestamp(
+            report_path.stat().st_mtime, datetime.timezone.utc
+        ).isoformat()
+
+    # The cloud workspace-validation run is the authoritative continuous verdict;
+    # let it set ready/ts (the local report still supplies the count detail).
+    cloud = _cloud_verdict() if fetch_cloud else None
+    if cloud is not None:
+        if not summary:
+            summary = {
+                "passed": 0, "failed": 0, "skipped": 0, "timeout": 0,
+                "per_project": {}, "parked_stale_count": 0, "parked_stale": [],
+            }
+        summary["ready"] = cloud["ready"]
+        summary["ts"] = cloud["ts"]
+        summary["run_label"] = summary.get("run_label") or f"cloud#{cloud['run_id']}"
+        summary["cloud_url"] = cloud["url"]
+        summary["source"] = "cloud"
 
     PULSE_STATE_DIR.mkdir(parents=True, exist_ok=True)
     (PULSE_STATE_DIR / "test_run.json").write_text(json.dumps(summary, indent=2))

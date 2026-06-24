@@ -76,6 +76,7 @@ _WEIGHTS: dict[str, tuple[int, int]] = {
     "install_not_ready": (40, 40),
     "install_stale": (10, 10),
     "install_unknown": (10, 10),
+    "test_stale": (10, 10),
 }
 
 
@@ -98,6 +99,8 @@ def _as_int(v: Any, default: int = 0) -> int:
 
 # install verification older than this many days is treated as stale (YELLOW).
 INSTALL_STALE_DAYS = 14
+# workspace-validation test run older than this many days is treated as stale.
+TEST_STALE_DAYS = 10
 
 
 def _parse_ts(ts: Any) -> datetime.datetime | None:
@@ -163,7 +166,12 @@ def compute(snapshot: dict | None, libraries: Sequence[str] | None = None) -> di
         if ready is False:
             red.append(f"test run not ready ({test_run.get('run_label', '?')})")
             hit("test_not_ready")
-        elif ready is not True:
+        elif ready is True:
+            age = _age_days(test_run.get("ts"), ref)
+            if age is not None and age > TEST_STALE_DAYS:
+                yellow.append(f"test run stale ({int(age)}d old)")
+                hit("test_stale")
+        else:
             yellow.append("test run status unknown")
             hit("test_unknown")
         # parked staleness (YELLOW)

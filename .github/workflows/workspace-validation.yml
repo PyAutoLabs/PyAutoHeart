@@ -1,0 +1,175 @@
+name: Workspace Validation
+
+# Pulse-owned workspace-integration validation (Stage 4 Phase B).
+#
+# This is the "heavy validation CI" that used to live in PyAutoBuild's
+# release.yml (find_scripts / run_scripts / analyze_results). Pulse owns it now:
+# Build is a pure executor. It runs every workspace's scripts against the CURRENT
+# source `main` of the 5 libraries (source-shadowed via PYTHONPATH), aggregates
+# into the same report.json contract, and uploads it as the
+# `workspace-validation-report` artifact. Pulse's test_run check reads that run's
+# conclusion + timestamp into the authoritative `readiness` verdict (with a
+# staleness window).
+#
+# Run mechanics (script_matrix.py / run_python.py / aggregate_results.py) are
+# Build's executor primitives — checked out from PyAutoBuild, not duplicated.
+#
+# Triggers: weekly schedule (the continuous readiness signal), manual dispatch,
+# and workflow_call (so a release path can invoke it on demand). Heavy, so never
+# in the <30s pulse tick.
+
+on:
+  schedule:
+    - cron: "0 3 * * 1"   # Mondays 03:00 UTC
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  # Workspace pins lag the libraries' source __version__ between releases;
+  # without this every script fails fast with WorkspaceVersionMismatchError.
+  # Same bypass run_scripts uses in release.yml.
+  PYAUTO_SKIP_WORKSPACE_VERSION_CHECK: "1"
+
+jobs:
+  find_scripts:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.script_matrix.outputs.matrix }}
+    steps:
+      - name: Checkout PyAutoBuild (run primitives)
+        uses: actions/checkout@v4
+        with:
+          repository: PyAutoLabs/PyAutoBuild
+          path: PyAutoBuild
+      - name: Clone workspaces (paths match script_matrix project names)
+        run: |
+          set -e
+          declare -A WS=(
+            [autofit]=autofit_workspace [autogalaxy]=autogalaxy_workspace [autolens]=autolens_workspace
+            [autofit_test]=autofit_workspace_test [autogalaxy_test]=autogalaxy_workspace_test
+            [autolens_test]=autolens_workspace_test
+            [howtogalaxy]=HowToGalaxy [howtolens]=HowToLens [howtofit]=HowToFit
+          )
+          for proj in "${!WS[@]}"; do
+            git clone --depth 1 "https://github.com/PyAutoLabs/${WS[$proj]}" "$proj"
+          done
+      - name: Make script matrix
+        id: script_matrix
+        run: |
+          matrix="$(python3 PyAutoBuild/autobuild/script_matrix.py \
+            autofit autogalaxy autolens autofit_test autogalaxy_test autolens_test \
+            howtogalaxy howtolens howtofit)"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  run_scripts:
+    runs-on: ubuntu-latest
+    needs: find_scripts
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12"]
+        project: ${{ fromJSON(needs.find_scripts.outputs.matrix) }}
+    steps:
+      - name: Checkout PyAutoBuild (run primitives)
+        uses: actions/checkout@v4
+        with:
+          repository: PyAutoLabs/PyAutoBuild
+          path: PyAutoBuild
+      - name: Resolve workspace repo for ${{ matrix.project.name }}
+        id: ws
+        run: |
+          case "${{ matrix.project.name }}" in
+            autofit)         echo "repo=autofit_workspace" >> "$GITHUB_OUTPUT" ;;
+            autogalaxy)      echo "repo=autogalaxy_workspace" >> "$GITHUB_OUTPUT" ;;
+            autolens)        echo "repo=autolens_workspace" >> "$GITHUB_OUTPUT" ;;
+            autofit_test)    echo "repo=autofit_workspace_test" >> "$GITHUB_OUTPUT" ;;
+            autogalaxy_test) echo "repo=autogalaxy_workspace_test" >> "$GITHUB_OUTPUT" ;;
+            autolens_test)   echo "repo=autolens_workspace_test" >> "$GITHUB_OUTPUT" ;;
+            howtogalaxy)     echo "repo=HowToGalaxy" >> "$GITHUB_OUTPUT" ;;
+            howtolens)       echo "repo=HowToLens" >> "$GITHUB_OUTPUT" ;;
+            howtofit)        echo "repo=HowToFit" >> "$GITHUB_OUTPUT" ;;
+            *)               echo "repo=autolens_workspace_test" >> "$GITHUB_OUTPUT" ;;
+          esac
+      - name: Checkout workspace
+        uses: actions/checkout@v4
+        with:
+          repository: PyAutoLabs/${{ steps.ws.outputs.repo }}
+          ref: main
+          path: workspace
+      - name: Checkout libraries (current main; source-shadowed via PYTHONPATH)
+        run: |
+          set -e
+          for lib in PyAutoConf PyAutoArray PyAutoFit PyAutoGalaxy PyAutoLens; do
+            git clone --depth 1 "https://github.com/PyAutoLabs/$lib" "libs/$lib"
+          done
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install third-party deps (libs run from source)
+        run: |
+          # Pull the full transitive dependency set (matplotlib/numba/jax/…) by
+          # installing the published autolens[optional]; the source checkouts
+          # below shadow the PyAuto packages via PYTHONPATH.
+          pip install "autolens[optional]"
+          pip install "jax>=0.7,<0.11" "jaxlib>=0.7,<0.11"
+      - name: Run Python scripts
+        run: |
+          LIBS="$(pwd)/libs"
+          export PYTHONPATH="$LIBS/PyAutoConf:$LIBS/PyAutoArray:$LIBS/PyAutoFit:$LIBS/PyAutoGalaxy:$LIBS/PyAutoLens:$(pwd)/PyAutoBuild:$PYTHONPATH"
+          pushd workspace
+          python3 "$(pwd)/../PyAutoBuild/autobuild/run_python.py" \
+            "${{ matrix.project.name }}" "scripts/${{ matrix.project.directory }}" \
+            --report-dir test-results
+      - name: Upload script results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: results-scripts-${{ matrix.project.name }}-${{ matrix.project.directory }}
+          path: workspace/test-results/
+          retention-days: 30
+
+  analyze:
+    runs-on: ubuntu-latest
+    needs: run_scripts
+    if: always()
+    steps:
+      - name: Checkout PyAutoBuild (aggregate_results)
+        uses: actions/checkout@v4
+        with:
+          repository: PyAutoLabs/PyAutoBuild
+          path: PyAutoBuild
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Download all result artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-results
+          pattern: results-*
+          merge-multiple: true
+      - name: Aggregate into report.json
+        run: |
+          export PYTHONPATH="$PYTHONPATH:$(pwd)/PyAutoBuild"
+          python3 PyAutoBuild/autobuild/aggregate_results.py all-results/ \
+            --output report.json --markdown report.md
+      - name: Post summary
+        if: always()
+        run: cat report.md >> "$GITHUB_STEP_SUMMARY" || true
+      - name: Upload report (consumed by pyauto-pulse readiness)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-validation-report
+          path: |
+            report.json
+            report.md
+          retention-days: 90
+      - name: Fail the run if validation is not ready
+        run: |
+          python3 -c "import json,sys; sys.exit(0 if json.load(open('report.json')).get('ready') else 1)"
