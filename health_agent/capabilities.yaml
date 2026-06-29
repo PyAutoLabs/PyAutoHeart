@@ -92,7 +92,7 @@ deep_checks:
     measures: "url_check across every PyAuto repo -> url_check.json"
     gate_role: "monitoring only — does NOT gate readiness"
   - id: url_check_live
-    impl: heart/checks/url_check_live.py
+    impl: heart/checks/url_check_live.sh    # wrapper entrypoint; calls url_check_live.py
     measures: "live HTTP HEAD/GET audit of URLs (Colab/Binder reachability)"
     gate_role: "monitoring only (weekly cloud workflow)"
 
