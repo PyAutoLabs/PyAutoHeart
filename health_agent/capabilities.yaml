@@ -1,0 +1,129 @@
+# PyAutoHeart capability manifest
+#
+# Machine-readable catalogue of every health capability PyAutoHeart exposes.
+# The PyAutoBrain Health Agent reads THIS file (not hard-coded check names) so it
+# treats Heart as an abstract health provider: when Heart gains or renames a
+# check, update this manifest and the agent adapts without code changes.
+#
+# Maintained alongside the checks. If you add a check (see CLAUDE.md "Adding a
+# new check"), add an entry here too.
+
+provider:
+  name: PyAutoHeart
+  role: >-
+    The health and vital-signs authority of the PyAuto organism. Owns ALL
+    health/readiness checking. Observer-only: reads repos and emits verdicts,
+    never writes into other repos, never triggers PyAutoBuild/Hands.
+  canonical_cli: pyauto-heart
+  compat_cli: pyauto-pulse          # legacy alias, routes to the same impl
+  python_package: heart             # `import heart`; `pulse` is a compat shim
+
+# The single call the Health Agent should make to get the authoritative verdict.
+# Everything else is detail the agent may pull for explanation/recommendations.
+primary_query:
+  command: "pyauto-heart readiness --json"
+  returns: "{ verdict: green|yellow|red, score: 0-100, red_reasons[], yellow_reasons[], ts }"
+  detail_query: "pyauto-heart status --json"   # full per-repo + per-check snapshot
+  persisted_state:
+    snapshot: "~/.pyauto-heart/state.json"
+    verdict: "~/.pyauto-heart/release_ready.json"
+
+# The authoritative gate. The Health Agent REPORTS this verdict; it must not
+# re-derive it from raw checks. Heart computes it (heart/readiness.py:compute).
+gate:
+  authority: "pyauto-heart readiness"   # the single is-it-safe-to-release gate
+  semantics:
+    green:  "Healthy. PyAutoBuild may proceed automatically."
+    yellow: "Mostly healthy. Work may proceed; human review recommended."
+    red:    "Blocked. Do not release until the blocking reasons clear."
+  rule: "red dominates yellow dominates green; an unknown is YELLOW, never silently green."
+
+# Continuous checks — cheap, run every <30s tick (heart/tick.sh).
+continuous_checks:
+  - id: repo_state
+    impl: heart/checks/repo_state.sh
+    measures: "per-repo branch / dirty(real vs generated) / ahead / behind"
+    gate_role: "RED if a library is off main, has uncommitted source, or is behind origin"
+  - id: ci_status
+    impl: heart/checks/ci_status.sh
+    measures: "latest CI workflow conclusion per repo (gh run list)"
+    gate_role: "RED if a library's latest CI conclusion is not success"
+  - id: open_prs
+    impl: heart/checks/open_prs.sh
+    measures: "open PR count + max age per repo"
+    gate_role: "YELLOW if an open PR is >= 7 days old"
+  - id: worktree_drift
+    impl: heart/checks/worktree_drift.sh
+    measures: "PyAutoLabs-wt/ dirs vs PyAutoMind active.md (orphan/missing/dirty)"
+    gate_role: "monitoring (surfaced in status; not a readiness reason)"
+  - id: script_timing
+    impl: heart/checks/script_timing.py
+    measures: "per-script duration vs rolling baseline (>1.5x slow, >3x regression)"
+    gate_role: "YELLOW on timing regressions / slow scripts"
+  - id: test_run
+    impl: heart/checks/test_run.py
+    measures: "latest PyAutoBuild report.json verdict (ready / counts / stale parked)"
+    consumes: "PyAutoBuild test_results/latest/report.json (Build executor primitive)"
+    gate_role: "YELLOW if workspace validation not passing / stale / unknown (standing debt, advisory)"
+  - id: version_skew
+    impl: heart/checks/version_skew.py
+    measures: "each workspace's pinned version vs the installed library"
+    gate_role: "RED if AHEAD / MISMATCH (general.yaml vs version.txt) / BAD; YELLOW if BEHIND / UNKNOWN"
+  - id: noise
+    impl: heart/noise.py
+    measures: "classify git porcelain into real source drift vs regenerated-artifact noise"
+    gate_role: "supports repo_state (only real drift counts toward gates)"
+
+# Deep checks — slow; on-demand / cloud cron only, never in the tick.
+deep_checks:
+  - id: verify_install
+    impl: heart/checks/verify_install.sh
+    cli: "pyauto-heart verify_install"
+    measures: "pip & conda install-path checks A-E in throwaway envs across Python versions"
+    gate_role: "RED if last run ready==false; YELLOW if stale (>14d) or never run"
+  - id: url_check
+    impl: heart/checks/url_check.sh
+    cli: "pyauto-heart url_check [dir]"
+    measures: "offline forbidden Binder/Colab/owner URL regex guard for one directory"
+    gate_role: "monitoring only — does NOT gate readiness"
+  - id: url_sweep
+    impl: heart/checks/url_sweep.sh
+    cli: "pyauto-heart url_sweep"
+    measures: "url_check across every PyAuto repo -> url_check.json"
+    gate_role: "monitoring only — does NOT gate readiness"
+  - id: url_check_live
+    impl: heart/checks/url_check_live.py
+    measures: "live HTTP HEAD/GET audit of URLs (Colab/Binder reachability)"
+    gate_role: "monitoring only (weekly cloud workflow)"
+
+# GitHub workflows Heart owns (the cloud half of the hybrid CI layer).
+workflows:
+  - file: .github/workflows/lib-tests.yml
+    name: "Library Tests (reusable)"
+    role: "reusable unit-test workflow for the 5 libraries (3.12/3.13); each library calls it"
+  - file: .github/workflows/pulse-health.yml
+    name: "Heart Health"
+    role: "daily cloud-safe ci_status + open_prs sweep; opens/updates a single [heart-health] issue"
+  - file: .github/workflows/url-check.yml
+    name: "URL Check (central)"
+    role: "weekly central URL-hygiene sweep; one consolidated [url-check] issue (monitoring only)"
+  - file: .github/workflows/workspace-validation.yml
+    name: "Workspace Validation"
+    role: >-
+      heavy workspace-integration validation (scripts + notebooks vs current library main);
+      writes the report.json the test_run check + readiness consume. Reuses Build's
+      executor primitives (script_matrix/run_python/aggregate_results) — does not duplicate them.
+
+# Operational surface (reporting / triage) the agent can cite in recommendations.
+operations:
+  status:   "pyauto-heart status [--json] [--quiet]   # full coloured snapshot"
+  fix:      "pyauto-heart fix <ci|dirty|drift|timing> [arg]   # emits a Claude remediation bundle"
+  daemon:   "pyauto-heart watch|live|tick|stop          # the continuous monitor"
+  logs:     "pyauto-heart logs [--tail N] [--follow]"
+
+# Boundary the agent must respect (see pyautobuild_boundary_audit.md).
+boundary:
+  heart: "owns all health/readiness checks and the authoritative readiness verdict"
+  brain: "reasons over Heart's outputs (this Health Agent); owns no checks"
+  build_hands: "pure executor; runs NO readiness checks; acts only on a GREEN/YELLOW/RED decision"
+  call_chain: "Brain -> Heart (gate) -> Hands (execute)"
