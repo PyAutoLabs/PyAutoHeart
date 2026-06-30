@@ -34,8 +34,13 @@ the `Brain → Heart → Hands` call chain, and `README.md` for user-facing docs
 3. **Polling must be cheap**. A full `tick` should complete in <30s
    total. If a check would take longer, run it less often (move to a
    v2 daily cron, not the watch loop).
-4. **No JAX in tests** — library convention. Heart tests run with
-   stdlib + PyYAML only.
+4. **Lightweight test footprint**. Heart's own test suite runs on the
+   standard library plus PyYAML only — no scientific/ML stack (numba,
+   matplotlib, JAX, the PyAuto libraries). This keeps the suite fast and
+   flake-free so it runs anywhere (CI, mobile, sandbox). It is a property of
+   *Heart's* tests, not a claim about the projects Heart watches — Heart may
+   perfectly well monitor non-JAX (or JAX-heavy) repos; that's their concern,
+   not the suite's.
 5. **State writes are atomic**. Use `heart.state.atomic_write_json` or
    the bash equivalent (`heart_write_json` in `_common.sh`). Concurrent
    ticks must not corrupt `state.json`.

@@ -1,0 +1,32 @@
+name: Heart Tests
+
+# Heart's own unit suite — the gate's self-test. This answers "is Heart's
+# measuring logic (readiness.compute, ci_status.rollup, the classifiers …)
+# correct?", which nothing else runs automatically: the health agent runs
+# Heart's checks *against other repos*, never Heart's own tests.
+#
+# Deliberately ONLY pytest. It must not run `pyauto-heart tick`/`readiness` or
+# any health check — those need live repo checkouts + network and are the
+# scheduled health agent's job, not a PR gate. The suite is stdlib + PyYAML
+# only, so it stays fast and flake-free.
+
+on: [push, pull_request]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install (PyYAML core + pytest dev extra)
+        run: pip install -e ".[dev]"
+      - name: Run tests
+        run: pytest tests/ -q
