@@ -346,12 +346,17 @@ def compute(
         elif ready is True:
             commit_shas = vr.get("commit_shas") or {}
             mismatched: list[str] = []
+            unconfirmed: list[str] = []
             confirmed = 0
             for lib in _GATE_SHA_LIBS:
                 want = commit_shas.get(lib)
                 cur = ((repos.get(lib) or {}).get("ci_status") or {}).get("head_sha")
                 if not want or not cur:
-                    continue  # can't confirm this repo (unknown), don't over-penalise
+                    # Can't confirm THIS repo (unknown) — tracked separately so a
+                    # mix of confirmed + unconfirmed libs doesn't silently reach
+                    # GREEN just because zero were an outright mismatch.
+                    unconfirmed.append(lib)
+                    continue
                 if _sha_eq(want, cur):
                     confirmed += 1
                 else:
@@ -369,6 +374,15 @@ def compute(
             elif confirmed == 0:
                 yellow.append("release validation source unconfirmed (current HEADs unknown)")
                 hit("validation_unknown")
+            elif unconfirmed:
+                # Some libs matched, but at least one gated repo's SHA could not
+                # be confirmed either way — an unknown must never be silently
+                # treated as green (same principle every other gate here follows).
+                yellow.append(
+                    "release validation partially unconfirmed (repo(s) with unknown "
+                    "current HEAD: " + ", ".join(unconfirmed) + ")"
+                )
+                hit("validation_unknown")
             elif profile != "release":
                 yellow.append(
                     f"release validation profile '{vr.get('profile') or '?'}' is not 'release'"
@@ -376,8 +390,11 @@ def compute(
                 hit("validation_profile")
             else:
                 age = _age_days(vr.get("ts"), ref)
-                if age is not None and age > VALIDATION_STALE_DAYS:
-                    yellow.append(f"release validation stale ({int(age)}d old)")
+                if age is None or age > VALIDATION_STALE_DAYS:
+                    yellow.append(
+                        "release validation stale "
+                        + ("(age unknown)" if age is None else f"({int(age)}d old)")
+                    )
                     hit("validation_stale")
                 # else: fresh, passing, matching, release profile → GREEN-eligible
         else:

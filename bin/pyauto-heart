@@ -206,12 +206,24 @@ cmd_readiness() {
 help_validate() { cat <<EOF
 pyauto-heart validate --ingest <artifacts...> [--profile P] [--testpypi-version V]
                       [--commit-shas FILE] [--out FILE] [--json]
+pyauto-heart validate --emit-stage-report AGGREGATE_JSON --stage NAME
+                      [--profile P] [--testpypi-version V] [--commit-shas FILE]
+                      [--verify-install FILE] [--run-url URL] [--out FILE] [--json]
 
 Ingest-and-judge ONLY. Consume the release-validation artifacts the Brain
 Release Agent has already collected — the M1 TestPyPI rehearsal artifact
 (rehearsal.json / testpypi_version.txt), a {repo: sha} commit_shas.json, and
 (from M3) the wheel-based integration report.json — and fold them into a single
 \$HEART_STATE_DIR/validation_report.json (plus a validation_history/ archive).
+
+--emit-stage-report is the M3 CI-side helper: it reshapes a Build
+aggregate_results.py report.json (workspace-validation.yml's own artifact) into
+the {"stage": ..., "status": "pass"|"fail", ...} stage-report contract this
+command's --ingest expects, folding in a --verify-install sidecar (a FAIL
+forces the stage to fail) and --run-url. It writes the reshaped report to --out
+and exits — it does NOT ingest or persist validation_report.json itself; that
+still happens later via --ingest, run by the Release Agent once it also has the
+commit_shas it read while orchestrating the build.
 
 This NEVER dispatches a build, talks to GitHub, or mutates any repo. All
 dispatching/polling/downloading is the Brain Release Agent's job; Heart is spec

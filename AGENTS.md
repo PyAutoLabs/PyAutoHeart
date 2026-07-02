@@ -31,6 +31,17 @@ The brain asks `pyauto-heart readiness --json`; only on a **green** verdict does
 it trigger Hands' release work. Heart never triggers Hands; Hands never
 re-derives a gate decision the brain already made.
 
+For the release-**validation** rehearsal specifically (build-and-exercise the
+exact source about to ship, before promoting to PyPI — see
+[`docs/release_validation.md`](docs/release_validation.md)), "Brain" above
+splits into two specialist agents: the **Release Agent** orchestrates
+(dispatches the TestPyPI rehearsal + the wheel-based integration run, polls,
+downloads artifacts, hands them to `pyauto-heart validate --ingest`), and the
+read-only **Health Agent** is then consulted to report the resulting verdict.
+Heart still computes and owns the authoritative verdict either way — the
+Health Agent reasons over Heart's output, it does not re-derive it. Full detail
+(and the manifest the Brain agents actually read): `health_agent/capabilities.yaml`.
+
 ## Where things live
 
 - Continuous checks (cheap, in the <30s `tick`): repo state, CI status, open PRs,

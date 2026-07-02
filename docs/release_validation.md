@@ -5,11 +5,34 @@ owns the *definition* of what a release-grade validation run must do; it does no
 execute the build or the integration run (that is the Brain Release Agent
 dispatching Build's `release.yml` and the evolved `workspace-validation.yml`).
 
-M2 (this milestone) ships the report schema, `pyauto-heart validate --ingest`,
-and the readiness hard gate. The `release` env profile and the wheel-install
-requirement below are **defined here as acceptance criteria for M3** — they are
-not yet wired into `workspace-validation.yml`. Capturing them now keeps them from
-being lost between milestones.
+M2 shipped the report schema, `pyauto-heart validate --ingest`, and the
+readiness hard gate. **M3 wires the acceptance criteria below into
+`workspace-validation.yml` itself** via a `mode: release` input (alongside the
+untouched, default `mode: smoke` per-PR path):
+
+- The `release` env profile lives in each workspace/`*_workspace_test` repo as
+  `config/build/env_vars_release.yaml` — a self-contained sibling of
+  `env_vars.yaml` (the `smoke` profile), passed to Build's `run_python.py`
+  unmodified via its existing `--env-config` flag. No changes were needed in
+  PyAutoBuild's executor primitives to support this — `--env-config` already
+  accepted an arbitrary path.
+- `run_scripts`, when `mode: release`, `pip install`s the Stage-2 TestPyPI
+  wheels at the rehearsed version and puts **no** library source on
+  `PYTHONPATH`, still executing from inside the workspace checkout.
+- `verify_install_release` runs `heart/checks/verify_install.sh --testpypi
+  --version <version>` A–E against the same wheels.
+- `emit_release_report` reshapes Build's `aggregate_results.py` report.json
+  (via the new `heart/validate.py::to_stage_report` / `pyauto-heart validate
+  --emit-stage-report`) into the `{"stage": "integrate", ...}` contract
+  `--ingest` expects, folding in the `verify_install` result and the
+  Release-Agent-supplied `commit_shas`, and uploads it as the
+  `release-stage-report` artifact for the Release Agent to feed into
+  `pyauto-heart validate --ingest`.
+
+`mode: release` is scoped to the `autofit`/`autogalaxy`/`autolens` workspaces
+and their `*_workspace_test` siblings only — the HowTo* tutorial repos have no
+`env_vars_release.yaml` and stay out of the release-fidelity script matrix
+(they are still exercised under `mode: smoke`, unchanged).
 
 ## Why a distinct profile
 
@@ -26,7 +49,7 @@ Both tiers' `config/build/env_vars.yaml` today default to smoke values
 release gate. The two must be **named, distinct profiles** so a release run
 cannot silently inherit smoke fidelity.
 
-## The `release` profile (acceptance criteria, wired in M3)
+## The `release` profile (wired in M3)
 
 The intended release-fidelity env is already documented in
 `PyAutoBuild/.github/workflows/release.yml`:
@@ -63,7 +86,7 @@ workspace ships them** and does not mutate these. Heart's only version signal is
 the existing `version_skew` check. This `release` profile is an env-var profile,
 not a Heart-owned config mutation.
 
-## Wheel-install requirement (acceptance criteria, wired in M3)
+## Wheel-install requirement (wired in M3)
 
 Two verified gaps the M3 integration run MUST close (they are why the report
 carries `profile` and `commit_shas`, so the gate can enforce them):
@@ -93,6 +116,8 @@ The integration run also performs `verify_install` A–E against the same wheels
 - `commit_shas` matching the current `main` HEADs (else YELLOW — stale source),
 - freshness (a rehearsal older than `VALIDATION_STALE_DAYS` is YELLOW).
 
-Until M3 wires the `release` profile into `workspace-validation.yml`, an ingested
-rehearsal-only report will (correctly) gate YELLOW: the source was built and
-TestPyPI-installed, but not yet exercised at release fidelity.
+Before M3 (or if the Release Agent only runs the M1 rehearsal and skips
+dispatching `workspace-validation.yml` in `mode: release`), an ingested
+rehearsal-only report still (correctly) gates YELLOW: the source was built and
+TestPyPI-installed, but not yet exercised at release fidelity. `mode: release`
+is what supplies the `integrate` stage that flips this to GREEN-eligible.

@@ -1,7 +1,8 @@
 """heart/validate.py — ingest release-validation artifacts into one report.
 
-This is the **M2 foundation** of the Brain→Health→Heart release-validation
-redesign. It owns two things and nothing else:
+This is the **M2 foundation** (plus the M3 CI-side bridge) of the
+Brain→Health→Heart release-validation redesign. It owns three things and
+nothing else:
 
 1. The **schema** of ``validation_report.json`` — the tracked artifact that
    answers *"was the exact source about to ship built, published to TestPyPI,
@@ -13,11 +14,21 @@ redesign. It owns two things and nothing else:
    wheel-based integration ``report.json``), assembles the single
    ``validation_report.json``, computes ``release_ready``, persists it in Heart
    state, and archives a history copy.
+3. ``to_stage_report`` / ``pyauto-heart validate --emit-stage-report`` — the M3
+   bridge run **inside** ``workspace-validation.yml`` itself (still Heart's own
+   code, in Heart's own CI, writing only to the job workspace — not a foreign
+   repo, not a build dispatch). It reshapes Build's ``aggregate_results.py``
+   report.json (Build's own vocabulary: ``ready``, ``file``, no ``stage``) into
+   the ``{"stage": ..., "status": "pass"|"fail", ...}`` contract ``--ingest``
+   expects, optionally folding in a ``verify_install`` sidecar. The Release
+   Agent uploads/downloads this artifact and later feeds it to ``--ingest``
+   alongside the ``commit_shas`` it read while orchestrating the build.
 
 **Boundary (non-negotiable, mirrors CLAUDE.md).** This module NEVER dispatches
 a build, never talks to GitHub, never mutates any repo. All dispatching / polling
 / artifact download is the Brain Release Agent's job; Heart is spec + ingest +
-verdict, credential-free. It writes ONLY under ``~/.pyauto-heart/``.
+verdict, credential-free. It writes ONLY under ``~/.pyauto-heart/`` (``--ingest``)
+or an explicit ``--out`` path inside CI's own job workspace (``--emit-stage-report``).
 
 Schema of ``validation_report.json`` (``schema_version`` 1)::
 
@@ -178,6 +189,12 @@ class _Accumulator:
         self.failures: list[dict[str, Any]] = []
         self.run_urls: dict[str, str] = {}
         self._explicit_ready: bool | None = None
+        # True once a real stage artifact (add_stage) has contributed counts.
+        # add_report() consults this so merging an old validation_report.json
+        # as a "base" never double-counts totals/per_project/failures that a
+        # freshly-ingested stage artifact for the same run already supplied —
+        # see add_report()'s docstring.
+        self._stage_counts_seen: bool = False
 
     def _add_counts(self, target: dict[str, int], summary: dict[str, Any]) -> None:
         for k in _COUNT_KEYS:
@@ -212,6 +229,7 @@ class _Accumulator:
             self.commit_shas.setdefault("PyAutoBuild", str(data["build_sha"]))
 
     def add_stage(self, data: dict[str, Any]) -> None:
+        self._stage_counts_seen = True
         name = str(data.get("stage") or "").strip() or "stage"
         entry: dict[str, Any] = {"status": _norm_status(data.get("status"))}
         if data.get("profile"):
@@ -241,7 +259,20 @@ class _Accumulator:
                 self.commit_shas[str(repo)] = str(sha)
 
     def add_report(self, data: dict[str, Any]) -> None:
-        """Merge a previously-emitted full report as a base."""
+        """Merge a previously-emitted full report as a base.
+
+        Only a *seed* for whatever a fresh stage artifact in the same
+        ``--ingest`` call hasn't already supplied: ``totals`` / ``per_project`` /
+        ``failures`` are folded in ONLY when no ``add_stage`` call has
+        contributed counts yet (``ingest`` also guarantees any "report" kind
+        artifact is processed after every "stage"/"rehearsal" one, so this is
+        order-independent). Otherwise counts would double — e.g. pointing
+        ``--ingest`` at a directory containing both a prior
+        ``validation_report.json`` AND the raw ``integrate.json`` that produced
+        it — which would contradict the "idempotent re-ingest" claim below.
+        ``stages`` themselves stay merged unconditionally (deduped by name),
+        as do the scalar fields (version/profile/commit_shas/run_urls).
+        """
         if data.get("testpypi_version") and not self.testpypi_version:
             self.testpypi_version = str(data["testpypi_version"])
         if data.get("profile") and not self.profile:
@@ -250,12 +281,13 @@ class _Accumulator:
         for name, entry in (data.get("stages") or {}).items():
             if isinstance(entry, dict) and name not in self.stages:
                 self.stages[name] = dict(entry)
-        if isinstance(data.get("totals"), dict):
-            self._add_counts(self.totals, data["totals"])
-        self._merge_per_project(data.get("per_project", {}) or {})
-        for f in data.get("failures", []) or []:
-            if isinstance(f, dict):
-                self.failures.append(f)
+        if not self._stage_counts_seen:
+            if isinstance(data.get("totals"), dict):
+                self._add_counts(self.totals, data["totals"])
+            self._merge_per_project(data.get("per_project", {}) or {})
+            for f in data.get("failures", []) or []:
+                if isinstance(f, dict):
+                    self.failures.append(f)
         for k, v in (data.get("run_urls") or {}).items():
             self.run_urls.setdefault(str(k), str(v))
         if isinstance(data.get("release_ready"), bool):
@@ -295,6 +327,13 @@ def ingest(
     if commit_shas:
         acc.add_commit_shas(commit_shas)
 
+    # "report" kind artifacts (a previously-emitted validation_report.json
+    # used as a merge base) are deferred to a second pass, processed strictly
+    # after every "rehearsal"/"stage"/"commit_shas" artifact — regardless of
+    # the sources' original order — so add_report()'s count-dedup against
+    # _stage_counts_seen can never depend on file-naming/glob-sort luck.
+    deferred_reports: list[dict[str, Any]] = []
+
     for path in _iter_source_files(sources):
         if path.suffix == ".txt":
             if "version" in path.name.lower() and not acc.testpypi_version:
@@ -315,8 +354,11 @@ def ingest(
         elif kind == "commit_shas":
             acc.add_commit_shas(data.get("commit_shas") if "commit_shas" in data else data)
         elif kind == "report":
-            acc.add_report(data)
+            deferred_reports.append(data)
         # unknown → ignored
+
+    for data in deferred_reports:
+        acc.add_report(data)
 
     # Explicit overrides take precedence (Release-Agent-supplied truth).
     if testpypi_version:
@@ -337,6 +379,78 @@ def ingest(
         "run_urls": acc.run_urls,
         "ts": _now_iso(now),
     }
+
+
+def to_stage_report(
+    aggregate: dict[str, Any],
+    *,
+    stage: str = "integrate",
+    profile: str | None = None,
+    version: str | None = None,
+    commit_shas: dict[str, str] | None = None,
+    run_url: str | None = None,
+    extra_failures: Sequence[dict[str, Any]] | None = None,
+    force_fail: bool = False,
+) -> dict[str, Any]:
+    """Translate a Build ``aggregate_results.py`` report.json into a stage report.
+
+    This is the M3 bridge: ``workspace-validation.yml`` runs Build's
+    ``aggregate_results.py`` (unmodified — Heart reuses the executor primitive,
+    it does not reimplement it) to get a ``{ready, summary, per_project,
+    failures, ...}`` blob keyed by Build's own vocabulary (``file`` not
+    ``script``, no top-level ``stage``/``profile``). This function reshapes that
+    into the ``{"stage": ..., "status": "pass"|"fail", ...}`` contract
+    ``_Accumulator.add_stage`` (and the spec in the module docstring) expect, so
+    it can be ingested by ``run``/``ingest`` unmodified. Pure — no I/O.
+
+    ``force_fail`` lets the caller fold a result Build's aggregate step knows
+    nothing about (e.g. ``verify_install`` A-E against the same wheels) into the
+    stage's pass/fail axis without inventing a second stage.
+    """
+    summary_raw = aggregate.get("summary")
+    summary_raw = summary_raw if isinstance(summary_raw, dict) else {}
+    summary = {k: int(summary_raw.get(k, 0) or 0) for k in _COUNT_KEYS}
+
+    per_project_raw = aggregate.get("per_project")
+    per_project_raw = per_project_raw if isinstance(per_project_raw, dict) else {}
+    per_project: dict[str, dict[str, int]] = {}
+    for proj, counts in per_project_raw.items():
+        if not isinstance(counts, dict):
+            continue
+        per_project[str(proj)] = {k: int(counts.get(k, 0) or 0) for k in _COUNT_KEYS}
+
+    failures_raw = aggregate.get("failures")
+    failures_raw = failures_raw if isinstance(failures_raw, list) else []
+    failures: list[dict[str, Any]] = []
+    for f in failures_raw:
+        if not isinstance(f, dict):
+            continue
+        entry: dict[str, Any] = {"project": f.get("project"), "script": f.get("file")}
+        if run_url:
+            entry["log_url"] = run_url
+        failures.append(entry)
+    for f in extra_failures or []:
+        if isinstance(f, dict):
+            failures.append(dict(f))
+
+    # Strict boolean check (not truthiness): this is a CI contract, so a
+    # malformed/non-boolean "ready" (e.g. a stray string "false", which is
+    # truthy in Python) must never be read as a pass.
+    status = "pass" if (aggregate.get("ready") is True and not force_fail) else "fail"
+
+    report: dict[str, Any] = {"stage": stage, "status": status}
+    if profile:
+        report["profile"] = profile
+    if version:
+        report["version"] = version
+    if run_url:
+        report["run_url"] = run_url
+    if commit_shas:
+        report["commit_shas"] = dict(commit_shas)
+    report["summary"] = summary
+    report["per_project"] = per_project
+    report["failures"] = failures
+    return report
 
 
 def _archive_name(report: dict[str, Any]) -> str:
@@ -418,6 +532,17 @@ def main(argv: list[str] | None = None) -> int:
         "--ingest", nargs="+", metavar="PATH", default=None,
         help="artifact files/directories to ingest (rehearsal.json, commit_shas.json, stage report.json, ...)",
     )
+    ap.add_argument(
+        "--emit-stage-report", default=None, metavar="AGGREGATE_JSON",
+        help="reshape a Build aggregate_results.py report.json into a stage report "
+        "(writes it to --out and exits; does NOT ingest/persist validation_report.json)",
+    )
+    ap.add_argument("--stage", default="integrate", help="stage name for --emit-stage-report (default: integrate)")
+    ap.add_argument(
+        "--verify-install", default=None, metavar="FILE",
+        help="verify_install.json sidecar; ready==false forces --emit-stage-report to fail",
+    )
+    ap.add_argument("--run-url", default=None, help="CI run URL attached to the stage / its failures")
     ap.add_argument("--profile", default=None, help="override the env profile the integration tier ran under")
     ap.add_argument("--testpypi-version", default=None, help="override the rehearsed TestPyPI version")
     ap.add_argument("--commit-shas", default=None, metavar="FILE", help="JSON file of {repo: sha} HEADs built from")
@@ -430,6 +555,40 @@ def main(argv: list[str] | None = None) -> int:
         data = _read_json(Path(ns.commit_shas))
         if isinstance(data, dict):
             commit_shas = data.get("commit_shas") if "commit_shas" in data else data
+
+    if ns.emit_stage_report is not None:
+        aggregate = _read_json(Path(ns.emit_stage_report)) or {}
+        force_fail = False
+        extra_failures: list[dict[str, Any]] = []
+        if ns.verify_install:
+            vi = _read_json(Path(ns.verify_install))
+            if isinstance(vi, dict) and vi.get("ready") is False:
+                force_fail = True
+                extra_failures.append({
+                    "project": None, "script": "verify_install",
+                    "log_url": ns.run_url, "reason": "verify_install FAILED",
+                })
+        stage_report = to_stage_report(
+            aggregate,
+            stage=ns.stage,
+            profile=ns.profile,
+            version=ns.testpypi_version,
+            commit_shas=commit_shas,
+            run_url=ns.run_url,
+            extra_failures=extra_failures,
+            force_fail=force_fail,
+        )
+        out_path = Path(ns.out) if ns.out else Path("stage_report.json")
+        out_path.write_text(json.dumps(stage_report, indent=2, sort_keys=True))
+        if ns.json:
+            json.dump(stage_report, sys.stdout, indent=2, sort_keys=True)
+            sys.stdout.write("\n")
+        else:
+            print(
+                f"stage report written to {out_path} "
+                f"(stage={stage_report['stage']} status={stage_report['status']})"
+            )
+        return 0 if stage_report["status"] == "pass" else 1
 
     if ns.ingest is None:
         report = load()

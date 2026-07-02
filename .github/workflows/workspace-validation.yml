@@ -1,29 +1,77 @@
 name: Workspace Validation
 
-# Heart-owned workspace-integration validation (Stage 4 Phase B).
+# Heart-owned workspace-integration validation (Stage 4 Phase B). M3 of the
+# Brain->Health->Heart release-validation redesign gives it two modes:
 #
-# This is the "heavy validation CI" that used to live in PyAutoBuild's
-# release.yml (find_scripts / generate_notebooks / run_scripts / run_notebooks /
-# analyze_results). Heart owns it now: Build is a pure executor. It runs every
-# workspace's scripts AND generated notebooks against the CURRENT source `main`
-# of the 5 libraries (source-shadowed via PYTHONPATH), aggregates into the same
-# report.json contract, and uploads it as the `workspace-validation-report`
-# artifact. Heart's test_run check reads that run's
-# conclusion + timestamp into the authoritative `readiness` verdict (with a
-# staleness window).
+#   mode=smoke (default — schedule / bare workflow_dispatch / workflow_call)
+#     Runs every workspace's scripts AND generated notebooks against the
+#     CURRENT source `main` of the 5 libraries (source-shadowed via PYTHONPATH,
+#     under the `smoke` env profile — config/build/env_vars.yaml). Unchanged by
+#     M3 — this remains the continuous readiness signal / weekly sweep, and
+#     `test_run`/`readiness` keep reading its conclusion the same way.
+#
+#   mode=release (Brain Release Agent dispatch only, after an M1 TestPyPI
+#     rehearsal on release.yml)
+#     Re-points the SAME script matrix at the rehearsed TestPyPI wheels:
+#     `pip install` the 5 libraries pinned at `testpypi_version` — NO library
+#     source on PYTHONPATH (closes assessment Gap A: the smoke path shadows the
+#     packages with source checkouts, so it never touches a wheel). Scripts
+#     still run FROM WITHIN each workspace checkout so autoconf resolves the
+#     workspace's own config/ + dataset/, not the wheel's packaged defaults
+#     (closes Gap 4). Uses the `release` env profile — each workspace/
+#     workspace_test repo's config/build/env_vars_release.yaml — which is
+#     PYAUTO_TEST_MODE=1 (reduced, real sampler) + SMALL_DATASETS=1 +
+#     FAST_PLOTS=1 for user workspaces, PYAUTO_TEST_MODE=0 (real searches,
+#     each script's own n_like_max caps) + full-res + real plots for
+#     *_workspace_test (closes Gap B; see PyAutoHeart/docs/release_validation.md
+#     for the full table). Also runs `verify_install` A-E against the same
+#     wheels, and emits a `{"stage": "integrate", ...}` report
+#     `pyauto-heart validate --ingest` understands. Skips notebook execution —
+#     out of scope for M3, scripts are the release-validation surface.
 #
 # Run mechanics (script_matrix.py / run_python.py / aggregate_results.py) are
-# Build's executor primitives — checked out from PyAutoBuild, not duplicated.
+# Build's executor primitives — checked out from PyAutoBuild, not duplicated,
+# in EITHER mode. Heart's own code (heart/checks/verify_install.sh,
+# heart/validate.py) is checked out from THIS repo (default actions/checkout).
 #
-# Triggers: weekly schedule (the continuous readiness signal), manual dispatch,
-# and workflow_call (so a release path can invoke it on demand). Heavy, so never
-# in the <30s heart tick.
+# Triggers: weekly schedule (mode=smoke, the continuous readiness signal),
+# manual dispatch (either mode), and workflow_call (so the Brain Release Agent
+# can invoke mode=release on demand). Heavy, so never in the <30s heart tick.
+#
+# Boundary: this workflow only executes what it's told (mode/version/shas come
+# in as inputs). Dispatching it, polling it, and feeding its artifacts to
+# `pyauto-heart validate --ingest` is the Brain Release Agent's job — Heart
+# itself never dispatches a workflow or talks to GitHub's API.
 
 on:
   schedule:
-    - cron: "0 3 * * 1"   # Mondays 03:00 UTC
+    - cron: "0 3 * * 1"   # Mondays 03:00 UTC (always mode=smoke — no inputs on schedule)
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "smoke (source-shadowed current main) or release (wheel-based release-fidelity)"
+        type: choice
+        options: [smoke, release]
+        default: smoke
+      testpypi_version:
+        description: "Rehearsed TestPyPI version to pip install (required for mode=release; from the M1 rehearsal artifact)"
+        type: string
+        default: ""
+      commit_shas:
+        description: 'JSON {repo: sha} of the library main HEADs the wheels were built from (mode=release)'
+        type: string
+        default: "{}"
   workflow_call:
+    inputs:
+      mode:
+        type: string
+        default: smoke
+      testpypi_version:
+        type: string
+        default: ""
+      commit_shas:
+        type: string
+        default: "{}"
 
 permissions:
   contents: read
@@ -31,7 +79,9 @@ permissions:
 env:
   # Workspace pins lag the libraries' source __version__ between releases;
   # without this every script fails fast with WorkspaceVersionMismatchError.
-  # Same bypass run_scripts uses in release.yml.
+  # Same bypass run_scripts uses in release.yml. mode=release also carries this
+  # in env_vars_release.yaml (the TestPyPI dev version never matches the
+  # workspace pin either) — belt and braces.
   PYAUTO_SKIP_WORKSPACE_VERSION_CHECK: "1"
 
 jobs:
@@ -39,7 +89,18 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.script_matrix.outputs.matrix }}
+      mode: ${{ steps.mode.outputs.mode }}
     steps:
+      # Resolved once here (rather than read from `inputs.mode` directly in
+      # every downstream `if:`) because `inputs` is only meaningfully populated
+      # for workflow_dispatch/workflow_call — routing every mode check through
+      # this job output means the weekly `schedule` trigger can never be
+      # affected by that ambiguity; it always resolves to plain "smoke".
+      - name: Resolve mode
+        id: mode
+        env:
+          MODE_INPUT: ${{ inputs.mode }}
+        run: echo "mode=${MODE_INPUT:-smoke}" >> "$GITHUB_OUTPUT"
       - name: Checkout PyAutoBuild (run primitives)
         uses: actions/checkout@v4
         with:
@@ -59,14 +120,27 @@ jobs:
           done
       - name: Make script matrix
         id: script_matrix
+        env:
+          MODE: ${{ steps.mode.outputs.mode }}
         run: |
-          matrix="$(python3 PyAutoBuild/autobuild/script_matrix.py \
-            autofit autogalaxy autolens autofit_test autogalaxy_test autolens_test \
-            howtogalaxy howtolens howtofit)"
+          # mode=release scopes to workspace + workspace_test only (per the M3
+          # spec) — HowTo* are tutorial repos with no env_vars_release.yaml and
+          # aren't part of the release-fidelity surface. mode=smoke keeps the
+          # full 9-project sweep, unchanged.
+          if [ "$MODE" = "release" ]; then
+            PROJECTS="autofit autogalaxy autolens autofit_test autogalaxy_test autolens_test"
+          else
+            PROJECTS="autofit autogalaxy autolens autofit_test autogalaxy_test autolens_test howtogalaxy howtolens howtofit"
+          fi
+          matrix="$(python3 PyAutoBuild/autobuild/script_matrix.py $PROJECTS)"
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
   generate_notebooks:
     runs-on: ubuntu-latest
+    needs: find_scripts
+    # Notebook generation/execution is smoke-only (out of scope for M3's
+    # wheel-based release-fidelity surface, which is scripts + verify_install).
+    if: needs.find_scripts.outputs.mode != 'release'
     strategy:
       fail-fast: false
       matrix:
@@ -146,7 +220,8 @@ jobs:
           repository: PyAutoLabs/${{ steps.ws.outputs.repo }}
           ref: main
           path: workspace
-      - name: Checkout libraries (current main; source-shadowed via PYTHONPATH)
+      - name: "Checkout libraries (current main; source-shadowed via PYTHONPATH) [mode=smoke]"
+        if: needs.find_scripts.outputs.mode == 'smoke'
         run: |
           set -e
           for lib in PyAutoConf PyAutoArray PyAutoFit PyAutoGalaxy PyAutoLens; do
@@ -157,7 +232,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
-      - name: Install third-party deps (libs run from source)
+      - name: "Install third-party deps (libs run from source) [mode=smoke]"
+        if: needs.find_scripts.outputs.mode == 'smoke'
         run: |
           # Pull the full transitive dependency set (matplotlib/numba/jax/…) by
           # installing the published autolens[optional]; the source checkouts
@@ -169,7 +245,49 @@ jobs:
           # simulator (and its downstream scripts) fails fast. Matches the pin
           # PyAutoArray declares (jax 0.10.x + nufftax 0.4.x is the tested combo).
           pip install "nufftax>=0.4.0,<0.5.0"
-      - name: Run Python scripts
+      - name: "Install TestPyPI wheels — NO source on PYTHONPATH [mode=release]"
+        if: needs.find_scripts.outputs.mode == 'release'
+        env:
+          TESTPYPI_VERSION: ${{ inputs.testpypi_version }}
+        run: |
+          set -e
+          if [ -z "$TESTPYPI_VERSION" ]; then
+            echo "::error::mode=release requires a testpypi_version input (from the M1 rehearsal artifact)"
+            exit 1
+          fi
+          # Same retry pattern release.yml's run_smoke_tests job uses — TestPyPI
+          # uploads can take a few seconds to propagate to the index.
+          install_cnt=0
+          until python3 -m pip install \
+                --index-url https://test.pypi.org/simple/ \
+                --extra-index-url https://pypi.org/simple \
+                "autoconf[optional]==$TESTPYPI_VERSION" \
+                "autoarray[optional]==$TESTPYPI_VERSION" \
+                "autofit[optional]==$TESTPYPI_VERSION" \
+                "autogalaxy[optional]==$TESTPYPI_VERSION" \
+                "autolens[optional]==$TESTPYPI_VERSION"; do
+            install_cnt=$((install_cnt + 1))
+            if [ "$install_cnt" -ge 30 ]; then
+              echo "::error::TestPyPI install failed after 30 attempts"
+              exit 1
+            fi
+            sleep 10
+          done
+          # NOT pinning matplotlib here (unlike release.yml's run_smoke_tests,
+          # which pins matplotlib==3.6.0): PyAutoArray's own pyproject.toml
+          # requires matplotlib>=3.7.0, already satisfied by the wheels just
+          # installed above, and 3.6.0 predates cp312 wheel builds entirely
+          # (confirmed via `pip download matplotlib==3.6.0 --python-version 312
+          # --only-binary=:all:` — no matching distribution) — pinning down to
+          # it would force an unnecessary, needlessly slow source rebuild for
+          # zero benefit on a version this job's own wheels already reject.
+          pip install pynufft==2025.1.1 numba
+          # Belt-and-braces JAX install — the [optional] -> [jax] chain
+          # occasionally silently drops jax from test.pypi resolution.
+          pip install "jax>=0.7,<0.11" "jaxlib>=0.7,<0.11"
+          pip install "nufftax>=0.4.0,<0.5.0"
+      - name: "Run Python scripts [mode=smoke, source-shadowed, smoke profile]"
+        if: needs.find_scripts.outputs.mode == 'smoke'
         run: |
           LIBS="$(pwd)/libs"
           export PYTHONPATH="$LIBS/PyAutoConf:$LIBS/PyAutoArray:$LIBS/PyAutoFit:$LIBS/PyAutoGalaxy:$LIBS/PyAutoLens:$(pwd)/PyAutoBuild:$PYTHONPATH"
@@ -177,6 +295,25 @@ jobs:
           python3 "$(pwd)/../PyAutoBuild/autobuild/run_python.py" \
             "${{ matrix.project.name }}" "scripts/${{ matrix.project.directory }}" \
             --report-dir test-results
+      - name: "Run Python scripts [mode=release, wheels, release profile, no source on PYTHONPATH]"
+        if: needs.find_scripts.outputs.mode == 'release'
+        run: |
+          # Deliberately NOT adding library source dirs to PYTHONPATH (closes
+          # Gap A) — `import autolens` etc. resolve to the pip-installed
+          # wheels. Still executed FROM WITHIN the workspace checkout (pushd)
+          # so autoconf resolves the workspace's own config/ + dataset/, not
+          # the wheel's packaged defaults (closes Gap 4).
+          set -e
+          pushd workspace
+          ENV_CONFIG="config/build/env_vars_release.yaml"
+          if [ ! -f "$ENV_CONFIG" ]; then
+            echo "::error::$ENV_CONFIG missing — no release profile defined for this workspace"
+            exit 1
+          fi
+          python3 "$(pwd)/../PyAutoBuild/autobuild/run_python.py" \
+            "${{ matrix.project.name }}" "scripts/${{ matrix.project.directory }}" \
+            --report-dir test-results \
+            --env-config "$ENV_CONFIG"
       - name: Upload script results
         if: always()
         uses: actions/upload-artifact@v4
@@ -188,6 +325,8 @@ jobs:
   run_notebooks:
     runs-on: ubuntu-latest
     needs: [find_scripts, generate_notebooks]
+    # Notebook execution is smoke-only — see generate_notebooks.
+    if: needs.find_scripts.outputs.mode != 'release'
     strategy:
       fail-fast: false
       matrix:
@@ -299,7 +438,7 @@ jobs:
       - name: Post summary
         if: always()
         run: cat report.md >> "$GITHUB_STEP_SUMMARY" || true
-      - name: Upload report (consumed by pyauto-heart readiness)
+      - name: Upload report (consumed by pyauto-heart readiness / mode=release stage-report step)
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -311,3 +450,98 @@ jobs:
       - name: Fail the run if validation is not ready
         run: |
           python3 -c "import json,sys; sys.exit(0 if json.load(open('report.json')).get('ready') else 1)"
+
+  # ---------------------------------------------------------------------------
+  # mode=release only, from here down. verify_install_release closes item 5
+  # (verify_install A-E against the same wheels); emit_release_report closes
+  # item 4 (the {"stage": "integrate", ...} report `pyauto-heart validate
+  # --ingest` understands). Both are pure CI-side steps run with Heart's own
+  # code, checked out from THIS repo — no dispatch, no other-repo mutation.
+  # ---------------------------------------------------------------------------
+
+  verify_install_release:
+    runs-on: ubuntu-latest
+    needs: find_scripts
+    if: needs.find_scripts.outputs.mode == 'release'
+    steps:
+      - name: Checkout PyAutoHeart
+        uses: actions/checkout@v4
+      - name: Run verify_install A-E against the TestPyPI wheels
+        env:
+          TESTPYPI_VERSION: ${{ inputs.testpypi_version }}
+        run: |
+          set -e
+          if [ -z "$TESTPYPI_VERSION" ]; then
+            echo "::error::mode=release requires a testpypi_version input"
+            exit 1
+          fi
+          bash heart/checks/verify_install.sh --testpypi --version "$TESTPYPI_VERSION" \
+            --report-json verify_install.json
+      - name: Upload verify_install report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-install-release
+          path: verify_install.json
+          retention-days: 90
+
+  emit_release_report:
+    runs-on: ubuntu-latest
+    needs: [analyze, verify_install_release, find_scripts]
+    if: always() && needs.find_scripts.outputs.mode == 'release'
+    steps:
+      - name: Checkout PyAutoHeart
+        uses: actions/checkout@v4
+      - name: Download aggregated script report
+        uses: actions/download-artifact@v4
+        with:
+          name: workspace-validation-report
+          path: aggregate
+      - name: Download verify_install report
+        uses: actions/download-artifact@v4
+        with:
+          name: verify-install-release
+          path: verify
+      - name: Write commit_shas.json from the dispatch input
+        env:
+          COMMIT_SHAS_JSON: ${{ inputs.commit_shas }}
+        run: |
+          printf '%s' "$COMMIT_SHAS_JSON" > commit_shas.json
+          python3 -c "import json; json.load(open('commit_shas.json'))" || {
+            echo "::error::commit_shas input is not valid JSON (got: $COMMIT_SHAS_JSON)"; exit 1; }
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Emit the integrate stage report
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          TESTPYPI_VERSION: ${{ inputs.testpypi_version }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 -m heart.validate \
+            --emit-stage-report aggregate/report.json \
+            --stage integrate \
+            --profile release \
+            --testpypi-version "$TESTPYPI_VERSION" \
+            --commit-shas commit_shas.json \
+            --verify-install verify/verify_install.json \
+            --run-url "$RUN_URL" \
+            --out stage_report.json
+      - name: Post summary
+        if: always()
+        run: |
+          if [ -f stage_report.json ]; then
+            {
+              echo '```json'
+              cat stage_report.json
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload stage report (consumed by `pyauto-heart validate --ingest`)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-stage-report
+          path: stage_report.json
+          retention-days: 90

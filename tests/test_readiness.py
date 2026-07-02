@@ -256,6 +256,31 @@ def test_validation_no_commit_shas_is_yellow():
     assert any("source unconfirmed" in r for r in v["yellow_reasons"])
 
 
+def test_validation_missing_ts_is_yellow_not_silently_green():
+    # Copilot review finding on PyAutoHeart#24: a missing/unparseable `ts`
+    # made _age_days() return None, which the old `age is not None and ...`
+    # check treated as "not stale" -> fell through to GREEN-eligible. Mirrors
+    # the install_verification block's existing "age is None or age > ..." handling.
+    report = _green_validation_report()
+    del report["ts"]
+    v = compute(make_snapshot(validation_report=report))
+    assert v["verdict"] == "yellow"
+    assert any("release validation stale" in r and "unknown" in r for r in v["yellow_reasons"])
+
+
+def test_validation_partial_sha_confirmation_is_yellow_not_green():
+    # Copilot review finding on PyAutoHeart#24: if some gated libraries match
+    # and none explicitly mismatch, but at least one gated repo's current HEAD
+    # is unknown (missing from the snapshot), the old logic still reached the
+    # GREEN-eligible branch. An unknown must never be silently treated as green.
+    report = _green_validation_report()
+    snap = make_snapshot(validation_report=report)
+    del snap["repos"]["PyAutoLens"]["ci_status"]["head_sha"]
+    v = compute(snap)
+    assert v["verdict"] == "yellow"
+    assert any("partially unconfirmed" in r and "PyAutoLens" in r for r in v["yellow_reasons"])
+
+
 def test_validation_ready_unknown_is_yellow():
     report = _green_validation_report()
     report["release_ready"] = None
@@ -437,6 +462,7 @@ def test_library_group_not_double_gated_by_workspace_loop():
     # by the workspace loop (it is gated by the library loop only).
     snap = make_snapshot()
     snap["repos"]["PyAutoLens"]["ci_status"] = {"group": "libraries", "conclusion": "success",
+                                                "head_sha": SHAS["PyAutoLens"],
                                                 "workflows": {"Tests": {"conclusion": "success",
                                                               "status": "completed", "on_head": True}}}
     v = _compute_ws(snap)
