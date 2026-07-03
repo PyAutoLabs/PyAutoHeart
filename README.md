@@ -6,6 +6,22 @@
 <!-- between the heart:begin/heart:end markers is replaced with the rendered board). -->
 <!-- Live board: https://pyautolabs.github.io/PyAutoHeart/ -->
 <!-- heart:begin -->
+## 🟡 PyAuto health — **YELLOW** (score 50)
+
+_snapshot `2026-07-03T09:24:18.200866+00:00` · just now_
+
+**Warnings:** test run status unknown (no report.json); install verification not run; no release validation for current source; PyAutoGalaxy: open PR 24d old; PyAutoLens: open PR 24d old; autolens_workspace_test: open PR 24d old
+
+| | Check | Status |
+|--|--|--|
+| 🟡 | Libraries | 5 repos, 5 need attention |
+| 🟡 | Workspaces | 9 repos, 1 need attention |
+| ⚪ | Worktree drift | not observed here (dev-box only) |
+| ⚪ | Script timing | not observed here (dev-box only) |
+| ⚪ | Test run | not observed here (dev-box only) |
+| ⚪ | Version skew | not observed here (dev-box only) |
+
+[Full board](https://pyautolabs.github.io/PyAutoHeart/)
 <!-- heart:end -->
 
 The **health and vital-signs layer** of the PyAuto organism: a
