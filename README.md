@@ -8,9 +8,9 @@
 <!-- heart:begin -->
 ## 🟡 PyAuto health — **YELLOW** (score 50)
 
-_snapshot `2026-07-03T09:24:18.200866+00:00` · just now_
+_snapshot `2026-07-04T08:42:21.850582+00:00` · just now_
 
-**Warnings:** test run status unknown (no report.json); install verification not run; no release validation for current source; PyAutoGalaxy: open PR 24d old; PyAutoLens: open PR 24d old; autolens_workspace_test: open PR 24d old
+**Warnings:** test run status unknown (no report.json); install verification not run; no release validation for current source; PyAutoGalaxy: open PR 25d old; PyAutoLens: open PR 25d old; autolens_workspace_test: open PR 25d old
 
 | | Check | Status |
 |--|--|--|
