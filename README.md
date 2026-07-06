@@ -2,7 +2,7 @@
 
 [![health](https://img.shields.io/endpoint?url=https://pyautolabs.github.io/PyAutoHeart/badge.json)](https://pyautolabs.github.io/PyAutoHeart/)
 
-<!-- The block below is auto-updated by .github/workflows/pulse-health.yml (everything -->
+<!-- The block below is auto-updated by .github/workflows/heart-health.yml (everything -->
 <!-- between the heart:begin/heart:end markers is replaced with the rendered board). -->
 <!-- Live board: https://pyautolabs.github.io/PyAutoHeart/ -->
 <!-- heart:begin -->
@@ -65,12 +65,12 @@ All output is colour-coded:
 
 `NO_COLOR=1` or `--no-color` strips colours for pipes / CI / redirection.
 
-## Compatibility during the rename
+## Naming
 
 `pyauto-heart` and the `heart` Python package are the canonical names. The
-former `pyauto-pulse` command, `pulse` Python package, and `PULSE_*`
-environment variables remain as compatibility aliases for existing automation.
-They route to the Heart implementation and can be migrated gradually.
+legacy `pyauto-pulse` command, `pulse` Python package, and `PULSE_*`
+environment variables (compatibility aliases kept during the PyAutoPulse ->
+PyAutoHeart rename) have been removed now that every consumer is migrated.
 
 ## Quick start
 
@@ -175,7 +175,7 @@ renderer, so there is exactly one definition of what the board looks like.
 1. **GitHub web** — [`https://pyautolabs.github.io/PyAutoHeart/`](https://pyautolabs.github.io/PyAutoHeart/)
    (the `fmt="html"` board), the `$GITHUB_STEP_SUMMARY` (`fmt="md"`), and the
    README verdict badge + auto-updated block above — all published by
-   `pulse-health.yml`. The badge is the entry point.
+   `heart-health.yml`. The badge is the entry point.
 2. **CLI / venv** — `pyauto-heart dashboard` plus a sourceable one-line hook
    (`heart/shell/heart_prompt.sh`) that prints the `fmt="oneline"` vital sign on
    shell/venv activation. It reads cache only (<100 ms, never blocks the
@@ -210,7 +210,7 @@ stays within PyAutoHeart's own repo/state (the observer boundary).
 
 Heart runs in two places so it doesn't need a babysat terminal:
 
-- **Cloud** — `.github/workflows/pulse-health.yml` runs the cloud-safe checks
+- **Cloud** — `.github/workflows/heart-health.yml` runs the cloud-safe checks
   (CI status + open PRs, pure `gh` API) on a daily schedule and opens-or-updates
   a single `[heart-health]` tracking issue when anything is red/degraded,
   closing it when clean. No agent, no Slack, no secret beyond `GITHUB_TOKEN`.
@@ -280,7 +280,7 @@ config/
   repos.yaml                     # polled repos + thresholds + noise globs
 
 .github/workflows/
-  pulse-health.yml               # stable filename; displayed as Heart Health
+  heart-health.yml               # cloud dashboard + alerting; shows as Heart Health
 
 tests/                           # pytest, runs in <3s
 ```

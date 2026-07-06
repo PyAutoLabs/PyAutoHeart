@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-# Compatibility wrapper for the former PyAutoPulse CLI.
-_self="$(readlink -f "${BASH_SOURCE[0]}")"
-_bin="$(cd "$(dirname "$_self")" && pwd)"
-exec "$_bin/pyauto-heart" "$@"

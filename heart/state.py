@@ -17,16 +17,10 @@ from typing import Any
 
 HEART_STATE_DIR = Path(
     os.environ.get("HEART_STATE_DIR")
-    or os.environ.get("PULSE_STATE_DIR")
     or str(Path.home() / ".pyauto-heart")
 )
 HEART_PER_REPO_DIR = HEART_STATE_DIR / "per-repo"
 HEART_STATE_FILE = HEART_STATE_DIR / "state.json"
-
-# Backwards-compatible names for existing imports/tests.
-PULSE_STATE_DIR = HEART_STATE_DIR
-PULSE_PER_REPO_DIR = HEART_PER_REPO_DIR
-PULSE_STATE_FILE = HEART_STATE_FILE
 
 
 def _ensure_dirs() -> None:

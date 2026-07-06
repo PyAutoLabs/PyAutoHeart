@@ -34,7 +34,6 @@ import yaml
 
 HEART_STATE_DIR = Path(
     os.environ.get("HEART_STATE_DIR")
-    or os.environ.get("PULSE_STATE_DIR")
     or Path.home() / ".pyauto-heart"
 )
 HEART_TIMINGS_DIR = HEART_STATE_DIR / "timings"

@@ -17,10 +17,10 @@
 # are stripped. This keeps redirection to files / pipes clean.
 
 _heart_colors_enabled() {
-  if [[ -n "${HEART_FORCE_COLOR:-${PULSE_FORCE_COLOR:-}}" ]]; then
+  if [[ -n "${HEART_FORCE_COLOR:-}" ]]; then
     return 0
   fi
-  if [[ -n "${NO_COLOR:-}" || -n "${HEART_NO_COLOR:-${PULSE_NO_COLOR:-}}" ]]; then
+  if [[ -n "${NO_COLOR:-}" || -n "${HEART_NO_COLOR:-}" ]]; then
     return 1
   fi
   if [[ ! -t 1 ]]; then

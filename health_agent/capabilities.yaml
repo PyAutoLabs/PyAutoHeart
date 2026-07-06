@@ -15,8 +15,7 @@ provider:
     health/readiness checking. Observer-only: reads repos and emits verdicts,
     never writes into other repos, never triggers PyAutoBuild/Hands.
   canonical_cli: pyauto-heart
-  compat_cli: pyauto-pulse          # legacy alias, routes to the same impl
-  python_package: heart             # `import heart`; `pulse` is a compat shim
+  python_package: heart             # `import heart`
 
 # The single call the Health Agent should make to get the authoritative verdict.
 # Everything else is detail the agent may pull for explanation/recommendations.
@@ -147,7 +146,7 @@ dashboard:
     surfaces:
       web:
         pages: "https://pyautolabs.github.io/PyAutoHeart/"   # self-contained fmt=html board
-        step_summary: "fmt=md written to $GITHUB_STEP_SUMMARY by pulse-health.yml"
+        step_summary: "fmt=md written to $GITHUB_STEP_SUMMARY by heart-health.yml"
         readme: "verdict badge + auto-updated <!-- heart:begin -->…<!-- heart:end --> block"
       cli_venv:
         command: "pyauto-heart dashboard"
@@ -155,7 +154,7 @@ dashboard:
       mobile:
         via: "pyauto-brain health — the Health Agent renders the fmt=json/md card"
     cloud_only_honest: >-
-      the cloud job (pulse-health.yml) renders with --cloud, marking the
+      the cloud job (heart-health.yml) renders with --cloud, marking the
       local-only checks (repo_state, worktree_drift, script_timing, test_run,
       version_skew) as "not observed here" instead of silently green. A dev box
       can enrich the SAME page by rendering without --cloud from its full snapshot.
@@ -170,7 +169,7 @@ workflows:
   - file: .github/workflows/lib-tests.yml
     name: "Library Tests (reusable)"
     role: "reusable unit-test workflow for the 5 libraries (3.12/3.13); each library calls it"
-  - file: .github/workflows/pulse-health.yml
+  - file: .github/workflows/heart-health.yml
     name: "Heart Health"
     role: >-
       daily cloud-safe ci_status + open_prs sweep. Publishes the unified health

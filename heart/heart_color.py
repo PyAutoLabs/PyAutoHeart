@@ -1,7 +1,7 @@
 """heart/heart_color.py — ANSI color helpers (Python side).
 
 Mirrors the bash `heart/_color.sh` helpers. Honours NO_COLOR,
-HEART_NO_COLOR, HEART_FORCE_COLOR env vars (plus legacy PULSE_* aliases), and detects whether stdout
+HEART_NO_COLOR, HEART_FORCE_COLOR env vars, and detects whether stdout
 is a tty. Same colour convention as the plan:
   green  → passing / clean / nominal
   yellow → warning / stale / mild drift
@@ -17,9 +17,9 @@ import sys
 
 
 def colors_enabled() -> bool:
-    if os.environ.get("HEART_FORCE_COLOR") or os.environ.get("PULSE_FORCE_COLOR"):
+    if os.environ.get("HEART_FORCE_COLOR"):
         return True
-    if os.environ.get("NO_COLOR") or os.environ.get("HEART_NO_COLOR") or os.environ.get("PULSE_NO_COLOR"):
+    if os.environ.get("NO_COLOR") or os.environ.get("HEART_NO_COLOR"):
         return False
     return sys.stdout.isatty()
 
