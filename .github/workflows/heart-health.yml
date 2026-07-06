@@ -27,8 +27,9 @@ name: Heart Health
 # beyond the auto-provisioned GITHUB_TOKEN.
 
 on:
-  schedule:
-    - cron: "0 6 * * *"   # daily 06:00 UTC
+  # --- PAUSED 2026-07-06: routine cron disabled org-wide; re-enable by uncommenting ---
+  # schedule:
+  #   - cron: "0 6 * * *"   # daily 06:00 UTC
   workflow_dispatch:
 
 # contents: write  → commit the README badge/block into Heart's OWN README
