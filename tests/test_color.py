@@ -15,8 +15,8 @@ from heart import heart_color as pc
 
 @pytest.fixture(autouse=True)
 def _isolate_env(monkeypatch):
-    """Each test starts with no HEART_* / PULSE_* / NO_COLOR env vars."""
-    for v in ("NO_COLOR", "HEART_NO_COLOR", "HEART_FORCE_COLOR", "PULSE_NO_COLOR", "PULSE_FORCE_COLOR"):
+    """Each test starts with no HEART_* / NO_COLOR env vars."""
+    for v in ("NO_COLOR", "HEART_NO_COLOR", "HEART_FORCE_COLOR"):
         monkeypatch.delenv(v, raising=False)
     yield
 
@@ -42,11 +42,6 @@ def test_no_color_strips_codes(monkeypatch):
 
 def test_heart_no_color_alias(monkeypatch):
     monkeypatch.setenv("HEART_NO_COLOR", "1")
-    assert pc.c_red("x") == "x"
-
-
-def test_pulse_no_color_alias(monkeypatch):
-    monkeypatch.setenv("PULSE_NO_COLOR", "1")
     assert pc.c_red("x") == "x"
 
 

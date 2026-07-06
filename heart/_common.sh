@@ -30,7 +30,7 @@ export HEART_HOME
 PYAUTO_ROOT="${PYAUTO_ROOT:-$HOME/Code/PyAutoLabs}"
 export PYAUTO_ROOT
 
-HEART_STATE_DIR="${HEART_STATE_DIR:-${PULSE_STATE_DIR:-$HOME/.pyauto-heart}}"
+HEART_STATE_DIR="${HEART_STATE_DIR:-$HOME/.pyauto-heart}"
 HEART_PER_REPO_DIR="$HEART_STATE_DIR/per-repo"
 HEART_TIMINGS_DIR="$HEART_STATE_DIR/timings"
 HEART_LOG_DIR="$HEART_STATE_DIR/logs"
@@ -39,18 +39,6 @@ HEART_STATE_FILE="$HEART_STATE_DIR/state.json"
 HEART_TICK_LOG="$HEART_LOG_DIR/heart.log"
 export HEART_STATE_DIR HEART_PER_REPO_DIR HEART_TIMINGS_DIR HEART_LOG_DIR
 export HEART_PID_FILE HEART_STATE_FILE HEART_TICK_LOG
-
-# Backwards-compatible environment names for existing automation.
-PULSE_HOME="$HEART_HOME"
-PULSE_STATE_DIR="$HEART_STATE_DIR"
-PULSE_PER_REPO_DIR="$HEART_PER_REPO_DIR"
-PULSE_TIMINGS_DIR="$HEART_TIMINGS_DIR"
-PULSE_LOG_DIR="$HEART_LOG_DIR"
-PULSE_PID_FILE="$HEART_PID_FILE"
-PULSE_STATE_FILE="$HEART_STATE_FILE"
-PULSE_TICK_LOG="$HEART_TICK_LOG"
-export PULSE_HOME PULSE_STATE_DIR PULSE_PER_REPO_DIR PULSE_TIMINGS_DIR
-export PULSE_LOG_DIR PULSE_PID_FILE PULSE_STATE_FILE PULSE_TICK_LOG
 
 source "$HEART_HOME/heart/_color.sh"
 
@@ -143,11 +131,3 @@ heart_write_json() {
   printf '%s\n' "$content" > "$tmp"
   mv "$tmp" "$target"
 }
-
-# Backwards-compatible function names for old sourced scripts.
-pulse_state_dir() { heart_state_dir "$@"; }
-pulse_is_tty() { heart_is_tty "$@"; }
-pulse_clear_screen() { heart_clear_screen "$@"; }
-pulse_log() { heart_log "$@"; }
-pulse_with_lock() { heart_with_lock "$@"; }
-pulse_write_json() { heart_write_json "$@"; }

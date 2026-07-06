@@ -35,7 +35,6 @@ PYAUTO_ROOT = _p3 if _p3.name == "PyAutoLabs" else Path.home() / "Code" / "PyAut
 TEST_RESULTS_LATEST = PYAUTO_ROOT / "PyAutoBuild" / "test_results" / "latest"
 HEART_STATE_DIR = Path(
     os.environ.get("HEART_STATE_DIR")
-    or os.environ.get("PULSE_STATE_DIR")
     or Path.home() / ".pyauto-heart"
 )
 

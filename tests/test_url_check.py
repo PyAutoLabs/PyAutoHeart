@@ -3,7 +3,7 @@
 import subprocess
 from pathlib import Path
 
-SCRIPT = Path(__file__).resolve().parent.parent / "pulse" / "checks" / "url_check.sh"
+SCRIPT = Path(__file__).resolve().parent.parent / "heart" / "checks" / "url_check.sh"
 
 
 def run(directory):

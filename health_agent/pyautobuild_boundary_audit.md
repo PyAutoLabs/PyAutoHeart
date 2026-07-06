@@ -19,7 +19,7 @@ url_check`.
 | Finding | Location | Assessment |
 |---|---|---|
 | `verify_workspace_versions.sh` | — | **Removed.** No longer present; its job is Heart's `version_skew` check. ✓ |
-| readiness mentioned in comments | `release.yml`, `pre_build.sh` | Docs only — both explicitly state readiness is enforced upstream via `pyauto-pulse readiness`. ✓ |
+| readiness mentioned in comments | `release.yml`, `pre_build.sh` | Docs only — both explicitly state readiness is enforced upstream via `pyauto-heart readiness`. ✓ |
 | no `url_check.yml` workflow | `.github/workflows/` | URL hygiene fully owned by Heart's central `url-check.yml`. ✓ |
 | no `readiness.py` / `version_skew.py` / `*health*` | repo-wide | No check modules drifted. ✓ |
 

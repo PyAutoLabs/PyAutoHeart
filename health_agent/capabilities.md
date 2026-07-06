@@ -21,8 +21,6 @@ Audited at commit `a2543d0` (Rename PyAutoPulse to PyAutoHeart).
 | `verify_install` | deep pip/conda install-path check (slow) | deep readiness signal |
 | `url_check` / `url_sweep` | offline URL-hygiene guard / ecosystem sweep | monitoring only |
 
-`pyauto-pulse` is a compatibility wrapper for the former name; it routes here.
-
 ## Checks
 
 **Continuous** (cheap, every `<30s` tick — `heart/tick.sh`):
@@ -77,7 +75,7 @@ only — the colour is the gate. Persisted to `~/.pyauto-heart/release_ready.jso
 
 - **lib-tests.yml** — reusable unit-test workflow for the 5 libraries (3.12/3.13);
   each library's `main.yml` is a thin caller. Heart owns the test definition.
-- **pulse-health.yml** ("Heart Health") — daily cloud-safe `ci_status` +
+- **heart-health.yml** ("Heart Health") — daily cloud-safe `ci_status` +
   `open_prs` sweep; opens/updates one `[heart-health]` issue, closes when clean.
 - **url-check.yml** ("URL Check (central)") — weekly ecosystem URL sweep into one
   `[url-check]` issue. Monitoring only.
