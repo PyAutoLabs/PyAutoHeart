@@ -1,4 +1,9 @@
-# PyAuto Status Full: Latest Release-Prep Run Dashboard
+# Release-Run Dashboard — the `/health full` leg
+
+> Reference procedure, not a top-level command. This was `/pyauto-status-full`;
+> it is now reached as **`/health full`** (see
+> `PyAutoBrain/skills/health/health.md`). `/health` is the single health door;
+> this file is the release-run dashboard leg it drives.
 
 Render the most recent PyAutoBuild full-run report as a release-readiness dashboard. Use this to inspect timing and failures from the last `python autobuild/run_all.py`. Read-only.
 
@@ -9,13 +14,13 @@ Heart reports). The authoritative live verdict is `pyauto-heart readiness`.
 ## Usage
 
 ```
-/pyauto-status-full
+/health full
 ```
 
-This skill is the deeper sibling of `/health status` (the active-work dashboard):
+This is the deeper sibling of `/health status` (the active-work dashboard):
 
 - `/health status` — what's in flight right now (planned/active/recently-completed tasks, branches, dirty repos).
-- `/pyauto-status-full` — what the last full release-prep run produced (per-workspace pass/fail/timing, slowest scripts, failure tracebacks).
+- `/health full` — what the last full release-prep run produced (per-workspace pass/fail/timing, slowest scripts, failure tracebacks).
 
 ## Steps
 
