@@ -76,7 +76,7 @@ ask the user. Comment template: [`reference.md`](reference.md) → "Issue commen
 ### 6. Persist summary to the status cache
 
 Write a per-workspace JSON summary to `~/.cache/pyauto/smoke/<workspace>.json`
-so `/pyauto-status` can show the latest smoke state. Shape + field rules:
+so `/health status` can show the latest smoke state. Shape + field rules:
 [`reference.md`](reference.md) → "Status cache". Idempotent; safe to skip if the
 cache dir can't be created.
 

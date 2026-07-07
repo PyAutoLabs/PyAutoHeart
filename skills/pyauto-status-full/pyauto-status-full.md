@@ -12,9 +12,9 @@ Heart reports). The authoritative live verdict is `pyauto-heart readiness`.
 /pyauto-status-full
 ```
 
-This skill is the deeper sibling of `/pyauto-status`:
+This skill is the deeper sibling of `/health status` (the active-work dashboard):
 
-- `/pyauto-status` — what's in flight right now (planned/active/recently-completed tasks, branches, dirty repos).
+- `/health status` — what's in flight right now (planned/active/recently-completed tasks, branches, dirty repos).
 - `/pyauto-status-full` — what the last full release-prep run produced (per-workspace pass/fail/timing, slowest scripts, failure tracebacks).
 
 ## Steps
@@ -104,7 +104,7 @@ If only one run exists, omit this section silently.
 ### 5. Notes
 
 - Read-only — never modifies PyAutoBuild output, never deletes runs, never touches the `latest` symlink.
-- No GitHub posting (matches `/pyauto-status` convention). The user can decide to share findings manually.
+- No GitHub posting (matches `/health status` convention). The user can decide to share findings manually.
 - For quick browsing, the markdown report at `<run_path>/report.md` already contains the same data — this skill is the conversational summary layer on top.
 
 ## Execution environments
