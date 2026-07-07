@@ -9,7 +9,7 @@
 Quick "is everything still green?" sweep across the PyAuto stack. Refreshes local `main` against `origin/main` for every repo, then runs unit tests in libraries and smoke tests in workspaces. Reports a single pass/fail matrix.
 
 **Distinct from:**
-- `repo_cleanup` — heavy hygiene sweep (branches, stashes, worktrees). This sweep only reads state and runs tests.
+- `repo_cleanup` — heavy hygiene sweep (branches, stashes, worktrees). This sweep is read-mostly: its only mutation is `git fetch` + `merge --ff-only` on clean repos (step 2).
 - `smoke_test` — covers workspaces only, no library pytest, no main sync. This sweep calls into it.
 - `verify_install` — fresh-user PyAutoLens install check. This sweep assumes the existing dev environment.
 
@@ -23,18 +23,16 @@ Quick "is everything still green?" sweep across the PyAuto stack. Refreshes loca
 - PyAutoLens
 - PyAutoBuild
 
-**Workspaces (run `/smoke_test`):**
-- autofit_workspace
-- autogalaxy_workspace
-- autolens_workspace
-- autofit_workspace_test
-- autogalaxy_workspace_test
-- autolens_workspace_test
+**Workspaces (run `/smoke_test`):** exactly the curated set `/smoke_test` maps —
+do not maintain a separate list here. As of writing that is `autofit_workspace`,
+`autogalaxy_workspace`, `autolens_workspace`, `autolens_workspace_test`,
+`euclid_strong_lens_modeling_pipeline`, and `HowToLens`. `/smoke_test` is the
+source of truth for this scope; defer to it rather than re-specifying it.
 
 **Out of scope — never touched:**
 - `autofit_workspace_developer`, `autolens_workspace_developer` — dev scratch
 - `autolens_base_project` — template
-- Anything not listed above (e.g. `z_projects`, `bad`, `priors`, `euclid_strong_lens_modeling_pipeline`)
+- Any workspace `/smoke_test` does not map (e.g. `z_projects`, `bad`, `priors`)
 
 Skip any in-scope entry that is missing or not a git repo.
 
@@ -85,9 +83,7 @@ If a library has no `test/` or `tests/` directory, mark as `no tests` and contin
 
 ### 4. Run workspace smoke tests
 
-Invoke the existing `/smoke_test` skill against the in-scope workspaces. Defer to its env-var / no_run / parallelism logic — do not reimplement. Capture its per-workspace pass/fail counts.
-
-The `_test` variants (`autofit_workspace_test`, `autogalaxy_workspace_test`, `autolens_workspace_test`) have no `pytest` suite — smoke only. The `/smoke_test` skill already handles `autolens_workspace_test`; for the others, point it at their `smoke_tests.txt` if present, otherwise mark as `no smoke tests` and continue.
+Invoke the existing `/smoke_test` skill (its default runs its full curated set). Defer to its env-var / no_run / parallelism logic and its workspace mapping — do not reimplement or extend the workspace list here. Capture its per-workspace pass/fail counts.
 
 ### 5. Report matrix
 
@@ -105,9 +101,9 @@ PyAutoBuild                | main   | synced           | no tests
 autofit_workspace          | main   | synced           | ✓ smoke (8/8)
 autogalaxy_workspace       | main   | synced           | ✓ smoke (8/8)
 autolens_workspace         | main   | synced           | ✗ smoke (1 failed)
-autofit_workspace_test     | main   | synced           | no smoke tests
-autogalaxy_workspace_test  | main   | synced           | ✓ smoke (5/5)
 autolens_workspace_test    | main   | synced           | ✓ smoke (7/7)
+euclid_strong_lens_...     | main   | synced           | ✓ smoke (3/3)
+HowToLens                  | main   | synced           | ✓ smoke (4/4)
 ```
 
 Below the matrix, list each failure with its first failing test name and a short traceback tail (≤ 30 lines). For dirty-skipped repos, add a one-line reminder so the user knows local main is behind origin.
