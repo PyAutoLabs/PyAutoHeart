@@ -65,13 +65,6 @@ All output is colour-coded:
 
 `NO_COLOR=1` or `--no-color` strips colours for pipes / CI / redirection.
 
-## Naming
-
-`pyauto-heart` and the `heart` Python package are the canonical names. The
-legacy `pyauto-pulse` command, `pulse` Python package, and `PULSE_*`
-environment variables (compatibility aliases kept during the PyAutoPulse ->
-PyAutoHeart rename) have been removed now that every consumer is migrated.
-
 ## Quick start
 
 PyAutoHeart is **not** pip-installed. Like the other PyAuto repos it runs

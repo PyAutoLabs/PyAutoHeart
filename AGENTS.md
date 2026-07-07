@@ -17,7 +17,7 @@ release?" gate.
   generation, and PyPI publication via `release.yml`. Hands runs **no**
   readiness checks of its own and never re-derives a gate decision; it just
   executes.
-- **PyAutoBrain / PyAutoAgent — the brain.** Hosts the agents that connect the
+- **PyAutoBrain — the brain.** Hosts the agents that connect the
   two. It owns no checks and no release steps; it gates on Heart and delegates
   execution to Hands.
 
