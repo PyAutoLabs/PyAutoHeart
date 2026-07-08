@@ -24,7 +24,7 @@ nothing else:
    Agent uploads/downloads this artifact and later feeds it to ``--ingest``
    alongside the ``commit_shas`` it read while orchestrating the build.
 
-**Boundary (non-negotiable, mirrors CLAUDE.md).** This module NEVER dispatches
+**Boundary (non-negotiable, mirrors AGENTS.md).** This module NEVER dispatches
 a build, never talks to GitHub, never mutates any repo. All dispatching / polling
 / artifact download is the Brain Release Agent's job; Heart is spec + ingest +
 verdict, credential-free. It writes ONLY under ``~/.pyauto-heart/`` (``--ingest``)

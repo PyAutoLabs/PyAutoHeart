@@ -5,7 +5,7 @@
 # treats Heart as an abstract health provider: when Heart gains or renames a
 # check, update this manifest and the agent adapts without code changes.
 #
-# Maintained alongside the checks. If you add a check (see CLAUDE.md "Adding a
+# Maintained alongside the checks. If you add a check (see docs/internals.md "Adding a
 # new check"), add an entry here too.
 
 provider:
