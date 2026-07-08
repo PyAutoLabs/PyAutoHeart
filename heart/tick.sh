@@ -27,6 +27,13 @@ else
   heart_log INFO "$(c_meta 'script_timing: skipped (no PyAutoBuild/test_results/latest)')"
 fi
 
+# Python: profiling pinned-value drift. Reads autolens_profiling result JSONs.
+if [ -d "$PYAUTO_ROOT/autolens_profiling/results" ] 2>/dev/null || [ -d "$HEART_HOME/../autolens_profiling/results" ]; then
+  PYTHONPATH="$HEART_HOME" python3 -m heart.checks.profiling_drift || heart_log WARN "$(c_warn 'profiling_drift failed')"
+else
+  heart_log INFO "$(c_meta 'profiling_drift: skipped (no autolens_profiling/results)')"
+fi
+
 # Python: workspace-validation verdict. Runs ALWAYS — it is server-first (reads
 # the cloud run conclusion via MCP-supplied file or `gh`), so it must run even
 # when there is no local report.json (the mobile case the old guard broke).

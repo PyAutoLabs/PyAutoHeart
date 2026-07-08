@@ -82,6 +82,7 @@ _WEIGHTS: dict[str, tuple[int, int]] = {
     "test_unknown": (10, 10),
     "timing_red": (15, 15),
     "timing_yellow": (8, 8),
+    "profiling_drift": (10, 30),
     "open_pr": (5, 15),
     "parked": (5, 15),
     "skew_behind": (8, 24),
@@ -423,6 +424,27 @@ def compute(
     elif _as_int(timing.get("yellow_count", 0)) > 0:
         yellow.append(f"{_as_int(timing.get('yellow_count'))} slow script(s)")
         hit("timing_yellow")
+
+    # --- profiling pinned-value drift (YELLOW) ---
+    # autolens_profiling result JSONs record drift against pinned
+    # likelihood/evidence baselines instead of crashing (profiling records
+    # and flags; adjudication is autolens_workspace_test's remit). Any
+    # drifted result means the profiling baselines are non-comparable
+    # until resolved — library regression or stale pin, either way a
+    # human decision.
+    drift = snapshot.get("profiling_drift", {}) or {}
+    drift_findings = drift.get("findings") or []
+    if drift_findings:
+        for f in drift_findings[:5]:
+            yellow.append(
+                f"profiling drift: {f.get('path')} "
+                f"[{', '.join(str(d.get('label')) for d in (f.get('drift') or []))}]"
+            )
+            hit("profiling_drift")
+        if len(drift_findings) > 5:
+            yellow.append(
+                f"profiling drift: +{len(drift_findings) - 5} more drifted result(s)"
+            )
 
     # --- open PRs across all repos (YELLOW) ---
     for name, body in sorted(repos.items()):
