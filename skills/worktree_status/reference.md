@@ -1,9 +1,6 @@
----
-name: worktree_status
-description: Show the state of every task-scoped git worktree under ~/Code/PyAutoLabs-wt/, cross-referenced with PyAutoMind/active.md. Use this to see which parallel tasks are in flight and which repos each one is holding.
----
+# Worktree status — the /health worktrees leg
 
-# Worktree Status
+Procedure for the `/health worktrees` leg (the former standalone `worktree_status` skill).
 
 Diagnostic skill. Lists every worktree root under `$PYAUTO_WT_ROOT` (default `~/Code/PyAutoLabs-wt`), the task it belongs to per `active.md`, and the branch and dirty state of every real worktree inside it.
 
