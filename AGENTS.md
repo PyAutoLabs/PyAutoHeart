@@ -52,6 +52,25 @@ Health Agent reasons over Heart's output, it does not re-derive it. Full detail
 - `readiness` rolls these into the authoritative verdict (URL hygiene is
   monitoring only and does **not** gate it).
 
-See [`CLAUDE.md`](CLAUDE.md) for Heart's internals — the check framework, the
-<30s tick budget, how to add a check, and the hard rules (observer-only, colour
-coding, atomic state writes).
+See [`docs/internals.md`](docs/internals.md) for Heart's internals — the check
+framework, the <30s tick budget, how to add a check, and the hard rules
+(observer-only, colour coding, atomic state writes). Read it when changing
+Heart's own code, not by default.
+
+## Never rewrite history
+
+NEVER perform these operations on any repo with a remote:
+
+- `git init` in a directory already tracked by git
+- `rm -rf .git && git init`
+- Commit with subject "Initial commit", "Fresh start", "Start fresh",
+  "Reset for AI workflow", or any equivalent message on a branch with a remote
+- `git push --force` to `main`
+- `git filter-repo` / `git filter-branch` on shared branches
+- `git rebase -i` rewriting commits already pushed to a shared branch
+
+If the working tree needs a clean state, the **only** correct sequence is:
+
+    git fetch origin
+    git reset --hard origin/main
+    git clean -fd

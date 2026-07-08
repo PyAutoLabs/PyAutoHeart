@@ -93,5 +93,5 @@ sidecars, rolling `timings/`, `url_check.json`, `verify_install.json`, daemon
 ## Documentation describing health checks
 
 `README.md` (user-facing), `AGENTS.md` (the Brain/Heart/Hands boundary + call
-chain), `CLAUDE.md` (internals: the check framework, the `<30s` tick budget, how
+chain), `docs/internals.md` (internals: the check framework, the `<30s` tick budget, how
 to add a check, the observer-only / colour / atomic-write hard rules).
