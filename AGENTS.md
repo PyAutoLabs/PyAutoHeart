@@ -6,30 +6,12 @@ hygiene, generated-artifact/noise classification, and continuous monitoring of
 the PyAuto repos. `pyauto-heart readiness` is the authoritative "is it safe to
 release?" gate.
 
-## The boundary (one description, mirrored in all three repos)
+## The boundary
 
-- **PyAutoHeart — the health authority.** All health/readiness logic lives here:
-  version drift, install-path, URL hygiene, CI/worktree/timing monitoring.
-  `pyauto-heart readiness` is the **authoritative** green/yellow/red verdict —
-  the single "is it safe to release?" gate. Heart is an observer: it reads and
-  emits verdicts; it never writes into other repos and never triggers Build.
-- **PyAutoHands / PyAutoBuild — the executor.** Packaging, tagging, notebook
-  generation, and PyPI publication via `release.yml`. Hands runs **no**
-  readiness checks of its own and never re-derives a gate decision; it just
-  executes.
-- **PyAutoBrain — the brain.** Hosts the agents that connect the
-  two. It owns no checks and no release steps; it gates on Heart and delegates
-  execution to Hands.
-
-## The call chain (always this order)
-
-```
-Brain  →  Heart (gate)  →  Hands (execute)
-```
-
-The brain asks `pyauto-heart readiness --json`; only on a **green** verdict does
-it trigger Hands' release work. Heart never triggers Hands; Hands never
-re-derives a gate decision the brain already made.
+The organs, boundaries and the `Brain → Heart (gate) → Hands (execute)` call
+chain are defined once in `PyAutoBrain/ORGANISM.md`. Heart's side of it:
+**observer only** — it reads and emits the authoritative green/yellow/red
+verdict, never writes into other repos, and never triggers Build.
 
 For the release-**validation** rehearsal specifically (build-and-exercise the
 exact source about to ship, before promoting to PyPI — see
