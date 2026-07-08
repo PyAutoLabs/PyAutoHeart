@@ -27,9 +27,10 @@ name: Heart Health
 # beyond the auto-provisioned GITHUB_TOKEN.
 
 on:
-  # --- PAUSED 2026-07-06: routine cron disabled org-wide; re-enable by uncommenting ---
-  # schedule:
-  #   - cron: "0 6 * * *"   # daily 06:00 UTC
+  schedule:
+    # Daily 05:00 UTC — one hour ahead of PyAutoMind's morning_health message
+    # (06:00 UTC), which reads this run's verdict (moved from 06:00 for that).
+    - cron: "0 5 * * *"
   workflow_dispatch:
 
 # contents: write  → commit the README badge/block into Heart's OWN README

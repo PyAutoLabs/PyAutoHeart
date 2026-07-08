@@ -11,9 +11,8 @@ name: URL Check (central)
 # gate via `readiness`, which this does not touch).
 
 on:
-  # --- PAUSED 2026-07-06: routine cron disabled org-wide; re-enable by uncommenting ---
-  # schedule:
-  #   - cron: "0 4 * * 1"   # Mondays 04:00 UTC (same cadence as the old per-repo crons)
+  schedule:
+    - cron: "0 4 * * 1"   # Mondays 04:00 UTC (same cadence as the old per-repo crons)
   workflow_dispatch:
 
 permissions:
