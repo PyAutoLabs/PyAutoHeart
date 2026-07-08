@@ -77,6 +77,11 @@ continuous_checks:
     impl: heart/checks/version_skew.py
     measures: "each workspace's pinned version vs the installed library"
     gate_role: "RED if AHEAD / MISMATCH (general.yaml vs version.txt) / BAD; YELLOW if BEHIND / UNKNOWN"
+  - id: manifest_drift
+    impl: heart/checks/manifest_drift.py
+    measures: "repo identity (name/owner) in Heart/Build/labels lists and checkout origins vs the PyAutoMind/repos.yaml body map"
+    consumes: "PyAutoMind/scripts/repos_sync.py --check (Mind owns the manifest and the drift logic; Heart only runs and reports it)"
+    gate_role: "YELLOW per drifted surface (identity hygiene, never RED); skipped when no PyAutoMind checkout"
   - id: noise
     impl: heart/noise.py
     measures: "classify git porcelain into real source drift vs regenerated-artifact noise"

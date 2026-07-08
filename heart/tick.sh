@@ -35,6 +35,14 @@ PYTHONPATH="$HEART_HOME" python3 -m heart.checks.test_run || heart_log WARN "$(c
 # Python: workspace-vs-library version skew (cheap file reads; no heavy imports).
 PYTHONPATH="$HEART_HOME" python3 -m heart.checks.version_skew || heart_log WARN "$(c_warn 'version_skew failed')"
 
+# Python: body-map identity drift — PyAutoMind/repos.yaml vs Heart/Build/labels
+# repo lists and every checkout's origin (delegates to repos_sync.py --check).
+if [[ -f "$PYAUTO_ROOT/PyAutoMind/scripts/repos_sync.py" ]]; then
+  PYTHONPATH="$HEART_HOME" python3 -m heart.checks.manifest_drift || heart_log WARN "$(c_warn 'manifest_drift failed')"
+else
+  heart_log INFO "$(c_meta 'manifest_drift: skipped (no PyAutoMind checkout)')"
+fi
+
 # Aggregate into state.json.
 PYTHONPATH="$HEART_HOME" python3 -c "
 from heart import state

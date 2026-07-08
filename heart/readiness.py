@@ -298,6 +298,17 @@ def compute(
                 yellow.append(f"{w.get('workspace')}: installed {w.get('library')} version unknown")
                 hit("skew_unknown")
 
+    # --- manifest drift (YELLOW — identity hygiene vs PyAutoMind/repos.yaml) ---
+    manifest = snapshot.get("manifest_drift")
+    if isinstance(manifest, dict) and manifest.get("available"):
+        for label, chk in (manifest.get("checks") or {}).items():
+            if isinstance(chk, dict) and not chk.get("ok", True):
+                n = len(chk.get("problems") or [])
+                yellow.append(
+                    f"manifest drift: {label} — {n} mismatch(es) vs PyAutoMind/repos.yaml"
+                )
+                hit("manifest_drift")
+
     # --- install verification (deep check: RED on fail, YELLOW if stale/unrun) ---
     vi = snapshot.get("verify_install")
     if isinstance(vi, dict) and "ready" in vi:
