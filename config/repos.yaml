@@ -3,6 +3,10 @@
 # Repos listed here are polled every `tick` for CI / drift / timing.
 # Repos NOT listed are silently ignored. To add/remove a repo, edit
 # this file and reload the daemon (`pyauto-heart stop && pyauto-heart watch`).
+#
+# This file is Heart POLICY (what to poll, what gates, what counts as noise).
+# Repo IDENTITY (name/owner) must match PyAutoMind/repos.yaml — the body map;
+# `python3 PyAutoMind/scripts/repos_sync.py --check` flags any drift.
 
 repos:
   libraries:
