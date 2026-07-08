@@ -565,3 +565,24 @@ def test_render_block_no_color_is_plain(monkeypatch):
     assert "RELEASE READINESS" in text
     assert "GREEN" in text
     assert "\033[" not in text
+
+
+def test_manifest_drift_is_yellow_not_red():
+    snap = make_snapshot(manifest_drift={
+        "available": True,
+        "problem_count": 2,
+        "checks": {
+            "ensure_workspace_labels.sh": {"ok": False, "problems": ["a", "b"]},
+            "local checkout origins": {"ok": True, "problems": []},
+        },
+    })
+    v = compute(snap)
+    assert v["verdict"] == "yellow"
+    assert v["red_reasons"] == []
+    assert any("manifest drift" in r for r in v["yellow_reasons"])
+
+
+def test_manifest_drift_unavailable_stays_green():
+    snap = make_snapshot(manifest_drift={"available": False, "reason": "missing", "checks": {}})
+    v = compute(snap)
+    assert v["verdict"] == "green"

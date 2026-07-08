@@ -76,6 +76,7 @@ def aggregate() -> dict[str, Any]:
         "script_timing": _read_json_or_default(HEART_STATE_DIR / "script_timing.json", {}),
         "test_run": _read_json_or_default(HEART_STATE_DIR / "test_run.json", {}),
         "version_skew": _read_json_or_default(HEART_STATE_DIR / "version_skew.json", {}),
+        "manifest_drift": _read_json_or_default(HEART_STATE_DIR / "manifest_drift.json", {}),
         "verify_install": _read_json_or_default(HEART_STATE_DIR / "verify_install.json", {}),
         "url_check": _read_json_or_default(HEART_STATE_DIR / "url_check.json", {}),
         "validation_report": _read_json_or_default(HEART_STATE_DIR / "validation_report.json", {}),
