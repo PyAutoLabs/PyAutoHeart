@@ -56,6 +56,7 @@ LOCAL_ONLY_FAMILIES = (
     "repo_state",
     "worktree_drift",
     "script_timing",
+    "profiling_drift",
     "test_run",
     "version_skew",
 )
@@ -355,6 +356,31 @@ def build_board(
                 for e in (timing.get("red") or [])[:5]
             ]
             sections.append(Section("script_timing", "Script timing", st, summary, details))
+
+    # Profiling pinned-value drift -------------------------------------------
+    if "profiling_drift" in unobserved:
+        sections.append(_unobs_section("profiling_drift", "Profiling drift"))
+    else:
+        drift = snapshot.get("profiling_drift") or {}
+        if drift:
+            n = _as_int(drift.get("drift_count"))
+            scanned = _as_int(drift.get("files_scanned"))
+            if not drift.get("observed"):
+                st, summary = WARN, "autolens_profiling/results not found"
+                details = []
+            elif n:
+                st, summary = WARN, f"{n} result(s) drifted from pinned baseline"
+                details = [
+                    f"✗ {f.get('path')}  "
+                    f"[{', '.join(str(d.get('label')) for d in (f.get('drift') or []))}]"
+                    for f in (drift.get("findings") or [])[:5]
+                ]
+            else:
+                st, summary = OK, f"{scanned} results clean"
+                details = []
+            sections.append(
+                Section("profiling_drift", "Profiling drift", st, summary, details)
+            )
 
     # Test run ---------------------------------------------------------------
     if "test_run" in unobserved:
