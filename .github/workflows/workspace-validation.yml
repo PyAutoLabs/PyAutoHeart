@@ -44,9 +44,8 @@ name: Workspace Validation
 # itself never dispatches a workflow or talks to GitHub's API.
 
 on:
-  # --- PAUSED 2026-07-06: routine cron disabled org-wide; re-enable by uncommenting ---
-  # schedule:
-  #   - cron: "0 3 * * 1"   # Mondays 03:00 UTC (always mode=smoke — no inputs on schedule)
+  schedule:
+    - cron: "0 3 * * 1"   # Mondays 03:00 UTC (always mode=smoke — no inputs on schedule)
   workflow_dispatch:
     inputs:
       mode:
