@@ -18,6 +18,7 @@ about cleanup if they ran with `--keep`.
 | C | The conda flow from `installation/conda.rst` works end-to-end (`conda create … python=3.12` → `pip install autolens` → clone workspace → run `welcome.py` + `start_here.py`). |
 | D | `pip install "autolens[optional]"` resolves cleanly and imports. |
 | E | `pip install autolens==2026.2.26.4` (a yanked release the docs reference) still installs by explicit pin. |
+| F | The Colab bootstrap path end-to-end: a venv emulating Colab's preinstalled env (`autolens` + `jax` from PyPI), a fake `google.colab` package so the on-Colab branch activates, then the injected setup cell verbatim (`pip install autoconf --no-deps` → `setup_colab.setup("autolens")` → workspace clone at the release tag) and one real notebook cell (`al.Imaging.from_fits` on `dataset/imaging/simple`). SKIPs while the installed autoconf predates the `setup_colab` registry (self-activates at the next release). |
 
 A check that cannot run on the current host (interpreter missing, conda missing) is
 reported as **SKIP** and does not count toward overall failure.
