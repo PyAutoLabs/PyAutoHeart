@@ -123,7 +123,12 @@ noise_globs:
   - "*model_*.json"         # model_0.json, model_1.json, …
   - "*max_log_likelihood.json"  # result snapshots
   - "*galaxies.json"        # generated dataset galaxies (HowTo*, *_test)
+  - "*dataset.json"         # generated dataset payloads (weak/simple/dataset.json)
+  - "*tracer_*.json"        # tracer_imaging.json / tracer_point.json variants
+  - "*point_dataset*.csv"   # csv twins of the point_dataset json artifacts
+  - "*.npy"                 # generated numpy payloads (los_halo_list.npy etc.)
   - "*summary.json"         # generated profiling summaries (postfix_N*_summary.json)
+  - "*summary_v*.json"      # versioned profiling summaries (imaging_summary_v2026.5.14.2.json)
   - "*comparison.json"      # jax_profiling result comparisons
   - "*hpc_*.json"           # jax_profiling HPC run results (hpc_a100_fp64/mp.json)
   - "*.png"                 # generated plots / figures (global; PNGs here are always generated)

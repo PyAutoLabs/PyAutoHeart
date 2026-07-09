@@ -20,7 +20,12 @@ GLOBS = [
     "*model_*.json",
     "*max_log_likelihood.json",
     "*galaxies.json",
+    "*dataset.json",
+    "*tracer_*.json",
+    "*point_dataset*.csv",
+    "*.npy",
     "*summary.json",
+    "*summary_v*.json",
     "*comparison.json",
     "*hpc_*.json",
     "*.png",
@@ -205,6 +210,86 @@ def test_load_noise_globs_from_repo_config():
 
 def test_load_noise_globs_missing_file_returns_empty(tmp_path):
     assert noise.load_noise_globs(tmp_path / "nope.yaml") == []
+
+
+# --- v1.6: line-level split + batch mode (the health_sync dashboard path) ---
+
+
+def test_split_lines_preserves_codes():
+    real_lines, noise_lines = noise.split_lines(SAMPLE, GLOBS)
+    assert " M util.py" in real_lines
+    assert "?? new_module.py" in real_lines
+    assert " M dataset/build/imaging/no_lens_light/data.fits" in noise_lines
+    assert "?? test_report.md" in noise_lines
+
+
+def test_split_lines_rename_classified_by_destination():
+    real_lines, noise_lines = noise.split_lines(
+        ["R  old.py -> new.py", "R  raw.txt -> plot.png"], GLOBS
+    )
+    assert real_lines == ["R  old.py -> new.py"]
+    assert noise_lines == ["R  raw.txt -> plot.png"]
+
+
+def test_classify_dirty_matches_split_lines():
+    # classify_dirty is a path-projection of split_lines — same partition.
+    real, noise_files = noise.classify_dirty(SAMPLE, GLOBS)
+    real_lines, noise_lines = noise.split_lines(SAMPLE, GLOBS)
+    assert len(real) == len(real_lines)
+    assert len(noise_files) == len(noise_lines)
+
+
+def test_sweep_glob_gaps_are_noise():
+    # The 2026-07-09 repo_cleanup sweep found these slipping through.
+    sample = [
+        " M dataset/imaging/los_halos/los_halo_list.npy",
+        " M dataset/point_source/deblending/tracer_imaging.json",
+        " M dataset/point_source/deblending/tracer_point.json",
+        " M dataset/point_source/simple/point_dataset_positions_only.csv",
+        " M dataset/weak/simple/dataset.json",
+        "?? results/simulators/imaging_summary_v2026.5.14.2.json",
+        " M scripts/scaling_relation.csv.py",  # .py stays real
+    ]
+    real, noise_files = noise.classify_dirty(sample, GLOBS)
+    assert real == ["scripts/scaling_relation.csv.py"]
+    assert len(noise_files) == 6
+
+
+def test_batch_mode_roundtrip(tmp_path, capsys):
+    in_dir = tmp_path / "p"
+    out_dir = tmp_path / "real"
+    in_dir.mkdir()
+    (in_dir / "ws_mixed").write_text(
+        " M util.py\n M data.fits\n?? new_module.py\n?? plot.png\n"
+    )
+    (in_dir / "ws_noise_only").write_text(" M a.fits\n M b.png\n")
+
+    config = tmp_path / "repos.yaml"
+    config.write_text("noise_globs:\n  - '*.fits'\n  - '*.png'\n")
+
+    rc = noise.run_batch(in_dir, out_dir, str(config))
+    assert rc == 0
+
+    lines = capsys.readouterr().out.splitlines()
+    assert "ws_mixed\t1\t1\t2" in lines  # 1 real mod, 1 real untracked, 2 noise
+    assert "ws_noise_only\t0\t0\t2" in lines
+    assert (out_dir / "ws_mixed").read_text() == " M util.py\n?? new_module.py\n"
+    assert (out_dir / "ws_noise_only").read_text() == ""
+
+
+def test_batch_mode_via_cli(tmp_path, capsys):
+    in_dir = tmp_path / "p"
+    in_dir.mkdir()
+    (in_dir / "repo").write_text(" M x.fits\n M y.py\n")
+    config = tmp_path / "repos.yaml"
+    config.write_text("noise_globs:\n  - '*.fits'\n")
+
+    rc = noise.main(
+        ["--batch", str(in_dir), "--real-out", str(tmp_path / "real"), "--config", str(config)]
+    )
+    assert rc == 0
+    assert "repo\t1\t0\t1" in capsys.readouterr().out
+    assert (tmp_path / "real" / "repo").read_text() == " M y.py\n"
 
 
 def test_build_sidecar_shape():

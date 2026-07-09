@@ -10,19 +10,29 @@
 # Usage (normally sourced via ~/.bashrc, run through the `health` dispatcher):
 #   source ~/Code/PyAutoLabs/PyAutoMind/scripts/health_sync.sh
 #   health          # (or: health sync)
+#   health --all    # full raw dirty-file listing (noise included)
 #
 # Override the repo root (e.g. for testing) via PYAUTO_STATUS_ROOT.
+#
+# Dirty counts are classified through Heart's real-vs-noise splitter
+# (heart/noise.py + noise_globs in config/repos.yaml): MOD/UNTR count *real*
+# source drift only, the NOISE column counts regenerated artifacts (*.fits,
+# *data.json, *.png, …). If the classifier is unavailable (no PyAutoHeart
+# checkout / python failure) the raw counts are shown with NOISE=? and the
+# listing falls back to today's full form.
 #
 # Flag glyphs (FLAGS column):
 #   ↓  behind upstream
 #   ↑  ahead of upstream
-#   *  dirty (modified or untracked files)
+#   *  dirty (real modified or untracked files)
+#   ~  noise only (regenerated artifacts; no real drift)
 #   !  no upstream / fetch failed
 #   b  current branch ≠ upstream branch (forgotten feature branch)
 #
-# After the main table, four optional sections may follow:
-#   - "Dirty files:"        — per-repo `git status --porcelain` for any repo
-#                             with mod or untr > 0.
+# After the main table, optional sections may follow:
+#   - "Dirty files:"        — per-repo listing of *real* dirty files, with
+#                             noise collapsed to a one-line count per repo
+#                             (`health --all` restores the raw listing).
 #   - "Follow-up commands:" — copy-pasteable git invocations grouped by
 #                             category (pull / set-upstream / investigate).
 #                             Suppressed entirely when nothing is actionable.
@@ -34,6 +44,10 @@
 #                             ~/Code/PyAutoLabs/PyAutoBuild/test_results/*.json
 #                             (committed by the autobuild release pipeline).
 #                             Suppressed when no JSONs exist.
+#   - "Hygiene:"            — nudge when the last /repo_cleanup audit stamp
+#                             (~/.cache/pyauto/repo_cleanup_last_audit.json)
+#                             is missing or older than PYAUTO_CLEANUP_NUDGE_DAYS
+#                             (default 7). Suppressed when the stamp is fresh.
 #
 # Note: distinct from the Claude `/health status` command (the active-work
 # registry dashboard). This shell command shows git *sync* state across repos;
@@ -48,6 +62,13 @@ _health_sync() {
     echo "health sync: $root does not exist" >&2
     return 1
   fi
+
+  local show_all=false arg
+  for arg in "$@"; do
+    case "$arg" in
+      --all) show_all=true ;;
+    esac
+  done
 
   # Discover repos. `.git` is a directory in normal checkouts and a file in
   # linked worktrees, so accept both. mindepth/maxdepth 2 limits us to the
@@ -93,19 +114,16 @@ _health_sync() {
     wait
   ) 2>/dev/null
 
-  # Header.
-  local fmt='%-32s %-30s %-36s %6s %5s %4s %4s  %s\n'
-  printf "$fmt" REPO BRANCH UPSTREAM BEHIND AHEAD MOD UNTR FLAGS
-  printf "$fmt" "--------------------------------" \
-    "------------------------------" \
-    "------------------------------------" \
-    "------" "-----" "----" "----" "-----"
-
-  # Per-repo row. Porcelain is cached so the dirty-files listing below can
-  # reuse it without a second `git status` per repo. Action arrays collect
-  # actionable follow-ups for the "Follow-up commands:" section printed at
-  # the end.
-  declare -A repo_porcelain
+  # Pass 1 — gather per-repo state without printing. The table itself is
+  # printed in pass 2, after the noise classifier has run over every repo's
+  # porcelain in one batch (per-row python calls would blow the <10s budget).
+  # Porcelain is cached so the dirty-files listing below can reuse it without
+  # a second `git status` per repo. Action arrays collect actionable
+  # follow-ups for the "Follow-up commands:" section printed at the end.
+  local noise_tmp="$fetch_status_dir/noise"
+  mkdir -p "$noise_tmp/p" "$noise_tmp/real"
+  declare -A repo_porcelain repo_branch repo_upstream repo_behind repo_ahead \
+    repo_flags repo_mod_raw repo_untr_raw real_mod real_untr noise_n
   local actions_pull=() actions_set_upstream=() actions_manual=()
   local name branch upstream upstream_branch behind ahead mod untr flags counts porcelain branch_mismatch b_int a_int
   for repo in "${repos[@]}"; do
@@ -149,6 +167,7 @@ _health_sync() {
     else
       untr="$(printf '%s\n' "$porcelain" | grep -c '^??' || true)"
       mod="$(printf '%s\n' "$porcelain" | grep -cv '^??' || true)"
+      printf '%s\n' "$porcelain" > "$noise_tmp/p/$name"
     fi
 
     # Branch-mismatch detection. With no upstream, the heuristic is
@@ -163,10 +182,17 @@ _health_sync() {
 
     [[ "$behind" =~ ^[0-9]+$ ]] && (( behind > 0 )) && flags+="↓"
     [[ "$ahead"  =~ ^[0-9]+$ ]] && (( ahead  > 0 )) && flags+="↑"
-    (( mod + untr > 0 )) && flags+="*"
     [[ "$branch_mismatch" == "true" ]] && flags+="b"
 
-    printf "$fmt" "$name" "$branch" "$upstream" "$behind" "$ahead" "$mod" "$untr" "$flags"
+    # Dirty flags (* / ~) depend on the noise classification and are added in
+    # pass 2; everything else about the row is fixed here.
+    repo_branch["$name"]="$branch"
+    repo_upstream["$name"]="$upstream"
+    repo_behind["$name"]="$behind"
+    repo_ahead["$name"]="$ahead"
+    repo_flags["$name"]="$flags"
+    repo_mod_raw["$name"]="$mod"
+    repo_untr_raw["$name"]="$untr"
 
     # Categorise actionable follow-ups. Only the boring case (clean, behind,
     # not ahead) becomes an auto-runnable command; everything else is
@@ -193,10 +219,64 @@ _health_sync() {
     fi
   done
 
+  # Noise classification — one batched heart.noise call over every dirty
+  # repo's porcelain. Real-only porcelain lands in $noise_tmp/real/<name>,
+  # counts on stdout as "<name>\t<real_mod>\t<real_untr>\t<noise>". Any
+  # failure (no PyAutoHeart checkout, no PyYAML, …) degrades to the raw
+  # behaviour: classify_ok=false, NOISE column shows "?". PYAUTO_HEART_HOME
+  # points at an alternative Heart checkout (e.g. a task worktree).
+  local heart_home="${PYAUTO_HEART_HOME:-$root/PyAutoHeart}"
+  local classify_ok=false
+  if [[ -f "$heart_home/heart/noise.py" ]]; then
+    if PYTHONPATH="$heart_home" python3 -m heart.noise \
+         --batch "$noise_tmp/p" --real-out "$noise_tmp/real" \
+         --config "$heart_home/config/repos.yaml" > "$noise_tmp/counts" 2>/dev/null; then
+      classify_ok=true
+      local cname crm cru cnn
+      while IFS=$'\t' read -r cname crm cru cnn; do
+        [[ -z "$cname" ]] && continue
+        real_mod["$cname"]="$crm"
+        real_untr["$cname"]="$cru"
+        noise_n["$cname"]="$cnn"
+      done < "$noise_tmp/counts"
+    fi
+  fi
+
+  # Pass 2 — print the table. MOD/UNTR are real-file counts when the
+  # classifier ran (raw counts otherwise); NOISE carries the regenerated-
+  # artifact count. `*` marks real drift, `~` noise-only dirt.
+  local fmt='%-32s %-30s %-36s %6s %5s %4s %4s %5s  %s\n'
+  printf "$fmt" REPO BRANCH UPSTREAM BEHIND AHEAD MOD UNTR NOISE FLAGS
+  printf "$fmt" "--------------------------------" \
+    "------------------------------" \
+    "------------------------------------" \
+    "------" "-----" "----" "----" "-----" "-----"
+
+  local noise nreal
+  for repo in "${repos[@]}"; do
+    name="$(basename "$repo")"
+    flags="${repo_flags[$name]}"
+    if [[ "$classify_ok" == "true" ]]; then
+      mod="${real_mod[$name]:-0}"
+      untr="${real_untr[$name]:-0}"
+      noise="${noise_n[$name]:-0}"
+      (( mod + untr > 0 )) && flags+="*"
+      (( noise > 0 )) && flags+="~"
+    else
+      mod="${repo_mod_raw[$name]}"
+      untr="${repo_untr_raw[$name]}"
+      noise="?"
+      (( mod + untr > 0 )) && flags+="*"
+    fi
+    printf "$fmt" "$name" "${repo_branch[$name]}" "${repo_upstream[$name]}" \
+      "${repo_behind[$name]}" "${repo_ahead[$name]}" "$mod" "$untr" "$noise" "$flags"
+  done
+
   # Per-repo dirty-file listing. Only repos with non-empty porcelain are
   # shown — keeps the output empty when everything is clean. The `??` and
   # ` M` etc. prefixes from porcelain are preserved so users can tell
-  # untracked from modified at a glance.
+  # untracked from modified at a glance. With the classifier available (and
+  # without --all) only *real* files are listed; noise collapses to a count.
   local printed_header=false
   for repo in "${repos[@]}"; do
     name="$(basename "$repo")"
@@ -207,9 +287,24 @@ _health_sync() {
       echo "Dirty files:"
       printed_header=true
     fi
-    echo "  $name:"
-    printf '%s\n' "$porcelain" | sed 's/^/    /'
+    if [[ "$show_all" == "true" || "$classify_ok" != "true" ]]; then
+      echo "  $name:"
+      printf '%s\n' "$porcelain" | sed 's/^/    /'
+      continue
+    fi
+    nreal=$(( ${real_mod[$name]:-0} + ${real_untr[$name]:-0} ))
+    noise="${noise_n[$name]:-0}"
+    if (( nreal == 0 )); then
+      echo "  $name: $noise noise artifact(s) (regenerated) — \`health --all\` to list"
+    else
+      echo "  $name:"
+      sed 's/^/    /' "$noise_tmp/real/$name" 2>/dev/null
+      (( noise > 0 )) && echo "    (+$noise noise artifact(s) — \`health --all\` to list)"
+    fi
   done
+  if [[ "$printed_header" == "true" && "$classify_ok" != "true" ]]; then
+    echo "  (noise classification unavailable — raw listing shown)"
+  fi
 
   # Follow-up commands. Suppressed entirely when nothing is actionable so
   # the clean case stays quiet. The `git -C <abs-path>` form means each
@@ -307,6 +402,22 @@ print(f"{latest[:10]}|{num}|{len(projects)}|{total_p}|{total_f}|{total_s}")
       [[ "$pab_f" != "0" ]] && color='\033[31m'
       printf "  ${color}%s jobs across %s workspaces: %s passed, %s failed, %s skipped\033[0m\n" \
         "$njobs" "$nproj" "$pab_p" "$pab_f" "$pab_s"
+    fi
+  fi
+
+  # Hygiene nudge. /repo_cleanup writes this stamp after each audit; the
+  # mtime is the audit time. Missing or stale (> PYAUTO_CLEANUP_NUDGE_DAYS,
+  # default 7) prints a reminder — the cadence mechanism for the sweep.
+  local stamp="$HOME/.cache/pyauto/repo_cleanup_last_audit.json"
+  local nudge_days="${PYAUTO_CLEANUP_NUDGE_DAYS:-7}" age_days
+  if [[ ! -f "$stamp" ]]; then
+    echo ""
+    echo "Hygiene: no /repo_cleanup audit on record — consider running /repo_cleanup."
+  else
+    age_days=$(( ( $(date +%s) - $(stat -c %Y "$stamp" 2>/dev/null || echo 0) ) / 86400 ))
+    if (( age_days > nudge_days )); then
+      echo ""
+      echo "Hygiene: last /repo_cleanup audit ${age_days} days ago — consider running /repo_cleanup."
     fi
   fi
 }

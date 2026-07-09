@@ -59,14 +59,16 @@ def _is_noise(code: str, path: str, noise_globs: list[str]) -> bool:
     return False
 
 
-def classify_dirty(
+def split_lines(
     porcelain_lines: list[str], noise_globs: list[str]
 ) -> tuple[list[str], list[str]]:
-    """Split porcelain lines into (real_paths, noise_paths).
+    """Split porcelain lines into (real_lines, noise_lines), codes intact.
 
     Each line is the raw ``git status --porcelain`` form: a two-char status
     code, a space, then the path (which may itself contain spaces). Rename
-    entries (``R  old -> new``) are reduced to their destination path.
+    entries (``R  old -> new``) are classified by their destination path.
+    The full lines are returned so callers can still distinguish untracked
+    (``??``) from modified entries.
     """
     real: list[str] = []
     noise: list[str] = []
@@ -80,10 +82,25 @@ def classify_dirty(
         if " -> " in path:  # rename/copy: keep the destination
             path = path.split(" -> ", 1)[1]
         if _is_noise(code, path, noise_globs):
-            noise.append(path)
+            noise.append(line)
         else:
-            real.append(path)
+            real.append(line)
     return real, noise
+
+
+def _line_path(line: str) -> str:
+    path = line[3:]
+    if " -> " in path:
+        path = path.split(" -> ", 1)[1]
+    return path
+
+
+def classify_dirty(
+    porcelain_lines: list[str], noise_globs: list[str]
+) -> tuple[list[str], list[str]]:
+    """Split porcelain lines into (real_paths, noise_paths) — see split_lines."""
+    real_lines, noise_lines = split_lines(porcelain_lines, noise_globs)
+    return [_line_path(l) for l in real_lines], [_line_path(l) for l in noise_lines]
 
 
 def build_sidecar(
@@ -116,18 +133,48 @@ def build_sidecar(
     }
 
 
+def run_batch(in_dir: Path, real_out: Path, config: str) -> int:
+    """Classify one porcelain file per repo: ``<in_dir>/<name>`` holds that
+    repo's ``git status --porcelain`` output. Real-only lines are written to
+    ``<real_out>/<name>`` and one ``<name>\\t<real_mod>\\t<real_untr>\\t<noise>``
+    line per repo goes to stdout (untracked = ``??`` code). No sidecar is
+    written — this is the display path (health_sync.sh), not the census.
+    """
+    noise_globs = load_noise_globs(config)
+    real_out.mkdir(parents=True, exist_ok=True)
+    for f in sorted(in_dir.iterdir()):
+        if not f.is_file():
+            continue
+        real_lines, noise_lines = split_lines(f.read_text().splitlines(), noise_globs)
+        (real_out / f.name).write_text(
+            "\n".join(real_lines) + ("\n" if real_lines else "")
+        )
+        real_untr = sum(1 for l in real_lines if l[:2] == "??")
+        print(f"{f.name}\t{len(real_lines) - real_untr}\t{real_untr}\t{len(noise_lines)}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="heart.noise")
-    ap.add_argument("--name", required=True)
+    ap.add_argument("--name")
     ap.add_argument("--group", default="")
     ap.add_argument("--branch", default="")
     ap.add_argument("--ahead", type=int, default=0)
     ap.add_argument("--behind", type=int, default=0)
     ap.add_argument("--upstream", default="")
     ap.add_argument("--ts", default="")
-    ap.add_argument("--out", required=True, help="sidecar JSON path to write")
+    ap.add_argument("--out", help="sidecar JSON path to write")
     ap.add_argument("--config", default=str(DEFAULT_CONFIG))
+    ap.add_argument("--batch", help="dir of per-repo porcelain files (no sidecar mode)")
+    ap.add_argument("--real-out", help="dir to write per-repo real-only porcelain (with --batch)")
     ns = ap.parse_args(argv)
+
+    if ns.batch:
+        if not ns.real_out:
+            ap.error("--batch requires --real-out")
+        return run_batch(Path(ns.batch), Path(ns.real_out), ns.config)
+    if not ns.name or not ns.out:
+        ap.error("--name and --out are required (unless using --batch)")
 
     ts = ns.ts or datetime.datetime.now(datetime.timezone.utc).isoformat()
     porcelain_lines = sys.stdin.read().splitlines()
