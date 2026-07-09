@@ -8,14 +8,14 @@
 <!-- heart:begin -->
 ## 🟡 PyAuto health — **YELLOW** (score 60)
 
-_snapshot `2026-07-08T19:19:53.370103+00:00` · just now_
+_snapshot `2026-07-09T08:36:09.123472+00:00` · just now_
 
 **Warnings:** test run status unknown (no report.json); install verification not run; no release validation for current source; PyAutoMind: open PR 9d old
 
 | | Check | Status |
 |--|--|--|
 | 🔵 | Libraries | 5 repos nominal |
-| 🟢 | Workspaces | 9 repos nominal |
+| 🔵 | Workspaces | 9 repos nominal |
 | ⚪ | Worktree drift | not observed here (dev-box only) |
 | ⚪ | Script timing | not observed here (dev-box only) |
 | ⚪ | Profiling drift | not observed here (dev-box only) |
