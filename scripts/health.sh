@@ -31,16 +31,21 @@ health() {
       cat <<'EOF'
 health — local health/dev shell dispatcher (mirrors the Claude /health door).
 
-Usage: health [sync|release|audit]
+Usage: health [sync|release|audit] [--all]
 
     health            cross-repo git-sync dashboard (branch, behind/ahead, dirty)
     health sync       same as bare `health`
+    health --all      sync dashboard with the full raw dirty listing (noise included)
     health release    last PyAutoBuild release-prep run dashboard
     health audit      structural repo-health audit (non-repo dirs, stashes, dead branches)
 
 Release-run helpers: health-report / health-json / health-triage.
 EOF
       ;;
+    -*)
+      # Leading-dash first arg (e.g. `health --all`) is a sync flag, not a
+      # subcommand — route to the default sync view with the flag intact.
+      _health_sync "$sub" "$@" ;;
     *)
       echo "health: unknown subcommand '$sub' (try: health help)" >&2
       return 2
