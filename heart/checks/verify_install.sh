@@ -15,6 +15,7 @@
 #   C  conda install flow (python=3.12) + start_here.py + welcome.py
 #   D  pip install "autolens[optional]" resolves
 #   E  pip install autolens==2026.2.26.4 still installs by explicit pin
+#   F  Colab simulation: fake google.colab + the injected setup cell + run a cell
 #
 # Each check creates its own throwaway venv / conda env and reports
 # PASS / FAIL / SKIP. A failed check never aborts the suite. Cleanup runs at
@@ -55,6 +56,8 @@ Checks:
   C   conda install flow (python=3.12) + start_here.py + welcome.py
   D   pip install "autolens[optional]" resolves and imports
   E   pip install autolens==2026.2.26.4 (yanked) installs by explicit pin
+  F   Colab simulation: fake google.colab, run the injected setup cell
+      (pip bootstrap + setup_colab + workspace clone), then a notebook cell
 
 Default: run all checks.
 
@@ -108,7 +111,7 @@ while [ $# -gt 0 ]; do
             REPORT_JSON="$2"
             shift 2
             ;;
-        A|B|C|D|E|all)
+        A|B|C|D|E|F|all)
             REQUESTED_CHECKS+=("$1")
             shift
             ;;
@@ -140,7 +143,7 @@ fi
 SELECTED=()
 for c in "${REQUESTED_CHECKS[@]}"; do
     if [ "$c" = "all" ]; then
-        SELECTED=(A B C D E)
+        SELECTED=(A B C D E F)
         break
     fi
     SELECTED+=("$c")
@@ -229,7 +232,7 @@ print(f'autoconf:   {autoconf.__version__}')
 
     step "cloning autolens_workspace"
     if ! git clone --depth 1 \
-            https://github.com/Jammy2211/autolens_workspace.git "$workspace"; then
+            https://github.com/PyAutoLabs/autolens_workspace.git "$workspace"; then
         RESULTS+=("A|FAIL|workspace clone failed")
         deactivate
         return
@@ -381,7 +384,7 @@ check_c() {
 
     step "cloning autolens_workspace"
     if ! git clone --depth 1 \
-            https://github.com/Jammy2211/autolens_workspace.git "$workspace"; then
+            https://github.com/PyAutoLabs/autolens_workspace.git "$workspace"; then
         RESULTS+=("C|FAIL|workspace clone failed")
         return
     fi
@@ -502,6 +505,114 @@ check_e() {
     fi
 }
 
+# ----- check F: Colab simulation — the injected setup cell end-to-end -----
+
+check_f() {
+    echo
+    echo "=== Check F: Colab simulation (fake google.colab + setup cell + notebook cell) ==="
+
+    local venv="/tmp/autolens_verify_F_$TS"
+    local ws_dir="/tmp/colab_sim_workspace_F_$TS"
+    ARTEFACTS+=("$venv" "$ws_dir")
+
+    step "creating venv with python3 at $venv"
+    if ! make_venv "$venv" python3; then
+        RESULTS+=("F|FAIL|could not create venv with python3")
+        return
+    fi
+
+    # shellcheck source=/dev/null
+    source "$venv/bin/activate"
+    pip install --upgrade pip > /dev/null 2>&1
+
+    # Emulate the Colab base environment: Colab preinstalls the scientific
+    # stack and JAX; the injected setup cell installs the PyAuto packages
+    # --no-deps on top of that.
+    step "pip install $PIP_INSTALL_TARGET jax (emulating Colab's preinstalled env)"
+    if ! pip install "${PIP_INDEX_ARGS[@]}" "$PIP_INSTALL_TARGET" jax |& tee /tmp/F_pip.log; then
+        RESULTS+=("F|FAIL|pip install $PIP_INSTALL_TARGET jax failed")
+        tail_log "Check F pip output" "$(cat /tmp/F_pip.log 2>/dev/null)"
+        deactivate
+        return
+    fi
+
+    # A fake google.colab package makes `import google.colab` — the probe both
+    # the injected cell and setup_colab use — succeed, activating the real
+    # on-Colab code path.
+    step "installing fake google.colab stub into the venv"
+    local site
+    site=$(python -c "import sysconfig; print(sysconfig.get_paths()['purelib'])")
+    mkdir -p "$site/google/colab"
+    touch "$site/google/__init__.py" "$site/google/colab/__init__.py"
+    # JAX detects Colab too: importing jax with google.colab present triggers
+    # `from google.colab import output` (jax._src.debugger.colab_lib), so the
+    # stub needs the submodule real Colab provides.
+    touch "$site/google/colab/output.py"
+
+    # The driver is the injected notebook cell verbatim, plus assertions and
+    # one real cell from the imaging start_here. Exit 3 = SKIP (installed
+    # autoconf predates the setup_colab registry).
+    step "running the Colab bootstrap driver"
+    cat > /tmp/F_driver.py <<'PYEOF'
+import os
+import subprocess
+import sys
+
+WS_DIR = os.environ["COLAB_SIM_WORKSPACE_DIR"]
+
+# --- the injected setup cell, verbatim ---
+try:
+    import google.colab
+
+    subprocess.check_call(
+        [sys.executable, "-m", "pip", "install", "autoconf", "--no-deps"]
+    )
+except ImportError:
+    pass
+
+from autoconf import setup_colab
+
+if not hasattr(setup_colab, "setup"):
+    print(
+        "SKIP: installed autoconf predates the setup_colab registry "
+        "(ships with the next release)"
+    )
+    sys.exit(3)
+
+setup_colab.setup("autolens", raise_error_if_not_gpu=False, workspace_dir=WS_DIR)
+
+# --- assertions: clone happened, cwd moved into the workspace ---
+assert os.getcwd() == WS_DIR, f"cwd is {os.getcwd()}, expected {WS_DIR}"
+assert os.path.isdir(os.path.join(WS_DIR, "config")), "workspace config/ missing"
+assert os.path.isdir(os.path.join(WS_DIR, "dataset")), "workspace dataset/ missing"
+
+# --- one real notebook cell (the top of imaging/start_here) ---
+import autolens as al
+
+dataset = al.Imaging.from_fits(
+    data_path="dataset/imaging/simple/data.fits",
+    noise_map_path="dataset/imaging/simple/noise_map.fits",
+    psf_path="dataset/imaging/simple/psf.fits",
+    pixel_scales=0.1,
+)
+print(f"cell OK: loaded imaging dataset, shape {dataset.data.shape_native}")
+PYEOF
+    local drv_rc=0
+    COLAB_SIM_WORKSPACE_DIR="$ws_dir" python /tmp/F_driver.py |& tee /tmp/F_driver.log
+    drv_rc=${PIPESTATUS[0]}
+
+    deactivate
+
+    if [ "$drv_rc" -eq 0 ]; then
+        RESULTS+=("F|PASS|Colab bootstrap + workspace clone + notebook cell")
+    elif [ "$drv_rc" -eq 3 ]; then
+        RESULTS+=("F|SKIP|installed autoconf predates setup_colab registry (next release)")
+    else
+        RESULTS+=("F|FAIL|driver rc=$drv_rc")
+        tail_log "Check F driver output" "$(cat /tmp/F_driver.log 2>/dev/null)"
+    fi
+}
+
 # ----- runner -----
 
 START_TS=$(date +%H:%M:%S)
@@ -514,6 +625,7 @@ for letter in "${SELECTED[@]}"; do
         C) check_c ;;
         D) check_d ;;
         E) check_e ;;
+        F) check_f ;;
         *) echo "verify_install: unknown check '$letter'" >&2 ;;
     esac
 done
