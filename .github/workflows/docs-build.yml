@@ -1,0 +1,96 @@
+name: Docs Build (reusable)
+
+# Heart-owned reusable Sphinx docs-build check for the PyAuto libraries.
+# Each library's .github/workflows/docs.yml is a thin caller:
+#
+#   jobs:
+#     docs:
+#       uses: PyAutoLabs/PyAutoHeart/.github/workflows/docs-build.yml@main
+#       with: { package: autolens }
+#       secrets: inherit
+#
+# The workflow filename is intentionally stable for downstream callers.
+#
+# Why this exists: ReadTheDocs builds with fail_on_warning: false and nothing
+# else builds the docs pre-merge, so broken API pages and stale autosummary
+# entries rot silently (the RTD hygiene census, PyAutoFit#1341). This job
+# builds the Sphinx HTML on PRs and fails when the warning count regresses
+# past the repo's recorded baseline (docs/sphinx_warning_baseline.txt; a
+# missing file means 0 — strict). Mirrors lib-tests.yml mechanics: dependency
+# chain cloned from source at the matching branch when one exists.
+
+on:
+  workflow_call:
+    inputs:
+      package:
+        description: "PyAuto package to build docs for: autoconf|autofit|autoarray|autogalaxy|autolens"
+        required: true
+        type: string
+
+jobs:
+  docs-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Map package → repo + dependency chain
+        id: map
+        run: |
+          case "${{ inputs.package }}" in
+            autoconf)   repo=PyAutoConf;   deps="" ;;
+            autofit)    repo=PyAutoFit;    deps="PyAutoConf" ;;
+            autoarray)  repo=PyAutoArray;  deps="PyAutoConf" ;;
+            autogalaxy) repo=PyAutoGalaxy; deps="PyAutoConf PyAutoFit PyAutoArray" ;;
+            autolens)   repo=PyAutoLens;   deps="PyAutoConf PyAutoFit PyAutoArray PyAutoGalaxy" ;;
+            *) echo "::error::unknown package '${{ inputs.package }}'"; exit 1 ;;
+          esac
+          echo "repo=$repo" >> "$GITHUB_OUTPUT"
+          echo "deps=$deps" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout ${{ steps.map.outputs.repo }} (repo under test, at the PR ref)
+        uses: actions/checkout@v4
+        with:
+          path: ${{ steps.map.outputs.repo }}
+
+      - name: Clone dependency libraries (matching branch if it exists)
+        run: |
+          set -e
+          BRANCH="${{ github.head_ref || github.ref_name }}"
+          for dep in ${{ steps.map.outputs.deps }}; do
+            git clone "https://github.com/PyAutoLabs/$dep" "$dep"
+            if git -C "$dep" ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+              echo "Branch $BRANCH exists in $dep — checking it out"
+              git -C "$dep" checkout "$BRANCH"
+            fi
+          done
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install (deps + package from source, [optional] + [docs] extras)
+        run: |
+          pip install --upgrade pip setuptools wheel
+          for r in ${{ steps.map.outputs.deps }}; do
+            pip install "./$r[optional]"
+          done
+          pip install "./${{ steps.map.outputs.repo }}[optional,docs]"
+
+      - name: Build docs (fail on warning-count regression)
+        run: |
+          cd "${{ steps.map.outputs.repo }}"
+          python -m sphinx -b html docs docs/_build/html -w /tmp/sphinx-warnings.log
+          count=$(wc -l < /tmp/sphinx-warnings.log)
+          baseline=0
+          if [ -f docs/sphinx_warning_baseline.txt ]; then
+            baseline=$(tr -d '[:space:]' < docs/sphinx_warning_baseline.txt)
+          fi
+          echo "Sphinx warnings: $count (baseline: $baseline)"
+          if [ "$count" -gt "$baseline" ]; then
+            echo "::error::Sphinx warning count $count exceeds baseline $baseline — fix the new warnings (or, if they are pre-existing debt being surfaced, update docs/sphinx_warning_baseline.txt with justification)"
+            cat /tmp/sphinx-warnings.log
+            exit 1
+          fi
+          if [ "$count" -lt "$baseline" ]; then
+            echo "::notice::Warning count $count is below baseline $baseline — consider ratcheting docs/sphinx_warning_baseline.txt down"
+          fi
