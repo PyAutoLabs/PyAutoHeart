@@ -625,3 +625,95 @@ def test_manifest_drift_unavailable_stays_green():
     snap = make_snapshot(manifest_drift={"available": False, "reason": "missing", "checks": {}})
     v = compute(snap)
     assert v["verdict"] == "green"
+
+
+# ---------------------------------------------------------------------------
+# release-ci profile (the scheduled-nightly gate — design §5 in
+# PyAutoBuild/docs/nightly_release_design.md). The driver assembles a snapshot
+# in CI with no dev box: cloud-refreshable evidence only.
+# ---------------------------------------------------------------------------
+
+def make_ci_snapshot(**overrides) -> dict:
+    """What the nightly driver assembles in CI: library ci_status (no
+    repo_state), the release-validation report, verify_install — none of the
+    dev-box-local slices (test_run cache, version_skew, script_timing, ...)."""
+    snap = {
+        "ts": "2026-06-01T00:00:00+00:00",
+        "repos": {
+            lib: {"ci_status": {"conclusion": "success", "head_sha": SHAS[lib]}}
+            for lib in LIBS
+        },
+        "verify_install": {"ready": True, "ts": "2026-06-01T00:00:00+00:00",
+                           "version": "2026.6.1.1", "checks": []},
+        "validation_report": _green_validation_report(),
+    }
+    snap.update(overrides)
+    return snap
+
+
+def compute_ci(snap):
+    return readiness.compute(snap, libraries=LIBS, profile="release-ci")
+
+
+def test_release_ci_local_gaps_are_na_not_blocking():
+    # The same snapshot is STALE on the default profile (missing local test_run
+    # cache) but GREEN under release-ci — the gap is scoped out, loudly.
+    snap = make_ci_snapshot()
+    assert readiness.compute(snap, libraries=LIBS)["verdict"] == "stale"
+    v = compute_ci(snap)
+    assert v["verdict"] == "green"
+    assert v["profile"] == "release-ci"
+    assert any("test run" in r for r in v["na_reasons"])
+    assert any("not observed in this snapshot" in r for r in v["na_reasons"])
+    assert v["stale_reasons"] == []
+
+
+def test_release_ci_missing_validation_report_still_blocks():
+    snap = make_ci_snapshot()
+    del snap["validation_report"]
+    v = compute_ci(snap)
+    assert v["verdict"] == "stale"
+    assert any("no release validation" in r for r in v["stale_reasons"])
+
+
+def test_release_ci_missing_verify_install_still_blocks():
+    snap = make_ci_snapshot()
+    del snap["verify_install"]
+    v = compute_ci(snap)
+    assert v["verdict"] == "stale"
+    assert any("install verification not run" in r for r in v["stale_reasons"])
+
+
+def test_release_ci_adverse_local_evidence_still_counts():
+    # A present-and-failing local signal is never scoped out: adverse evidence
+    # stays yellow/red under every profile.
+    snap = make_ci_snapshot(test_run={"ready": False, "failed": 3, "run_label": "x"})
+    v = compute_ci(snap)
+    assert v["verdict"] == "yellow"
+    assert any("workspace validation not passing" in r for r in v["yellow_reasons"])
+
+
+def test_release_ci_library_ci_failure_is_red():
+    snap = make_ci_snapshot()
+    snap["repos"]["PyAutoLens"]["ci_status"]["conclusion"] = "failure"
+    v = compute_ci(snap)
+    assert v["verdict"] == "red"
+
+
+def test_release_ci_stale_validation_sha_still_blocks():
+    # Source moved since the rehearsal → stale under release-ci too: the
+    # required evidence must match the exact source about to ship.
+    snap = make_ci_snapshot()
+    snap["repos"]["PyAutoLens"]["ci_status"]["head_sha"] = "f" * 40
+    v = compute_ci(snap)
+    assert v["verdict"] == "stale"
+    assert any("source moved since rehearsal" in r for r in v["stale_reasons"])
+
+
+def test_default_profile_output_is_unchanged_shape():
+    # Default profile: verdict/reasons exactly as before; the additive keys are
+    # inert ("default", empty na list).
+    v = readiness.compute(make_snapshot(), libraries=LIBS)
+    assert v["verdict"] == "green"
+    assert v["profile"] == "default"
+    assert v["na_reasons"] == []

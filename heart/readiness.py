@@ -39,7 +39,23 @@ The verdict uses STRICT release gates:
 
 Consumer semantics: the **release gate needs GREEN** — STALE blocks a release
 exactly like YELLOW, but prescribes refreshing evidence rather than a human
-acknowledgement. The **dev-ship gate** (PyAutoBrain ``AUTONOMY.md`` leg 4)
+acknowledgement.
+
+**Profiles** (``--profile``): ``default`` is the dev-box verdict described
+above, byte-for-byte unchanged. ``release-ci`` is the scheduled-nightly
+release gate (``PyAutoBuild/docs/nightly_release_design.md`` §5): the same
+gates evaluated over a snapshot the nightly driver assembles **in CI**, where
+dev-box-local evidence (``repo_state``, ``version_skew``, ``script_timing``,
+the local ``test_run`` cache, ``manifest_drift``, ``profiling_drift``) does
+not exist. Under ``release-ci`` a *gap* in that local-only evidence is
+reported in ``na_reasons`` ("out of scope", listed, never silently green)
+instead of blocking as stale — while any local evidence actually *present*
+still counts in full, and gaps in the **required** evidence set (library
+``ci_status``, the release-validation report, ``verify_install``) block
+exactly as they always did. The workspace script surface is not weakened by
+scoping out the local ``test_run`` cache: the release-validation report *is*
+that surface at release fidelity, and required-workflow conclusions gate the
+workspaces' ``main``. The **dev-ship gate** (PyAutoBrain ``AUTONOMY.md`` leg 4)
 treats STALE as passing: an evidence gap is organism-scope, not branch-scope,
 and the other three legs gate the branch itself. This is what makes GREEN
 reachable in steady state and keeps YELLOW meaning "something is actually
@@ -186,6 +202,7 @@ def compute(
     snapshot: dict | None,
     libraries: Sequence[str] | None = None,
     required_workflows: dict[str, list[str]] | None = None,
+    profile: str = "default",
 ) -> dict[str, Any]:
     """Pure verdict function. Never raises on missing/partial data."""
     snapshot = snapshot or {}
@@ -193,6 +210,7 @@ def compute(
     req_wf = required_workflows if required_workflows is not None else load_required_workflows()
     repos = snapshot.get("repos", {}) or {}
     ref = _parse_ts(snapshot.get("ts")) or datetime.datetime.now(datetime.timezone.utc)
+    release_ci = profile == "release-ci"
 
     red: list[str] = []
     yellow: list[str] = []
@@ -200,10 +218,24 @@ def compute(
     # remedy is re-running a check. Never receives a reason whose last known
     # result was adverse (those stay red/yellow); see the module docstring.
     stale: list[str] = []
+    # Out-of-scope-by-profile: dev-box-local evidence gaps under release-ci.
+    # Listed for transparency (never silently green) but non-gating — the
+    # module docstring's "Profiles" section is the rule's home.
+    na: list[str] = []
     counts: dict[str, int] = {}
 
     def hit(key: str, n: int = 1) -> None:
         counts[key] = counts.get(key, 0) + n
+
+    def scope_local(msg: str, key: str) -> None:
+        """File a *gap* in dev-box-local evidence: stale on the default
+        profile; out-of-scope (na, non-gating) under release-ci. Adverse
+        local evidence never routes through here — it stays red/yellow."""
+        if release_ci:
+            na.append(msg + " (dev-box-local — out of scope for release-ci)")
+        else:
+            stale.append(msg)
+            hit(key)
 
     # --- library gates (RED) ---
     for lib in libs:
@@ -279,19 +311,16 @@ def compute(
             # the last known result was good.
             age = _age_days(test_run.get("ts"), ref)
             if age is not None and age > TEST_STALE_DAYS:
-                stale.append(f"test run stale ({int(age)}d old)")
-                hit("test_stale")
+                scope_local(f"test run stale ({int(age)}d old)", "test_stale")
         else:
-            stale.append("test run status unknown")
-            hit("test_unknown")
+            scope_local("test run status unknown", "test_unknown")
         # parked staleness (YELLOW)
         parked = _as_int(test_run.get("parked_stale_count", 0))
         if parked > 0:
             yellow.append(f"{parked} stale parked script(s)")
             hit("parked")
     else:
-        stale.append("test run status unknown (no report.json)")
-        hit("test_unknown")
+        scope_local("test run status unknown (no report.json)", "test_unknown")
 
     # --- version skew (RED ahead / YELLOW behind) ---
     skew = snapshot.get("version_skew")
@@ -396,7 +425,7 @@ def compute(
                     confirmed += 1
                 else:
                     mismatched.append(lib)
-            profile = str(vr.get("profile") or "").strip().lower()
+            vr_profile = str(vr.get("profile") or "").strip().lower()
             if not commit_shas:
                 stale.append("release validation source unconfirmed (no commit_shas)")
                 hit("validation_unknown")
@@ -418,7 +447,7 @@ def compute(
                     "current HEAD: " + ", ".join(unconfirmed) + ")"
                 )
                 hit("validation_unknown")
-            elif profile != "release":
+            elif vr_profile != "release":
                 stale.append(
                     f"release validation profile '{vr.get('profile') or '?'}' is not 'release'"
                 )
@@ -478,6 +507,25 @@ def compute(
             yellow.append(f"{name}: open PR {_as_int(pr.get('max_age_days'))}d old")
             hit("open_pr")
 
+    # --- release-ci: name the dev-box-local evidence this snapshot never
+    # carried, so "out of scope" is a stated fact, not an assumption. Slices
+    # that ARE present were evaluated in full by the gates above.
+    if release_ci:
+        unobserved = [
+            k for k in ("version_skew", "script_timing", "manifest_drift", "profiling_drift")
+            if not snapshot.get(k)
+        ]
+        if not any(
+            isinstance(repos.get(lib), dict) and (repos.get(lib) or {}).get("repo_state")
+            for lib in libs
+        ):
+            unobserved.insert(0, "repo_state")
+        if unobserved:
+            na.append(
+                "not observed in this snapshot (dev-box-local — out of scope "
+                "for release-ci): " + ", ".join(unobserved)
+            )
+
     # --- score ---
     score = 100
     for key, n in counts.items():
@@ -489,10 +537,12 @@ def compute(
     return {
         "verdict": verdict,
         "score": score,
+        "profile": profile,
         "reasons": red + yellow + stale,
         "red_reasons": red,
         "yellow_reasons": yellow,
         "stale_reasons": stale,
+        "na_reasons": na,
         "ts": snapshot.get("ts") or datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }
 
@@ -530,17 +580,33 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--json", action="store_true", help="print the raw verdict JSON")
     ap.add_argument("--quiet", action="store_true", help="verdict line + top reason only")
     ap.add_argument("--no-color", action="store_true", help="disable ANSI colors")
+    ap.add_argument(
+        "--profile",
+        choices=["default", "release-ci"],
+        default="default",
+        help="evidence profile: 'release-ci' scopes dev-box-local gaps to "
+             "na_reasons for the scheduled-nightly gate (design §5); default "
+             "is unchanged dev-box behaviour",
+    )
     ns = ap.parse_args(argv)
     if ns.no_color:
         os.environ["NO_COLOR"] = "1"
 
-    verdict = load_verdict()
+    if ns.profile != "default":
+        # Profile verdicts are always a live compute and are never persisted:
+        # release_ready.json stays the default-profile artifact its existing
+        # consumers (dashboard/status) expect.
+        verdict = compute(state.load() or {}, profile=ns.profile)
+    else:
+        verdict = load_verdict()
     if ns.json:
         json.dump(verdict, sys.stdout, indent=2, sort_keys=True)
         sys.stdout.write("\n")
         return 0
     for line in render_block(verdict, quiet=ns.quiet):
         print(line)
+    for line in verdict.get("na_reasons") or []:
+        print(f"  n/a  {line}")
     return 0
 
 
