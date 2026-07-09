@@ -10,8 +10,15 @@ release?" gate.
 
 The organs, boundaries and the `Brain → Heart (gate) → Hands (execute)` call
 chain are defined once in `PyAutoBrain/ORGANISM.md`. Heart's side of it:
-**observer only** — it reads and emits the authoritative green/yellow/red
-verdict, never writes into other repos, and never triggers Build.
+**observer only** — it reads and emits the authoritative
+green/stale/yellow/red verdict, never writes into other repos, and never
+triggers Build. **STALE** is the freshness tier: nothing known-bad, but some
+evidence is missing or expired — the remedy is re-running a check, never
+fixing code, and evidence whose last known result was adverse stays
+yellow/red (`heart/readiness.py` docstring is the canonical definition).
+Releases still require GREEN; the dev-ship gate (PyAutoBrain `AUTONOMY.md`
+leg 4) treats STALE as passing because an evidence gap is organism-scope,
+not branch-scope.
 
 For the release-**validation** rehearsal specifically (build-and-exercise the
 exact source about to ship, before promoting to PyPI — see
