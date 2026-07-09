@@ -81,13 +81,14 @@ def test_one_library_ci_failing_is_red():
     assert v["score"] == 70
 
 
-def test_test_run_stale_is_yellow():
-    # ready but ~31 days before the snapshot ts → stale caution, not a blocker.
+def test_test_run_stale_is_stale_tier():
+    # ready but ~31 days before the snapshot ts → passing-but-expired evidence:
+    # the freshness tier, not a warning (last known result was good).
     snap = make_snapshot(test_run={"ready": True, "ts": "2026-05-01T00:00:00+00:00",
                                    "parked_stale_count": 0})
     v = compute(snap)
-    assert v["verdict"] == "yellow"
-    assert any("test run stale" in r for r in v["yellow_reasons"])
+    assert v["verdict"] == "stale"
+    assert any("test run stale" in r for r in v["stale_reasons"])
 
 
 def test_test_run_fresh_ready_is_green():
@@ -138,14 +139,14 @@ def test_version_skew_bad_is_red():
     assert any("unparseable" in r for r in v["red_reasons"])
 
 
-def test_version_skew_unknown_is_yellow():
+def test_version_skew_unknown_is_stale_tier():
     snap = make_snapshot(version_skew={"workspaces": [
         {"workspace": "autolens_workspace", "library": "PyAutoLens",
          "pinned": "2026.6.1.1", "installed": None, "status": "UNKNOWN"}
     ]})
     v = compute(snap)
-    assert v["verdict"] == "yellow"
-    assert any("version unknown" in r for r in v["yellow_reasons"])
+    assert v["verdict"] == "stale"
+    assert any("version unknown" in r for r in v["stale_reasons"])
 
 
 def test_install_verification_failed_is_red():
@@ -159,22 +160,22 @@ def test_install_verification_failed_is_red():
     assert v["score"] == 60
 
 
-def test_install_verification_stale_is_yellow():
+def test_install_verification_stale_is_stale_tier():
     snap = make_snapshot(verify_install={
         "ready": True, "ts": "2026-05-01T00:00:00+00:00",  # ~31d before snapshot ts
         "checks": [],
     })
     v = compute(snap)
-    assert v["verdict"] == "yellow"
-    assert any("install verification stale" in r for r in v["yellow_reasons"])
+    assert v["verdict"] == "stale"
+    assert any("install verification stale" in r for r in v["stale_reasons"])
 
 
-def test_install_verification_not_run_is_yellow():
+def test_install_verification_not_run_is_stale_tier():
     snap = make_snapshot()
     snap.pop("verify_install")
     v = compute(snap)
-    assert v["verdict"] == "yellow"
-    assert any("install verification not run" in r for r in v["yellow_reasons"])
+    assert v["verdict"] == "stale"
+    assert any("install verification not run" in r for r in v["stale_reasons"])
 
 
 def test_install_verification_fresh_pass_is_green():
@@ -194,19 +195,19 @@ def test_validation_fresh_pass_matching_source_is_green():
     assert not any("release validation" in r for r in v["reasons"])
 
 
-def test_validation_absent_is_yellow():
+def test_validation_absent_is_stale_tier():
     snap = make_snapshot()
     del snap["validation_report"]
     v = compute(snap)
-    assert v["verdict"] == "yellow"
+    assert v["verdict"] == "stale"
     assert not v["red_reasons"]
-    assert any("no release validation for current source" in r for r in v["yellow_reasons"])
+    assert any("no release validation for current source" in r for r in v["stale_reasons"])
 
 
-def test_validation_empty_dict_is_yellow():
+def test_validation_empty_dict_is_stale_tier():
     v = compute(make_snapshot(validation_report={}))
-    assert v["verdict"] == "yellow"
-    assert any("no release validation" in r for r in v["yellow_reasons"])
+    assert v["verdict"] == "stale"
+    assert any("no release validation" in r for r in v["stale_reasons"])
 
 
 def test_validation_failed_is_red():
@@ -219,41 +220,42 @@ def test_validation_failed_is_red():
     assert v["score"] == 60  # validation_failed penalty 40
 
 
-def test_validation_stale_by_sha_is_yellow():
-    # A report whose commit_shas no longer match the current main HEADs is stale:
-    # the source moved on since the rehearsal → caution, not a blocker, not green.
+def test_validation_stale_by_sha_is_stale_tier():
+    # A report whose commit_shas no longer match the current main HEADs is
+    # expired evidence: the source moved on since the rehearsal → freshness
+    # tier, not a blocker, not green.
     snap = make_snapshot()
     snap["repos"]["PyAutoLens"]["ci_status"]["head_sha"] = "f" * 40  # HEAD moved
     v = compute(snap)
-    assert v["verdict"] == "yellow"
+    assert v["verdict"] == "stale"
     assert not v["red_reasons"]
     assert any("source moved since rehearsal" in r and "PyAutoLens" in r
-               for r in v["yellow_reasons"])
+               for r in v["stale_reasons"])
 
 
-def test_validation_wrong_profile_is_yellow():
+def test_validation_wrong_profile_is_stale_tier():
     report = _green_validation_report()
     report["profile"] = "smoke"
     report["stages"]["integrate"] = {"status": "pass", "profile": "smoke"}
     v = compute(make_snapshot(validation_report=report))
-    assert v["verdict"] == "yellow"
-    assert any("profile 'smoke' is not 'release'" in r for r in v["yellow_reasons"])
+    assert v["verdict"] == "stale"
+    assert any("profile 'smoke' is not 'release'" in r for r in v["stale_reasons"])
 
 
-def test_validation_stale_by_age_is_yellow():
+def test_validation_stale_by_age_is_stale_tier():
     # passing + matching + release profile, but the rehearsal is >7d old.
     report = _green_validation_report(ts="2026-05-01T00:00:00+00:00")  # ~31d before snap ts
     v = compute(make_snapshot(validation_report=report))
-    assert v["verdict"] == "yellow"
-    assert any("release validation stale" in r for r in v["yellow_reasons"])
+    assert v["verdict"] == "stale"
+    assert any("release validation stale" in r for r in v["stale_reasons"])
 
 
-def test_validation_no_commit_shas_is_yellow():
+def test_validation_no_commit_shas_is_stale_tier():
     report = _green_validation_report()
     report["commit_shas"] = {}
     v = compute(make_snapshot(validation_report=report))
-    assert v["verdict"] == "yellow"
-    assert any("source unconfirmed" in r for r in v["yellow_reasons"])
+    assert v["verdict"] == "stale"
+    assert any("source unconfirmed" in r for r in v["stale_reasons"])
 
 
 def test_validation_missing_ts_is_yellow_not_silently_green():
@@ -264,8 +266,8 @@ def test_validation_missing_ts_is_yellow_not_silently_green():
     report = _green_validation_report()
     del report["ts"]
     v = compute(make_snapshot(validation_report=report))
-    assert v["verdict"] == "yellow"
-    assert any("release validation stale" in r and "unknown" in r for r in v["yellow_reasons"])
+    assert v["verdict"] == "stale"
+    assert any("release validation stale" in r and "unknown" in r for r in v["stale_reasons"])
 
 
 def test_validation_partial_sha_confirmation_is_yellow_not_green():
@@ -277,16 +279,16 @@ def test_validation_partial_sha_confirmation_is_yellow_not_green():
     snap = make_snapshot(validation_report=report)
     del snap["repos"]["PyAutoLens"]["ci_status"]["head_sha"]
     v = compute(snap)
-    assert v["verdict"] == "yellow"
-    assert any("partially unconfirmed" in r and "PyAutoLens" in r for r in v["yellow_reasons"])
+    assert v["verdict"] == "stale"
+    assert any("partially unconfirmed" in r and "PyAutoLens" in r for r in v["stale_reasons"])
 
 
-def test_validation_ready_unknown_is_yellow():
+def test_validation_ready_unknown_is_stale_tier():
     report = _green_validation_report()
     report["release_ready"] = None
     v = compute(make_snapshot(validation_report=report))
-    assert v["verdict"] == "yellow"
-    assert any("release validation status unknown" in r for r in v["yellow_reasons"])
+    assert v["verdict"] == "stale"
+    assert any("release validation status unknown" in r for r in v["stale_reasons"])
 
 
 def test_validation_failed_dominates_and_reds_first():
@@ -352,12 +354,12 @@ def test_parked_stale_is_yellow():
     assert any("parked" in r for r in v["yellow_reasons"])
 
 
-def test_missing_test_run_is_yellow_unknown_not_crash():
+def test_missing_test_run_is_stale_unknown_not_crash():
     snap = make_snapshot()
     del snap["test_run"]
     v = compute(snap)
-    assert v["verdict"] == "yellow"
-    assert any("unknown" in r for r in v["yellow_reasons"])
+    assert v["verdict"] == "stale"
+    assert any("unknown" in r for r in v["stale_reasons"])
     assert v["score"] == 90
 
 
@@ -478,19 +480,55 @@ def test_red_dominates_yellow():
     assert v["reasons"][0] in v["red_reasons"]
 
 
-def test_missing_library_is_yellow_unknown():
+def test_missing_library_is_stale_unknown():
     snap = make_snapshot()
     del snap["repos"]["PyAutoConf"]
     v = compute(snap)
-    assert v["verdict"] == "yellow"
-    assert any("PyAutoConf" in r and "unknown" in r for r in v["yellow_reasons"])
+    assert v["verdict"] == "stale"
+    assert any("PyAutoConf" in r and "unknown" in r for r in v["stale_reasons"])
 
 
 def test_empty_snapshot_not_green_no_crash():
     v = readiness.compute({}, libraries=LIBS)
-    assert v["verdict"] == "yellow"   # unknowns, never green on no data
+    assert v["verdict"] == "stale"   # all-unknown evidence gaps, never green on no data
+    assert v["stale_reasons"] and not v["red_reasons"] and not v["yellow_reasons"]
     assert v["score"] < 100
     json.dumps(v)
+
+
+# --- the freshness tier's own semantics --------------------------------------
+
+
+def test_yellow_dominates_stale_and_reason_order():
+    # A genuine warning (timing regression) + an evidence gap (verify_install
+    # never run) → YELLOW, with reasons ordered red + yellow + stale.
+    snap = make_snapshot(script_timing={"red_count": 1})
+    snap.pop("verify_install")
+    v = compute(snap)
+    assert v["verdict"] == "yellow"
+    assert v["yellow_reasons"] and v["stale_reasons"]
+    assert v["reasons"] == v["red_reasons"] + v["yellow_reasons"] + v["stale_reasons"]
+
+
+def test_stale_never_masks_last_known_bad():
+    # An old FAILING validation report stays YELLOW — expiry only applies to
+    # passing evidence. The freshness tier must never be a skip lever.
+    snap = make_snapshot(test_run={"ready": False, "failed": 5,
+                                   "run_label": "old", "ts": "2026-05-01T00:00:00+00:00"})
+    v = compute(snap)
+    assert v["verdict"] == "yellow"
+    assert any("workspace validation not passing" in r for r in v["yellow_reasons"])
+    assert not any("test run" in r for r in v["stale_reasons"])
+
+
+def test_multiple_evidence_gaps_is_single_stale_verdict():
+    snap = make_snapshot()
+    snap.pop("verify_install")
+    del snap["validation_report"]
+    v = compute(snap)
+    assert v["verdict"] == "stale"
+    assert len(v["stale_reasons"]) == 2
+    assert not v["yellow_reasons"] and not v["red_reasons"]
 
 
 def test_score_clamped_to_zero_floor():
@@ -553,7 +591,8 @@ def test_run_with_no_state_cache_still_writes(tmp_path, monkeypatch):
     importlib.reload(r_mod)
     v = r_mod.run()
     assert (tmp_path / "release_ready.json").is_file()
-    assert v["verdict"] == "yellow"
+    # empty state = all-unknown evidence gaps -> the freshness tier
+    assert v["verdict"] == "stale"
     importlib.reload(state_mod)
     importlib.reload(r_mod)
 

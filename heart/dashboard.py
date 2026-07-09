@@ -93,22 +93,25 @@ class Section:
 class Board:
     """The whole board as data — every surface is a projection of this."""
 
-    verdict: str          # green | yellow | red
+    verdict: str          # green | stale | yellow | red
     score: int
     ts: str               # snapshot timestamp
     age_seconds: float | None
-    stale: bool
+    stale: bool           # board-tick staleness (snapshot age), NOT the verdict tier
     red_reasons: list[str]
     yellow_reasons: list[str]
     sections: list[Section]
+    # readiness freshness tier: evidence missing/expired, nothing known-bad
+    # (heart/readiness.py) — distinct from the tick-age `stale` bool above.
+    stale_reasons: list[str] = field(default_factory=list)
 
 
 # --- verdict/state → glyph & colour maps ------------------------------------
-_VERDICT_STATE = {"red": FAIL, "yellow": WARN, "green": OK}
-_VERDICT_WORD = {"red": "RED", "yellow": "YELLOW", "green": "GREEN"}
+_VERDICT_STATE = {"red": FAIL, "yellow": WARN, "stale": INFO, "green": OK}
+_VERDICT_WORD = {"red": "RED", "yellow": "YELLOW", "stale": "STALE", "green": "GREEN"}
 _STATE_MD = {OK: "🟢", WARN: "🟡", FAIL: "🔴", UNOBS: "⚪", INFO: "🔵"}
 _STATE_HTML = {OK: "ok", WARN: "warn", FAIL: "fail", UNOBS: "unobs", INFO: "info"}
-_BADGE_COLOR = {"red": "red", "yellow": "yellow", "green": "brightgreen"}
+_BADGE_COLOR = {"red": "red", "yellow": "yellow", "stale": "blue", "green": "brightgreen"}
 
 
 def _colour(state: str, text: str) -> str:
@@ -303,6 +306,7 @@ def build_board(
     score = _as_int(verdict.get("score", 0))
     red = list(verdict.get("red_reasons") or [])
     yellow = list(verdict.get("yellow_reasons") or [])
+    stale_reasons = list(verdict.get("stale_reasons") or [])
 
     sections: list[Section] = []
 
@@ -476,6 +480,7 @@ def build_board(
         red_reasons=red,
         yellow_reasons=yellow,
         sections=sections,
+        stale_reasons=stale_reasons,
     )
 
 
@@ -493,6 +498,7 @@ def render_readiness_block(verdict: dict[str, Any], *, quiet: bool = False) -> l
     lines = [f"{c_info('RELEASE READINESS')}  {_glyph(state)} {word}  {c_meta(f'score {score}')}"]
     reds = verdict.get("red_reasons") or []
     yellows = verdict.get("yellow_reasons") or []
+    stales = verdict.get("stale_reasons") or []
     limit = 1 if quiet else 6
     shown = 0
     for r in reds:
@@ -503,6 +509,10 @@ def render_readiness_block(verdict: dict[str, Any], *, quiet: bool = False) -> l
     if shown < limit:
         for y in yellows[: limit - shown]:
             lines.append("  " + c_warn(f"! {y}"))
+            shown += 1
+    if shown < limit:
+        for s in stales[: limit - shown]:
+            lines.append("  " + c_info(f"? {s}"))
     return lines
 
 
@@ -533,6 +543,8 @@ def _render_oneline(board: Board) -> str:
         tail = f"{len(board.red_reasons)} blockers"
     elif board.verdict == "yellow":
         tail = f"{len(board.yellow_reasons)} warnings"
+    elif board.verdict == "stale":
+        tail = f"{len(board.stale_reasons)} evidence gap(s)"
     else:
         tail = "all green"
     age = format_age(board.age_seconds, stale=board.stale)
@@ -556,6 +568,10 @@ def _render_md(board: Board) -> str:
         lines.append("")
     elif board.yellow_reasons:
         lines.append("**Warnings:** " + "; ".join(board.yellow_reasons[:6]))
+        lines.append("")
+    elif board.stale_reasons:
+        lines.append("**Evidence gaps (re-run, don't fix):** "
+                     + "; ".join(board.stale_reasons[:6]))
         lines.append("")
     lines += ["| | Check | Status |", "|--|--|--|"]
     for sec in board.sections:
@@ -587,9 +603,11 @@ def _render_html(board: Board) -> str:
             f"<td class='sum'>{_html.escape(sec.summary)}{details}</td></tr>"
         )
     reasons_html = ""
-    reasons = board.red_reasons or board.yellow_reasons
+    reasons = board.red_reasons or board.yellow_reasons or board.stale_reasons
     if reasons:
-        label = "Blockers" if board.red_reasons else "Warnings"
+        label = ("Blockers" if board.red_reasons
+                 else "Warnings" if board.yellow_reasons
+                 else "Evidence gaps")
         items = "".join(f"<li>{_html.escape(r)}</li>" for r in reasons[:8])
         reasons_html = f"<div class='reasons'><h2>{label}</h2><ul>{items}</ul></div>"
     stale_html = (

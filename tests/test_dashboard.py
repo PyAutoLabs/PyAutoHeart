@@ -200,7 +200,7 @@ def test_unknown_fmt_raises():
 
 # --- badge -------------------------------------------------------------------
 @pytest.mark.parametrize("verdict,color", [("green", "brightgreen"), ("yellow", "yellow"),
-                                           ("red", "red")])
+                                           ("stale", "blue"), ("red", "red")])
 def test_badge_endpoint_colour(verdict, color):
     board = dashboard.build_board(make_snapshot(), make_verdict(verdict, 50), now=FRESH_NOW)
     b = dashboard.badge_endpoint(board)

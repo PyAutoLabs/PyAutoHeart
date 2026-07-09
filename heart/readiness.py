@@ -25,12 +25,29 @@ The verdict uses STRICT release gates:
   under a profile other than ``release``), and — crucially — any *unknown*
   (missing test-run report, a library absent from the snapshot). An unknown is
   never silently treated as green and never escalated to red.
+- **STALE** (an evidence gap, the freshness tier) when nothing is known-bad but
+  some evidence is *missing or expired*: a check that was never run, a
+  passing-but-aged report, a rehearsal whose ``commit_shas`` no longer match
+  ``main``, an unknown repo/version status. The remedy for a stale reason is to
+  **re-run the check**, never to fix code — which is exactly what separates it
+  from yellow. The tier is not a skip lever: evidence whose *last known result
+  was adverse* stays yellow/red until a fresh run says otherwise; only
+  unknown or passed-but-expired evidence lands here.
 - **GREEN** otherwise — which now REQUIRES a fresh, passing release-validation
   report matching the current source under the ``release`` profile, not just an
   absence of red signals.
 
-Red dominates yellow structurally: reasons are collected into separate lists
-and ``verdict = red if red_reasons else yellow if yellow_reasons else green``.
+Consumer semantics: the **release gate needs GREEN** — STALE blocks a release
+exactly like YELLOW, but prescribes refreshing evidence rather than a human
+acknowledgement. The **dev-ship gate** (PyAutoBrain ``AUTONOMY.md`` leg 4)
+treats STALE as passing: an evidence gap is organism-scope, not branch-scope,
+and the other three legs gate the branch itself. This is what makes GREEN
+reachable in steady state and keeps YELLOW meaning "something is actually
+wrong" instead of training ack-fatigue.
+
+Red dominates yellow, which dominates stale, structurally: reasons are
+collected into separate lists and
+``verdict = red if red_reasons else yellow if yellow_reasons else stale if stale_reasons else green``.
 A ``score`` (0–100, weighted penalties) is advisory/sortable only — the colour,
 not the number, is the gate. ``compute`` is a pure function of the snapshot for
 easy testing and never raises on partial/malformed data.
@@ -179,6 +196,10 @@ def compute(
 
     red: list[str] = []
     yellow: list[str] = []
+    # The freshness tier: nothing known-bad, but evidence missing/expired —
+    # remedy is re-running a check. Never receives a reason whose last known
+    # result was adverse (those stay red/yellow); see the module docstring.
+    stale: list[str] = []
     counts: dict[str, int] = {}
 
     def hit(key: str, n: int = 1) -> None:
@@ -188,7 +209,7 @@ def compute(
     for lib in libs:
         body = repos.get(lib)
         if not isinstance(body, dict) or not body:
-            yellow.append(f"{lib}: status unknown")
+            stale.append(f"{lib}: status unknown")
             hit("lib_unknown")
             continue
         ci = body.get("ci_status", {}) or {}
@@ -254,12 +275,14 @@ def compute(
             )
             hit("test_failing")
         elif ready is True:
+            # Passing-but-expired evidence is a freshness gap, not a warning —
+            # the last known result was good.
             age = _age_days(test_run.get("ts"), ref)
             if age is not None and age > TEST_STALE_DAYS:
-                yellow.append(f"test run stale ({int(age)}d old)")
+                stale.append(f"test run stale ({int(age)}d old)")
                 hit("test_stale")
         else:
-            yellow.append("test run status unknown")
+            stale.append("test run status unknown")
             hit("test_unknown")
         # parked staleness (YELLOW)
         parked = _as_int(test_run.get("parked_stale_count", 0))
@@ -267,7 +290,7 @@ def compute(
             yellow.append(f"{parked} stale parked script(s)")
             hit("parked")
     else:
-        yellow.append("test run status unknown (no report.json)")
+        stale.append("test run status unknown (no report.json)")
         hit("test_unknown")
 
     # --- version skew (RED ahead / YELLOW behind) ---
@@ -296,7 +319,7 @@ def compute(
                 yellow.append(f"{w.get('workspace')}: pinned BEHIND installed {w.get('installed')}")
                 hit("skew_behind")
             elif status == "UNKNOWN":
-                yellow.append(f"{w.get('workspace')}: installed {w.get('library')} version unknown")
+                stale.append(f"{w.get('workspace')}: installed {w.get('library')} version unknown")
                 hit("skew_unknown")
 
     # --- manifest drift (YELLOW — identity hygiene vs PyAutoMind/repos.yaml) ---
@@ -324,13 +347,13 @@ def compute(
         else:
             age = _age_days(vi.get("ts"), ref)
             if age is None or age > INSTALL_STALE_DAYS:
-                yellow.append(
+                stale.append(
                     "install verification stale "
                     + ("(age unknown)" if age is None else f"({int(age)}d old)")
                 )
                 hit("install_stale")
     else:
-        yellow.append("install verification not run")
+        stale.append("install verification not run")
         hit("install_unknown")
 
     # --- release-validation gate (hard) -------------------------------------
@@ -375,45 +398,45 @@ def compute(
                     mismatched.append(lib)
             profile = str(vr.get("profile") or "").strip().lower()
             if not commit_shas:
-                yellow.append("release validation source unconfirmed (no commit_shas)")
+                stale.append("release validation source unconfirmed (no commit_shas)")
                 hit("validation_unknown")
             elif mismatched:
-                yellow.append(
+                stale.append(
                     "release validation stale: source moved since rehearsal ("
                     + ", ".join(mismatched) + ")"
                 )
                 hit("validation_stale_sha")
             elif confirmed == 0:
-                yellow.append("release validation source unconfirmed (current HEADs unknown)")
+                stale.append("release validation source unconfirmed (current HEADs unknown)")
                 hit("validation_unknown")
             elif unconfirmed:
                 # Some libs matched, but at least one gated repo's SHA could not
                 # be confirmed either way — an unknown must never be silently
                 # treated as green (same principle every other gate here follows).
-                yellow.append(
+                stale.append(
                     "release validation partially unconfirmed (repo(s) with unknown "
                     "current HEAD: " + ", ".join(unconfirmed) + ")"
                 )
                 hit("validation_unknown")
             elif profile != "release":
-                yellow.append(
+                stale.append(
                     f"release validation profile '{vr.get('profile') or '?'}' is not 'release'"
                 )
                 hit("validation_profile")
             else:
                 age = _age_days(vr.get("ts"), ref)
                 if age is None or age > VALIDATION_STALE_DAYS:
-                    yellow.append(
+                    stale.append(
                         "release validation stale "
                         + ("(age unknown)" if age is None else f"({int(age)}d old)")
                     )
                     hit("validation_stale")
                 # else: fresh, passing, matching, release profile → GREEN-eligible
         else:
-            yellow.append("release validation status unknown")
+            stale.append("release validation status unknown")
             hit("validation_unknown")
     else:
-        yellow.append("no release validation for current source")
+        stale.append("no release validation for current source")
         hit("validation_absent")
 
     # --- script timing (YELLOW) ---
@@ -462,13 +485,14 @@ def compute(
         score -= min(n * w, cap)
     score = max(0, min(100, score))
 
-    verdict = "red" if red else ("yellow" if yellow else "green")
+    verdict = "red" if red else ("yellow" if yellow else ("stale" if stale else "green"))
     return {
         "verdict": verdict,
         "score": score,
-        "reasons": red + yellow,
+        "reasons": red + yellow + stale,
         "red_reasons": red,
         "yellow_reasons": yellow,
+        "stale_reasons": stale,
         "ts": snapshot.get("ts") or datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }
 
