@@ -79,3 +79,47 @@ def test_ipynb_files_scanned(tmp_path):
     result = run(tmp_path)
     assert result.returncode == 1
     assert "demo.ipynb" in result.stdout
+
+
+def test_blob_main_colab_url_fails(tmp_path):
+    (tmp_path / "README.md").write_text(
+        "https://colab.research.google.com/github/PyAutoLabs/HowToLens/blob/main/notebooks/chapter_1_introduction/tutorial_1_grids_and_galaxies.ipynb"
+    )
+    result = run(tmp_path)
+    assert result.returncode == 1
+    assert "release bumper skips main" in result.stdout
+
+
+def test_blob_main_non_notebook_repo_passes(tmp_path):
+    # /blob/main/ is only forbidden for the six notebook repos — other repos'
+    # Colab links (none exist today) are not the bumper's problem.
+    (tmp_path / "README.md").write_text(
+        "https://colab.research.google.com/github/PyAutoLabs/PyAutoFit/blob/main/example.ipynb"
+    )
+    result = run(tmp_path)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_workspace_chapter_colab_url_fails(tmp_path):
+    (tmp_path / "README.md").write_text(
+        "https://colab.research.google.com/github/PyAutoLabs/autogalaxy_workspace/blob/2026.7.6.649/notebooks/chapter_1_introduction/tutorial_0_visualization.ipynb"
+    )
+    result = run(tmp_path)
+    assert result.returncode == 1
+    assert "chapters live in HowToFit/HowToGalaxy/HowToLens" in result.stdout
+
+
+def test_howto_chapter_colab_url_passes(tmp_path):
+    (tmp_path / "README.md").write_text(
+        "https://colab.research.google.com/github/PyAutoLabs/HowToGalaxy/blob/2026.7.6.649/notebooks/chapter_1_introduction/tutorial_0_visualization.ipynb"
+    )
+    result = run(tmp_path)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_workspace_non_chapter_notebook_passes(tmp_path):
+    (tmp_path / "README.md").write_text(
+        "https://colab.research.google.com/github/PyAutoLabs/autolens_workspace/blob/2026.7.6.649/notebooks/imaging/start_here.ipynb"
+    )
+    result = run(tmp_path)
+    assert result.returncode == 0, result.stdout + result.stderr

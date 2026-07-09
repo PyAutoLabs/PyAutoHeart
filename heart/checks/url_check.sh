@@ -22,7 +22,14 @@ ENTRIES=(
   # --- original three (Binder / wrong-owner / dead-branch) ---
   'mybinder\.org|||mybinder.org URL (Binder is no longer supported — use Colab)'
   'colab\.research\.google\.com/github/Jammy2211/|||Colab URL with Jammy2211 owner (use PyAutoLabs)'
-  'colab\.research\.google\.com/github/[^/]+/[^/]+/blob/release/|||Colab URL pinned to /blob/release/ (use a tagged version or /blob/main/)'
+  'colab\.research\.google\.com/github/[^/]+/[^/]+/blob/release/|||Colab URL pinned to /blob/release/ (use a date-tagged version)'
+
+  # --- Colab URL forms the release bumper cannot maintain ---
+  # bump_colab_urls.sh only rewrites date-tagged PyAutoLabs URLs, so an
+  # unpinned /blob/main/ Colab link silently drifts from the released code.
+  'colab\.research\.google\.com/github/PyAutoLabs/(autofit_workspace|autogalaxy_workspace|autolens_workspace|HowToFit|HowToGalaxy|HowToLens)/blob/main/|||Colab URL pinned to /blob/main/ (use a date-tagged version — the release bumper skips main)'
+  # Chapter tutorials live in the HowTo repos; workspace-repo chapter paths are dead.
+  'colab\.research\.google\.com/github/PyAutoLabs/(autofit|autogalaxy|autolens)_workspace/blob/[^/]+/notebooks/chapter_|||Colab URL to notebooks/chapter_* in a workspace repo (chapters live in HowToFit/HowToGalaxy/HowToLens)'
 
   # --- typo ---
   'hhttps://|||hhttps:// typo (should be https://)'
