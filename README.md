@@ -34,8 +34,8 @@ pyauto-heart readiness       # GREEN / YELLOW / RED, a score, and the reasons
 ```
 
 GREEN means it is safe to release. Heart is an observer: it never writes
-into other repos and never triggers a build — the Brain reads the verdict
-and decides what to do with it.
+into other repos and never triggers a build — the Brain, and the human
+leading it, read the verdict and decide what to do with it.
 
 Daily driving:
 
