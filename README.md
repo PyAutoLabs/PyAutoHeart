@@ -1,5 +1,7 @@
 # PyAutoHeart
 
+📖 **Full documentation → <https://pyautoscientist.readthedocs.io>** — the whole PyAutoScientist organism, including how to fork and run your own.
+
 [![health](https://img.shields.io/endpoint?url=https://pyautolabs.github.io/PyAutoHeart/badge.json)](https://pyautolabs.github.io/PyAutoHeart/)
 
 <!-- The block below is auto-updated by .github/workflows/heart-health.yml (everything -->
