@@ -115,5 +115,7 @@ def test_run_unknown_when_library_not_checked_out(tmp_path):
 
 def test_autolens_assistant_is_a_pinned_workspace():
     # Gap closed vs verify_workspace_versions.sh, which covers 8 workspaces.
-    assert "autolens_assistant" in vs.WORKSPACE_LIBRARY
-    assert vs.WORKSPACE_LIBRARY["autolens_assistant"] == ("PyAutoLens", "autolens")
+    # The map now lives in config/repos.yaml `version_skew` (the policy file).
+    mapping = vs.workspace_library()
+    assert "autolens_assistant" in mapping
+    assert mapping["autolens_assistant"] == ("PyAutoLens", "autolens")

@@ -67,8 +67,20 @@ LOCAL_ONLY_FAMILIES = (
 STALE_AFTER_SECONDS = 3600
 
 # Library repos, used to split the per-repo table into libraries vs workspaces
-# when a repo body carries no group label.
-DEFAULT_LIBRARIES = ("PyAutoConf", "PyAutoFit", "PyAutoArray", "PyAutoGalaxy", "PyAutoLens")
+# when a repo body carries no group label. Derived from the policy file
+# (config/repos.yaml `repos.libraries`) — dashboard cannot import readiness
+# (cycle), so it reads the same file directly.
+def _library_names() -> tuple:
+    import pathlib
+
+    import yaml
+
+    cfg_path = pathlib.Path(__file__).resolve().parents[1] / "config" / "repos.yaml"
+    cfg = yaml.safe_load(cfg_path.read_text()) or {}
+    return tuple(r["name"] for r in cfg["repos"]["libraries"])
+
+
+DEFAULT_LIBRARIES = _library_names()
 GATED_WORKSPACE_GROUPS = frozenset({"workspaces", "workspaces_test", "howto"})
 
 # The public Pages board (the badge's entry point). Kept here so every surface

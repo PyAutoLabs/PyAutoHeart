@@ -50,17 +50,13 @@ HEART_STATE_DIR = Path(
 
 _VERSION_RE = re.compile(r'^__version__\s*=\s*["\']([^"\']+)["\']', re.MULTILINE)
 
-# workspace name -> (library repo dir, package dir holding __init__.py)
-WORKSPACE_LIBRARY = {
-    "autofit_workspace": ("PyAutoFit", "autofit"),
-    "autogalaxy_workspace": ("PyAutoGalaxy", "autogalaxy"),
-    "autolens_workspace": ("PyAutoLens", "autolens"),
-    "HowToFit": ("PyAutoFit", "autofit"),
-    "HowToGalaxy": ("PyAutoGalaxy", "autogalaxy"),
-    "HowToLens": ("PyAutoLens", "autolens"),
-    "euclid_strong_lens_modeling_pipeline": ("PyAutoLens", "autolens"),
-    "autolens_assistant": ("PyAutoLens", "autolens"),
-}
+def workspace_library(config_path: Path | str = CONFIG_PATH) -> dict[str, tuple[str, str]]:
+    """workspace name -> (library repo dir, package dir), from the policy
+    file's ``version_skew`` block. Strict: a missing block is a config bug
+    and fails loudly rather than silently checking nothing."""
+    cfg = yaml.safe_load(Path(config_path).read_text()) or {}
+    block = cfg["version_skew"]
+    return {ws: (spec["library"], spec["package"]) for ws, spec in block.items()}
 
 
 def read_library_version(repo: str, pkg: str, root: Path = PYAUTO_ROOT) -> str | None:
@@ -126,7 +122,7 @@ def compare(pinned: str | None, installed: str | None) -> str:
 
 def run(root: Path = PYAUTO_ROOT) -> dict[str, Any]:
     workspaces = []
-    for workspace, (repo, pkg) in WORKSPACE_LIBRARY.items():
+    for workspace, (repo, pkg) in workspace_library().items():
         yaml_v, txt_v = read_workspace_pin_sources(workspace, root)
         if yaml_v is None and txt_v is None:
             continue  # no pin (e.g. *_test workspaces) → not a skew candidate
