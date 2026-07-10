@@ -92,7 +92,6 @@ HEART_HOME = Path(__file__).resolve().parents[1]
 CONFIG_PATH = HEART_HOME / "config" / "repos.yaml"
 RELEASE_READY_FILE = state.HEART_STATE_DIR / "release_ready.json"
 
-DEFAULT_LIBRARIES = ("PyAutoConf", "PyAutoFit", "PyAutoArray", "PyAutoGalaxy", "PyAutoLens")
 
 # Workspace repo groups whose required-workflow conclusions on `main` HEAD are a
 # hard release gate (RED on failure). Libraries are gated separately (the lib
@@ -137,13 +136,14 @@ _WEIGHTS: dict[str, tuple[int, int]] = {
 
 
 def load_library_names(config_path: Path | str = CONFIG_PATH) -> list[str]:
-    """Return repos.libraries[].name, or DEFAULT_LIBRARIES if unavailable."""
-    try:
-        cfg = yaml.safe_load(Path(config_path).read_text()) or {}
-        libs = [r["name"] for r in cfg.get("repos", {}).get("libraries", [])]
-        return libs or list(DEFAULT_LIBRARIES)
-    except (OSError, yaml.YAMLError, KeyError, TypeError):
-        return list(DEFAULT_LIBRARIES)
+    """Return repos.libraries[].name from the policy file. Strict: the file
+    is in-repo and the group is load-bearing (the release gate) — a missing
+    or empty group is a config bug that must fail loudly."""
+    cfg = yaml.safe_load(Path(config_path).read_text()) or {}
+    libs = [r["name"] for r in cfg["repos"]["libraries"]]
+    if not libs:
+        raise ValueError(f"empty repos.libraries group in {config_path}")
+    return libs
 
 
 def _as_int(v: Any, default: int = 0) -> int:
@@ -164,7 +164,7 @@ VALIDATION_STALE_DAYS = 7
 
 # The library repos whose current `main` HEAD must match a validation report's
 # recorded commit_shas for the release-validation gate to go GREEN.
-_GATE_SHA_LIBS = DEFAULT_LIBRARIES
+_GATE_SHA_LIBS = tuple(load_library_names())
 
 
 def _sha_eq(a: Any, b: Any) -> bool:

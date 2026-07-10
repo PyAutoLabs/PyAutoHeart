@@ -90,6 +90,19 @@ required_workflows:
   workspaces_test: ["Smoke Tests"]                  # smoke_tests.yml
   howto: ["Smoke Tests", "Navigator Check"]         # smoke_tests.yml + navigator_check.yml
 
+# Version-skew policy: workspace pin vs installed library. Iterated directly
+# by heart/checks/version_skew.py — independent of polling (includes unpolled
+# repos like the assistant). An adopter replaces this with their own map.
+version_skew:
+  autofit_workspace: {library: PyAutoFit, package: autofit}
+  autogalaxy_workspace: {library: PyAutoGalaxy, package: autogalaxy}
+  autolens_workspace: {library: PyAutoLens, package: autolens}
+  HowToFit: {library: PyAutoFit, package: autofit}
+  HowToGalaxy: {library: PyAutoGalaxy, package: autogalaxy}
+  HowToLens: {library: PyAutoLens, package: autolens}
+  euclid_strong_lens_modeling_pipeline: {library: PyAutoLens, package: autolens}
+  autolens_assistant: {library: PyAutoLens, package: autolens}
+
 # Excluded — not polled. Listed here for documentation only.
 excluded:
   - admin_jammy           # personal tooling
