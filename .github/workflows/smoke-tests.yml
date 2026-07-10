@@ -1,0 +1,105 @@
+name: Smoke Tests (reusable)
+
+# Heart-owned reusable smoke-test workflow for the PyAuto workspaces.
+# Each workspace's .github/workflows/smoke_tests.yml is a thin caller:
+#
+#   jobs:
+#     smoke:
+#       uses: PyAutoLabs/PyAutoHeart/.github/workflows/smoke-tests.yml@main
+#       with: { chain: "PyAutoConf PyAutoFit PyAutoArray PyAutoGalaxy PyAutoLens" }
+#       secrets: inherit
+#
+# The workflow owns the ceremony (dependency-chain checkout at the matching
+# branch, python setup, cache dirs, running the workspace's own
+# .github/scripts/run_smoke.py, Slack on failure); everything that differs
+# per workspace stays IN the workspace: the install epilogue
+# (.github/scripts/smoke_install.sh, receiving PYTHON_VERSION — extras,
+# pins, version conditionals) and the smoke runner itself. The dependency
+# chain is an input and checkouts use the calling owner, so forks of the
+# organism reuse this workflow without modification.
+#
+# The workflow filename is intentionally stable for downstream callers.
+
+on:
+  workflow_call:
+    inputs:
+      chain:
+        description: "Space-separated dependency libraries in install order, e.g. 'PyAutoConf PyAutoFit'"
+        required: true
+        type: string
+      python-versions:
+        description: "JSON list of python versions to matrix over"
+        required: false
+        type: string
+        default: '["3.12", "3.13"]'
+      slack-channel-id:
+        description: "Slack channel for failure notification"
+        required: false
+        type: string
+        default: "C03S98FEDK2"
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ${{ fromJSON(inputs.python-versions) }}
+    steps:
+      - name: Checkout workspace (repo under test, at the PR ref)
+        uses: actions/checkout@v4
+        with:
+          path: workspace
+
+      - name: Clone dependency chain + PyAutoBuild (matching branch if it exists)
+        shell: bash
+        run: |
+          set -e
+          BRANCH="${{ github.head_ref || github.ref_name }}"
+          OWNER="${{ github.repository_owner }}"
+          for dep in ${{ inputs.chain }} PyAutoBuild; do
+            git clone "https://github.com/$OWNER/$dep" "$dep"
+            if git -C "$dep" ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+              echo "Branch $BRANCH exists in $dep — checking it out"
+              git -C "$dep" fetch origin "$BRANCH"
+              git -C "$dep" checkout "$BRANCH"
+            fi
+          done
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install (base + the workspace's own epilogue)
+        env:
+          PYTHON_VERSION: ${{ matrix.python-version }}
+        run: |
+          pip install --upgrade pip setuptools wheel
+          pip install pyyaml
+          bash workspace/.github/scripts/smoke_install.sh
+
+      - name: Prepare cache dirs
+        run: mkdir -p /tmp/numba_cache /tmp/matplotlib
+
+      - name: Run smoke tests
+        env:
+          JAX_ENABLE_X64: "True"
+          NUMBA_CACHE_DIR: /tmp/numba_cache
+          MPLCONFIGDIR: /tmp/matplotlib
+          PYTHONPATH: ${{ github.workspace }}/PyAutoBuild/autobuild
+        run: |
+          cd workspace
+          python .github/scripts/run_smoke.py
+
+      - name: Slack notify on failure
+        if: ${{ failure() }}
+        uses: slackapi/slack-github-action@v1.21.0
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        with:
+          channel-id: ${{ inputs.slack-channel-id }}
+          payload: |
+            {
+              "text": "${{ github.repository }}/${{ github.ref_name }} smoke tests (Python ${{ matrix.python-version }}) ${{ job.status }}\n${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            }
