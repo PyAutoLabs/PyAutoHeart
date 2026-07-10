@@ -1,0 +1,100 @@
+# Heart URL-fixup rules — the live-check's "immune memory" (Heart#53/#75).
+# Each rule rewrites a known-bad URL pattern to its known-good form when the
+# URL sweep proposes fixes. Pure instance policy: an adopting fork replaces
+# this file with their own accumulated fixups (or empties it).
+#
+# pattern: a Python regex; replacement may use backrefs (\1).
+rewrites:
+- pattern: hhttps://
+  replacement: https://
+  description: hhttps:// typo
+- pattern: (github\.com|githubusercontent\.com)/Jammy2211/(autolens_workspace|autogalaxy_workspace|autofit_workspace)
+  replacement: \1/PyAutoLabs/\2
+  description: Jammy2211/<workspace> → PyAutoLabs/<workspace>
+- pattern: (github\.com|githubusercontent\.com)/Jammy2211/(PyAutoArray|PyAutoLens|PyAutoGalaxy)
+  replacement: \1/PyAutoLabs/\2
+  description: Jammy2211/<library> → PyAutoLabs/<library>
+- pattern: (github\.com|githubusercontent\.com)/(?:Jammy2211|rhayes777)/(PyAutoFit|PyAutoConf)
+  replacement: \1/PyAutoLabs/\2
+  description: Jammy2211|rhayes777/{PyAutoFit,PyAutoConf} → PyAutoLabs/...
+- pattern: (github\.com|githubusercontent\.com)/rhayes777/PyAutoGalaxy
+  replacement: \1/PyAutoLabs/PyAutoGalaxy
+  description: rhayes777/PyAutoGalaxy → PyAutoLabs/PyAutoGalaxy
+- pattern: /blob/release/
+  replacement: /blob/main/
+  description: /blob/release/ → /blob/main/
+- pattern: /tree/release/
+  replacement: /tree/main/
+  description: /tree/release/ → /tree/main/
+- pattern: github\.com/joshspeagle/[Nn]autilus
+  replacement: github.com/johannesulf/nautilus
+  description: joshspeagle/nautilus → johannesulf/nautilus
+- pattern: github\.com/rhayes777/PyAutoBuild
+  replacement: github.com/PyAutoLabs/PyAutoBuild
+  description: rhayes777/PyAutoBuild → PyAutoLabs/PyAutoBuild
+- pattern: www\.sphinx-doc\.org/en/main
+  replacement: www.sphinx-doc.org/en/master
+  description: sphinx-doc /en/main → /en/master
+- pattern: github\.com/bokeh/bokeh/blob/main/CODE_OF_CONDUCT\.md
+  replacement: github.com/bokeh/bokeh/blob/main/docs/CODE_OF_CONDUCT.md
+  description: bokeh CoC moved to /docs/
+- pattern: https?://github\.com/numfocus/numfocus/blob/main/manual/numfocus-coc\.md(#the-short-version)?
+  replacement: https://numfocus.org/code-of-conduct
+  description: numfocus CoC → numfocus.org/code-of-conduct
+- pattern: Fiterence_anti-harassment
+  replacement: Conference_anti-harassment
+  description: Fiterence → Conference (typo)
+- pattern: (colab\.research\.google\.com/github/PyAutoLabs/autofit_workspace/blob/[^/]+/)start_here\.ipynb
+  replacement: \1notebooks/overview/overview_1_the_basics.ipynb
+  description: autofit_workspace Colab badge → notebooks/overview/overview_1_the_basics.ipynb
+- pattern: (colab\.research\.google\.com/github/PyAutoLabs/autogalaxy_workspace/blob/[^/]+/)start_here\.ipynb
+  replacement: \1notebooks/imaging/start_here.ipynb
+  description: autogalaxy_workspace Colab badge → notebooks/imaging/start_here.ipynb
+- pattern: (colab\.research\.google\.com/github/PyAutoLabs/autolens_workspace/blob/[^/]+/)start_here\.ipynb
+  replacement: \1notebooks/imaging/start_here.ipynb
+  description: autolens_workspace Colab badge → notebooks/imaging/start_here.ipynb
+- pattern: autofit_workspace/blob/main/notebooks/overview/simple/fit\.ipynb
+  replacement: autofit_workspace/blob/main/notebooks/overview/overview_1_the_basics.ipynb
+  description: autofit_workspace simple/fit → overview_1_the_basics
+- pattern: autofit_workspace/blob/main/notebooks/overview/complex/fit\.ipynb
+  replacement: autofit_workspace/blob/main/notebooks/overview/overview_2_scientific_workflow.ipynb
+  description: autofit_workspace complex/fit → overview_2_scientific_workflow
+- pattern: autofit_workspace/blob/main/notebooks/overview/(simple|complex)/result\.ipynb
+  replacement: autofit_workspace/blob/main/notebooks/cookbooks/result.ipynb
+  description: autofit_workspace overview/*/result → cookbooks/result
+- pattern: autofit_workspace/tree/main/notebooks/overview/simplee
+  replacement: autofit_workspace/tree/main/notebooks/overview
+  description: autofit_workspace simplee typo → overview
+- pattern: pyautofit\.readthedocs\.io/en/latest/cookbooks/cookbook_1_basics\.html
+  replacement: pyautofit.readthedocs.io/en/latest/cookbooks/model.html
+  description: PyAutoFit cookbook_1_basics → cookbooks/model
+- pattern: pyautofit\.readthedocs\.io/en/latest/overview/model_fit\.html
+  replacement: pyautofit.readthedocs.io/en/latest/overview/the_basics.html
+  description: PyAutoFit overview/model_fit → overview/the_basics
+- pattern: pyautofit\.readthedocs\.io/en/latest/overview/model_complex\.html
+  replacement: pyautofit.readthedocs.io/en/latest/cookbooks/model.html
+  description: PyAutoFit overview/model_complex → cookbooks/model
+- pattern: pyautofit\.readthedocs\.io/en/latest/overview/non_linear_search\.html
+  replacement: pyautofit.readthedocs.io/en/latest/cookbooks/search.html
+  description: PyAutoFit overview/non_linear_search → cookbooks/search
+- pattern: pyautofit\.readthedocs\.io/en/latest/overview/result\.html
+  replacement: pyautofit.readthedocs.io/en/latest/cookbooks/result.html
+  description: PyAutoFit overview/result → cookbooks/result
+- pattern: (autogalaxy_workspace|autolens_workspace)/blob/main/notebooks/modeling/imaging/features/(multi_gaussian_expansion|shapelets|linear_light_profiles|pixelization|extra_galaxies|operated_light_profile|sky_background)\.ipynb
+  replacement: \1/blob/main/notebooks/imaging/features/\2/modeling.ipynb
+  description: workspaces modeling/imaging/features/<x>.ipynb → imaging/features/<x>/modeling.ipynb
+- pattern: (autogalaxy_workspace|autolens_workspace)/blob/main/notebooks/multi/modeling/features/(wavelength_dependence|same_wavelength|dataset_offsets|one_by_one|imaging_and_interferometer|pixelization)\.ipynb
+  replacement: \1/blob/main/notebooks/multi/features/\2/modeling.ipynb
+  description: workspaces multi/modeling/features/<x>.ipynb → multi/features/<x>/modeling.ipynb
+- pattern: (autogalaxy_workspace|autolens_workspace)/blob/main/notebooks/multi/modeling/start_here\.ipynb
+  replacement: \1/blob/main/notebooks/multi/start_here.ipynb
+  description: workspaces multi/modeling/start_here → multi/start_here
+- pattern: autolens_workspace/blob/main/notebooks/imaging/features/shapelets/
+  replacement: autolens_workspace/blob/main/notebooks/imaging/features/advanced/shapelets/
+  description: autolens shapelets under imaging/features/advanced/
+- pattern: (autogalaxy_workspace|autolens_workspace|autofit_workspace)/tree/main/notebooks/plot
+  replacement: \1/tree/main/notebooks/guides/plot
+  description: workspaces tree/main/notebooks/plot → notebooks/guides/plot
+- pattern: raw\.githubusercontent\.com/(?:rhayes777|PyAutoLabs)/PyAutoFit/feature/docs_update/
+  replacement: raw.githubusercontent.com/PyAutoLabs/PyAutoFit/main/
+  description: PyAutoFit docs_update branch images → PyAutoLabs/main

@@ -83,108 +83,22 @@ class Result:
     locations: list[Location] = field(default_factory=list)
 
 
-KNOWN_PATTERN_REWRITES: list[tuple[re.Pattern[str], str, str]] = [
-    # (regex, replacement, description)
-    (re.compile(r"hhttps://"), "https://", "hhttps:// typo"),
-    (re.compile(
-        r"(github\.com|githubusercontent\.com)/Jammy2211/"
-        r"(autolens_workspace|autogalaxy_workspace|autofit_workspace)"
-    ), r"\1/PyAutoLabs/\2", "Jammy2211/<workspace> → PyAutoLabs/<workspace>"),
-    (re.compile(
-        r"(github\.com|githubusercontent\.com)/Jammy2211/"
-        r"(PyAutoArray|PyAutoLens|PyAutoGalaxy)"
-    ), r"\1/PyAutoLabs/\2", "Jammy2211/<library> → PyAutoLabs/<library>"),
-    (re.compile(r"(github\.com|githubusercontent\.com)/(?:Jammy2211|rhayes777)/(PyAutoFit|PyAutoConf)"),
-     r"\1/PyAutoLabs/\2", "Jammy2211|rhayes777/{PyAutoFit,PyAutoConf} → PyAutoLabs/..."),
-    (re.compile(r"(github\.com|githubusercontent\.com)/rhayes777/PyAutoGalaxy"),
-     r"\1/PyAutoLabs/PyAutoGalaxy", "rhayes777/PyAutoGalaxy → PyAutoLabs/PyAutoGalaxy"),
-    (re.compile(r"/blob/release/"), "/blob/main/", "/blob/release/ → /blob/main/"),
-    (re.compile(r"/tree/release/"), "/tree/main/", "/tree/release/ → /tree/main/"),
-    (re.compile(r"github\.com/joshspeagle/[Nn]autilus"),
-     "github.com/johannesulf/nautilus", "joshspeagle/nautilus → johannesulf/nautilus"),
-    (re.compile(r"github\.com/rhayes777/PyAutoBuild"),
-     "github.com/PyAutoLabs/PyAutoBuild", "rhayes777/PyAutoBuild → PyAutoLabs/PyAutoBuild"),
-    (re.compile(r"www\.sphinx-doc\.org/en/main"),
-     "www.sphinx-doc.org/en/master", "sphinx-doc /en/main → /en/master"),
-    (re.compile(r"github\.com/bokeh/bokeh/blob/main/CODE_OF_CONDUCT\.md"),
-     "github.com/bokeh/bokeh/blob/main/docs/CODE_OF_CONDUCT.md",
-     "bokeh CoC moved to /docs/"),
-    (re.compile(
-        r"https?://github\.com/numfocus/numfocus/blob/main/manual/numfocus-coc\.md"
-        r"(#the-short-version)?"
-    ), "https://numfocus.org/code-of-conduct",
-     "numfocus CoC → numfocus.org/code-of-conduct"),
-    (re.compile(r"Fiterence_anti-harassment"), "Conference_anti-harassment",
-     "Fiterence → Conference (typo)"),
-    (re.compile(
-        r"(colab\.research\.google\.com/github/PyAutoLabs/autofit_workspace/blob/[^/]+/)start_here\.ipynb"
-    ), r"\1notebooks/overview/overview_1_the_basics.ipynb",
-     "autofit_workspace Colab badge → notebooks/overview/overview_1_the_basics.ipynb"),
-    (re.compile(
-        r"(colab\.research\.google\.com/github/PyAutoLabs/autogalaxy_workspace/blob/[^/]+/)start_here\.ipynb"
-    ), r"\1notebooks/imaging/start_here.ipynb",
-     "autogalaxy_workspace Colab badge → notebooks/imaging/start_here.ipynb"),
-    (re.compile(
-        r"(colab\.research\.google\.com/github/PyAutoLabs/autolens_workspace/blob/[^/]+/)start_here\.ipynb"
-    ), r"\1notebooks/imaging/start_here.ipynb",
-     "autolens_workspace Colab badge → notebooks/imaging/start_here.ipynb"),
-    (re.compile(r"autofit_workspace/blob/main/notebooks/overview/simple/fit\.ipynb"),
-     "autofit_workspace/blob/main/notebooks/overview/overview_1_the_basics.ipynb",
-     "autofit_workspace simple/fit → overview_1_the_basics"),
-    (re.compile(r"autofit_workspace/blob/main/notebooks/overview/complex/fit\.ipynb"),
-     "autofit_workspace/blob/main/notebooks/overview/overview_2_scientific_workflow.ipynb",
-     "autofit_workspace complex/fit → overview_2_scientific_workflow"),
-    (re.compile(r"autofit_workspace/blob/main/notebooks/overview/(simple|complex)/result\.ipynb"),
-     "autofit_workspace/blob/main/notebooks/cookbooks/result.ipynb",
-     "autofit_workspace overview/*/result → cookbooks/result"),
-    (re.compile(r"autofit_workspace/tree/main/notebooks/overview/simplee"),
-     "autofit_workspace/tree/main/notebooks/overview",
-     "autofit_workspace simplee typo → overview"),
-    (re.compile(r"pyautofit\.readthedocs\.io/en/latest/cookbooks/cookbook_1_basics\.html"),
-     "pyautofit.readthedocs.io/en/latest/cookbooks/model.html",
-     "PyAutoFit cookbook_1_basics → cookbooks/model"),
-    (re.compile(r"pyautofit\.readthedocs\.io/en/latest/overview/model_fit\.html"),
-     "pyautofit.readthedocs.io/en/latest/overview/the_basics.html",
-     "PyAutoFit overview/model_fit → overview/the_basics"),
-    (re.compile(r"pyautofit\.readthedocs\.io/en/latest/overview/model_complex\.html"),
-     "pyautofit.readthedocs.io/en/latest/cookbooks/model.html",
-     "PyAutoFit overview/model_complex → cookbooks/model"),
-    (re.compile(r"pyautofit\.readthedocs\.io/en/latest/overview/non_linear_search\.html"),
-     "pyautofit.readthedocs.io/en/latest/cookbooks/search.html",
-     "PyAutoFit overview/non_linear_search → cookbooks/search"),
-    (re.compile(r"pyautofit\.readthedocs\.io/en/latest/overview/result\.html"),
-     "pyautofit.readthedocs.io/en/latest/cookbooks/result.html",
-     "PyAutoFit overview/result → cookbooks/result"),
-    (re.compile(
-        r"(autogalaxy_workspace|autolens_workspace)/blob/main/notebooks/"
-        r"modeling/imaging/features/(multi_gaussian_expansion|shapelets|"
-        r"linear_light_profiles|pixelization|extra_galaxies|operated_light_profile|"
-        r"sky_background)\.ipynb"
-    ), r"\1/blob/main/notebooks/imaging/features/\2/modeling.ipynb",
-     "workspaces modeling/imaging/features/<x>.ipynb → imaging/features/<x>/modeling.ipynb"),
-    (re.compile(
-        r"(autogalaxy_workspace|autolens_workspace)/blob/main/notebooks/"
-        r"multi/modeling/features/(wavelength_dependence|same_wavelength|dataset_offsets|"
-        r"one_by_one|imaging_and_interferometer|pixelization)\.ipynb"
-    ), r"\1/blob/main/notebooks/multi/features/\2/modeling.ipynb",
-     "workspaces multi/modeling/features/<x>.ipynb → multi/features/<x>/modeling.ipynb"),
-    (re.compile(
-        r"(autogalaxy_workspace|autolens_workspace)/blob/main/notebooks/"
-        r"multi/modeling/start_here\.ipynb"
-    ), r"\1/blob/main/notebooks/multi/start_here.ipynb",
-     "workspaces multi/modeling/start_here → multi/start_here"),
-    (re.compile(r"autolens_workspace/blob/main/notebooks/imaging/features/shapelets/"),
-     "autolens_workspace/blob/main/notebooks/imaging/features/advanced/shapelets/",
-     "autolens shapelets under imaging/features/advanced/"),
-    (re.compile(
-        r"(autogalaxy_workspace|autolens_workspace|autofit_workspace)/tree/main/notebooks/plot"
-    ), r"\1/tree/main/notebooks/guides/plot",
-     "workspaces tree/main/notebooks/plot → notebooks/guides/plot"),
-    (re.compile(
-        r"raw\.githubusercontent\.com/(?:rhayes777|PyAutoLabs)/PyAutoFit/feature/docs_update/"
-    ), "raw.githubusercontent.com/PyAutoLabs/PyAutoFit/main/",
-     "PyAutoFit docs_update branch images → PyAutoLabs/main"),
-]
+def _load_pattern_rewrites() -> list[tuple[re.Pattern[str], str, str]]:
+    """The known URL-fixup rules, from config/url_fixups.yaml (Heart policy —
+    the sweep's accumulated immune memory; adopter-replaceable). Strict: the
+    file is in-repo, so a missing/broken file fails loudly."""
+    import yaml
+
+    path = Path(__file__).resolve().parents[2] / "config" / "url_fixups.yaml"
+    rules = yaml.safe_load(path.read_text())["rewrites"]
+    return [
+        (re.compile(r["pattern"]), r["replacement"], r["description"])
+        for r in rules
+    ]
+
+
+KNOWN_PATTERN_REWRITES: list[tuple[re.Pattern[str], str, str]] = _load_pattern_rewrites()
+
 
 
 _TOOL_DIR_ABS = Path(__file__).resolve().parent  # PyAutoBuild/autobuild
