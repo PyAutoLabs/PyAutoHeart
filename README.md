@@ -8,9 +8,9 @@
 <!-- heart:begin -->
 ## 🟡 PyAuto health — **YELLOW** (score 60)
 
-_snapshot `2026-07-09T08:36:09.123472+00:00` · just now_
+_snapshot `2026-07-10T08:20:56.527573+00:00` · just now_
 
-**Warnings:** test run status unknown (no report.json); install verification not run; no release validation for current source; PyAutoMind: open PR 9d old
+**Warnings:** PyAutoMind: open PR 10d old
 
 | | Check | Status |
 |--|--|--|
