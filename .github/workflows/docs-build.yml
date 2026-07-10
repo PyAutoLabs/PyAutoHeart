@@ -23,7 +23,7 @@ on:
   workflow_call:
     inputs:
       package:
-        description: "PyAuto package to build docs for: autoconf|autofit|autoarray|autogalaxy|autolens"
+        description: "PyAuto package to build docs for: autoconf|autofit|autoarray|autogalaxy|autolens|pyautoscientist (docs-only)"
         required: true
         type: string
 
@@ -34,16 +34,20 @@ jobs:
       - name: Map package → repo + dependency chain
         id: map
         run: |
+          install=package
           case "${{ inputs.package }}" in
             autoconf)   repo=PyAutoConf;   deps="" ;;
             autofit)    repo=PyAutoFit;    deps="PyAutoConf" ;;
             autoarray)  repo=PyAutoArray;  deps="PyAutoConf" ;;
             autogalaxy) repo=PyAutoGalaxy; deps="PyAutoConf PyAutoFit PyAutoArray" ;;
             autolens)   repo=PyAutoLens;   deps="PyAutoConf PyAutoFit PyAutoArray PyAutoGalaxy" ;;
+            # Docs-only repos: no pip package — install docs/requirements.txt.
+            pyautoscientist) repo=PyAutoBrain; deps=""; install=requirements ;;
             *) echo "::error::unknown package '${{ inputs.package }}'"; exit 1 ;;
           esac
           echo "repo=$repo" >> "$GITHUB_OUTPUT"
           echo "deps=$deps" >> "$GITHUB_OUTPUT"
+          echo "install=$install" >> "$GITHUB_OUTPUT"
 
       - name: Checkout ${{ steps.map.outputs.repo }} (repo under test, at the PR ref)
         uses: actions/checkout@v4
@@ -71,10 +75,14 @@ jobs:
       - name: Install (deps + package from source, [optional] + [docs] extras)
         run: |
           pip install --upgrade pip setuptools wheel
-          for r in ${{ steps.map.outputs.deps }}; do
-            pip install "./$r[optional]"
-          done
-          pip install "./${{ steps.map.outputs.repo }}[optional,docs]"
+          if [ "${{ steps.map.outputs.install }}" = "requirements" ]; then
+            pip install -r "./${{ steps.map.outputs.repo }}/docs/requirements.txt"
+          else
+            for r in ${{ steps.map.outputs.deps }}; do
+              pip install "./$r[optional]"
+            done
+            pip install "./${{ steps.map.outputs.repo }}[optional,docs]"
+          fi
 
       - name: Build docs (fail on warning-count regression)
         run: |
