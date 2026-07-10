@@ -51,4 +51,5 @@ under `~/.pyauto-heart/`. Which repos are polled, and with what thresholds,
 is `config/repos.yaml`. Tests: `pytest tests/`.
 
 Boundary and agent guidance: [AGENTS.md](AGENTS.md). The organism:
-[PyAutoBrain/ORGANISM.md](https://github.com/PyAutoLabs/PyAutoBrain/blob/main/ORGANISM.md).
+[PyAutoBrain/ORGANISM.md](https://github.com/PyAutoLabs/PyAutoBrain/blob/main/ORGANISM.md),
+documented in full at <https://pyautoscientist.readthedocs.io>.
