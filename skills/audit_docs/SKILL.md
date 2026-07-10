@@ -1,7 +1,6 @@
 ---
 name: audit-docs
 description: Audit docs/api/*.rst files across repos for broken module paths, missing classes, and stale autosummary entries.
-user-invocable: true
 ---
 
 Scan Sphinx API documentation across PyAutoFit, PyAutoGalaxy, and PyAutoLens for broken `.. currentmodule::` paths and stale `.. autosummary::` class references. Optionally auto-fix broken entries.

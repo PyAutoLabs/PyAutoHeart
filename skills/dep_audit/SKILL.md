@@ -1,7 +1,6 @@
 ---
-name: dep_audit
+name: dep-audit
 description: Audit dependency version caps across all PyAuto repos, compare against PyPI latest, and report a risk-tiered upgrade summary.
-user-invocable: true
 ---
 
 Audit dependency version constraints across the PyAuto ecosystem, compare them against the latest versions on PyPI, and produce a risk-tiered upgrade report.

@@ -23,7 +23,7 @@ about cleanup if they ran with `--keep`.
 A check that cannot run on the current host (interpreter missing, conda missing) is
 reported as **SKIP** and does not count toward overall failure.
 
-## Running outside Claude
+## Running without a skill harness
 
 The script is self-contained and runs from any shell. The canonical entry point is
 `pyauto-heart verify_install`, which runs the checks and writes the readiness sidecar.

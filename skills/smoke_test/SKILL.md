@@ -1,7 +1,6 @@
 ---
 name: smoke-test
 description: Run targeted workspace smoke tests to verify downstream scripts still work after library changes.
-user-invocable: true
 ---
 
 Run a curated set of workspace scripts to verify that library changes haven't
