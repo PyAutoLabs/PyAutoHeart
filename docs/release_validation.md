@@ -93,8 +93,8 @@ carries `profile` and `commit_shas`, so the gate can enforce them):
 
 1. **Test BUILDS, not SOURCE.** Today `workspace-validation.yml` shadows the
    PyAuto packages with source checkouts via `PYTHONPATH`, so the gating run
-   never touches a wheel — the exact blind spot that let the PyAutoFit `[nss]`
-   git-URL break every TestPyPI upload for weeks. The release run MUST
+   never touches a wheel — the exact blind spot that let a direct git-URL
+   dependency break every TestPyPI upload for weeks. The release run MUST
    `pip install` the TestPyPI wheels published by the M1 rehearsal and put **no**
    source on `PYTHONPATH`.
 

@@ -138,7 +138,7 @@ def test_build_sidecar_library_uses_tests_workflow(tmp_path):
     cfg = _cfg(tmp_path)
     # A library with a green Tests run plus an unrelated red workflow: only the
     # required Tests workflow gates, so the rollup is success.
-    runs = [_run("Tests", "success"), _run("nss install smoke", "failure")]
+    runs = [_run("Tests", "success"), _run("Docs Build", "failure")]
     side = ci.build_sidecar("PyAutoFit", "libraries", runs, HEAD, "T", config_path=cfg)
     assert side["conclusion"] == "success"
 
