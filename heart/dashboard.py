@@ -56,6 +56,7 @@ LOCAL_ONLY_FAMILIES = (
     "repo_state",
     "worktree_drift",
     "script_timing",
+    "import_time",
     "profiling_drift",
     "test_run",
     "version_skew",
@@ -372,6 +373,30 @@ def build_board(
                 for e in (timing.get("red") or [])[:5]
             ]
             sections.append(Section("script_timing", "Script timing", st, summary, details))
+
+    # Import timing (advisory; off-tick daily) --------------------------------
+    if "import_time" in unobserved:
+        sections.append(_unobs_section("import_time", "Import timing"))
+    else:
+        imp = snapshot.get("import_time") or {}
+        if imp:
+            r = _as_int(imp.get("red_count"))
+            y = _as_int(imp.get("yellow_count"))
+            g = _as_int(imp.get("green_count"))
+            if r:
+                st, summary = FAIL, f"{r} import regressions (>3× baseline), {y} slow (>1.5×)"
+            elif y:
+                st, summary = WARN, f"{y} imports >1.5× baseline, {g} within"
+            elif not _as_int(imp.get("packages_measured")):
+                st, summary = WARN, "no libraries importable (set HYGIENE_PYTHON)"
+            else:
+                st, summary = OK, f"{g} imports within baseline"
+            details = [
+                f"✗ {e['package']}  "
+                f"{e['latest_seconds']:.2f}s vs {e['baseline_seconds']:.2f}s ({e['ratio']}×)"
+                for e in (imp.get("red") or [])[:5]
+            ]
+            sections.append(Section("import_time", "Import timing", st, summary, details))
 
     # Profiling pinned-value drift -------------------------------------------
     if "profiling_drift" in unobserved:
