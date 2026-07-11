@@ -75,6 +75,7 @@ def aggregate() -> dict[str, Any]:
         "worktree_drift": _read_json_or_default(HEART_STATE_DIR / "worktree_drift.json", {}),
         "script_timing": _read_json_or_default(HEART_STATE_DIR / "script_timing.json", {}),
         "import_time": _read_json_or_default(HEART_STATE_DIR / "import_time.json", {}),
+        "unit_test_timing": _read_json_or_default(HEART_STATE_DIR / "unit_test_timing.json", {}),
         "profiling_drift": _read_json_or_default(HEART_STATE_DIR / "profiling_drift.json", {}),
         "test_run": _read_json_or_default(HEART_STATE_DIR / "test_run.json", {}),
         "version_skew": _read_json_or_default(HEART_STATE_DIR / "version_skew.json", {}),
