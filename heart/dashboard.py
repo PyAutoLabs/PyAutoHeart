@@ -59,6 +59,7 @@ LOCAL_ONLY_FAMILIES = (
     "import_time",
     "profiling_drift",
     "test_run",
+    "workspace_testmode_timing",
     "version_skew",
 )
 
@@ -422,6 +423,30 @@ def build_board(
             sections.append(
                 Section("profiling_drift", "Profiling drift", st, summary, details)
             )
+
+    # Workspace test-mode script timing (advisory; off-tick) ------------------
+    if "workspace_testmode_timing" in unobserved:
+        sections.append(_unobs_section("workspace_testmode_timing", "Workspace test-mode timing"))
+    else:
+        wt = snapshot.get("workspace_testmode_timing") or {}
+        if wt:
+            r = _as_int(wt.get("red_count"))
+            y = _as_int(wt.get("yellow_count"))
+            g = _as_int(wt.get("green_count"))
+            if r:
+                st, summary = FAIL, f"{r} script regressions (>3× baseline), {y} slow (>1.5×)"
+            elif y:
+                st, summary = WARN, f"{y} scripts >1.5× baseline, {g} within"
+            elif not _as_int(wt.get("scripts_measured")):
+                st, summary = WARN, "no script runnable (set HYGIENE_PYTHON / PYAUTO_ROOT)"
+            else:
+                st, summary = OK, f"{g} scripts within baseline (TEST_MODE)"
+            details = [
+                f"✗ {e['script'].split('/')[-1]}  "
+                f"{e['latest_seconds']:.1f}s vs {e['baseline_seconds']:.1f}s ({e['ratio']}×)"
+                for e in (wt.get("red") or [])[:5]
+            ]
+            sections.append(Section("workspace_testmode_timing", "Workspace test-mode timing", st, summary, details))
 
     # Test run ---------------------------------------------------------------
     if "test_run" in unobserved:
