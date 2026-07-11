@@ -28,10 +28,14 @@ previous completed run.
 Read job conclusions from the selected run and fetch failed logs when needed:
 
 ```bash
-gh run view <run-id> --repo PyAutoLabs/PyAutoBuild --json jobs \
-  --jq '.jobs[] | {name, conclusion}'
+gh api --paginate \
+  'repos/PyAutoLabs/PyAutoBuild/actions/runs/<run-id>/jobs?per_page=100' \
+  --jq '.jobs[] | {id, name, status, conclusion}'
 gh run view <run-id> --repo PyAutoLabs/PyAutoBuild --log-failed
 ```
+
+Use the Actions jobs API because the workspace's supported `gh 2.4.0` does not
+expose `jobs` through `gh run view --json`.
 
 Classify the run mode from job names and conclusions before presenting any next
 action. Matrix suffixes may be present in the displayed job names.
@@ -80,18 +84,9 @@ present in `--log-failed`. Include a file, traceback tail, or recent-PR
 correlation only when the logs establish it. Group repeated failures by likely
 locus: library source, workspace, environment, timeout, or release workflow.
 
-If the build filed an `ai-analysis` issue, inspect its comments as additional
-context:
-
-```bash
-gh issue list --repo PyAutoLabs/PyAutoBuild --label ai-analysis --limit 5 \
-  --json number,title,url,comments
-gh api repos/PyAutoLabs/PyAutoBuild/issues/<number>/comments --jq '.[].body'
-```
-
-Also list skipped scripts that appear stale or risky. GUI-only skips may remain
-informational; skips for known bugs or missing capabilities require an open,
-current reason.
+The release workflow does not emit `ai-analysis` issues or per-script skip
+reports. Do not search for or present either as evidence for this run. Report
+only job conclusions and details present in the selected run's logs.
 
 ### 5. Route by the Heart verdict
 

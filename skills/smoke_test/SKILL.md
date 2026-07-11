@@ -22,7 +22,7 @@ $smoke-test autofit             # run only autofit_workspace (only when explicit
 $smoke-test autogalaxy autolens # run specific workspaces (only when explicitly requested)
 ```
 
-In Claude, invoke the same skill as `/smoke-test`.
+In Claude, invoke the same skill as `/smoke_test`.
 
 ## Workspace mapping
 

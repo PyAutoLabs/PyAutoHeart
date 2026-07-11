@@ -17,7 +17,7 @@ $audit-docs --fix                   # audit all repos and auto-fix broken refere
 $audit-docs --fix PyAutoLens        # fix one repo
 ```
 
-In Claude, invoke the same skill as `/audit-docs`.
+In Claude, invoke the same skill as `/audit_docs`.
 
 ## Repo Mapping
 
