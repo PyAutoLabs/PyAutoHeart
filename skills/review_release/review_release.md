@@ -25,23 +25,18 @@ previous completed run.
 
 ### 2. Read the build evidence
 
-Download the selected run's report:
-
-```bash
-gh run download <run-id> --repo PyAutoLabs/PyAutoBuild \
-  --name release-report --dir /tmp/release-report
-```
-
-Read `release-report.json` and `release-report.md`. If the artifact is absent,
-fall back to job conclusions:
+Read job conclusions from the selected run and fetch failed logs when needed:
 
 ```bash
 gh run view <run-id> --repo PyAutoLabs/PyAutoBuild --json jobs \
   --jq '.jobs[] | {name, conclusion}'
+gh run view <run-id> --repo PyAutoLabs/PyAutoBuild --log-failed
 ```
 
-Treat this report as evidence only. Do not derive `READY` or `NOT READY` from
-its pass/fail totals.
+The current workflow does not publish an aggregate `release-report` artifact.
+Do not invent per-script totals or tracebacks that are absent from the jobs and
+logs. Treat the available run data as evidence only; never derive `READY` or
+`NOT READY` from job conclusions.
 
 ### 3. Ask Heart for the verdict
 
@@ -60,7 +55,7 @@ Release Readiness Report
 Heart verdict: GREEN / STALE / YELLOW / RED
 Reasons: <verbatim Heart reasons>
 Build run: <URL>
-Build evidence: <passed / failed / skipped / timeout counts>
+Build jobs: <successful / failed / skipped / cancelled counts>
 ```
 
 The Heart verdict is authoritative even when it differs from the selected
@@ -69,8 +64,9 @@ GREEN inside this skill.
 
 ### 4. Explain adverse evidence
 
-For each build failure, show its file, classification, short error, relevant
-traceback tail, and recent-PR correlation. Group repeated failures by likely
+For each build failure, show the failing job and the error detail actually
+present in `--log-failed`. Include a file, traceback tail, or recent-PR
+correlation only when the logs establish it. Group repeated failures by likely
 locus: library source, workspace, environment, timeout, or release workflow.
 
 If the build filed an `ai-analysis` issue, inspect its comments as additional
