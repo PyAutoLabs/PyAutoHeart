@@ -1,165 +1,107 @@
 # Review Release: Triage Release Readiness
 
-Fetch the latest release build results, present a release readiness summary, and route to either release or fix. This is the "morning after" skill — run it after an overnight build to assess whether the software is ready for release.
+Review the latest PyAutoBuild release evidence, ask PyAutoHeart for the
+authoritative readiness verdict, and route the human to release, refresh, fix,
+or investigate. Build artifacts explain what ran; they never determine whether
+the organism is ready.
 
-A **PyAutoHeart** skill — release-readiness triage is exactly the health/readiness verdict Heart owns (`pyauto-heart readiness`). It reads the build results that PyAutoBuild produced; Build executes, Heart judges.
+A **PyAutoHeart** skill: Build executes, Heart judges, and the Brain release
+conductor coordinates any subsequent release action.
 
 ## Steps
 
-### 1. Fetch Latest Release Run
+### 1. Fetch the latest release run
 
-Find the most recent release workflow run:
-
-```bash
-gh run list --workflow=release.yml --repo Jammy2211/PyAutoBuild --limit 5 --json databaseId,status,conclusion,createdAt,url
-```
-
-Present the runs and let the user pick one (default: most recent completed run). Show status and conclusion for each.
-
-If the most recent run is still in progress, report its status and ask if the user wants to wait or review a previous run.
-
-### 2. Download the Release Report
-
-Download the `release-report` artifact from the selected run:
+List recent completed and in-progress runs:
 
 ```bash
-gh run download <run-id> --repo Jammy2211/PyAutoBuild --name release-report --dir /tmp/release-report
+gh run list --workflow=release.yml --repo PyAutoLabs/PyAutoBuild --limit 5 \
+  --json databaseId,status,conclusion,createdAt,url
 ```
 
-Read `release-report.json` and `release-report.md` from the downloaded artifact.
+Use the most recent completed run by default. If the newest run is still in
+progress, report that and let the user choose whether to wait or inspect the
+previous completed run.
 
-If the artifact doesn't exist (workflow predates this feature, or the `analyze_results` job didn't run), fall back to checking job statuses:
+### 2. Read the build evidence
+
+Download the selected run's report:
 
 ```bash
-gh run view <run-id> --repo Jammy2211/PyAutoBuild --json jobs --jq '.jobs[] | {name, conclusion}'
+gh run download <run-id> --repo PyAutoLabs/PyAutoBuild \
+  --name release-report --dir /tmp/release-report
 ```
 
-### 3. Present Release Readiness Summary
+Read `release-report.json` and `release-report.md`. If the artifact is absent,
+fall back to job conclusions:
 
-Display the report in a clear format:
-
+```bash
+gh run view <run-id> --repo PyAutoLabs/PyAutoBuild --json jobs \
+  --jq '.jobs[] | {name, conclusion}'
 ```
+
+Treat this report as evidence only. Do not derive `READY` or `NOT READY` from
+its pass/fail totals.
+
+### 3. Ask Heart for the verdict
+
+Run the canonical readiness entrypoint after reading the build evidence:
+
+```bash
+pyauto-heart readiness --json
+```
+
+Display:
+
+```text
 Release Readiness Report
 ========================
 
-Status: READY / NOT READY
-Run: <URL>
-Date: <date>
-
-Summary
--------
-Passed: X | Failed: Y | Skipped: Z | Timeout: W
-
-Per-Project Breakdown
----------------------
-autofit:     P passed, F failed, S skipped
-autogalaxy:  P passed, F failed, S skipped
-autolens:    P passed, F failed, S skipped
-autofit_test:    ...
-autolens_test:   ...
+Heart verdict: GREEN / STALE / YELLOW / RED
+Reasons: <verbatim Heart reasons>
+Build run: <URL>
+Build evidence: <passed / failed / skipped / timeout counts>
 ```
 
-### 4. Failure Analysis
+The Heart verdict is authoritative even when it differs from the selected
+build's conclusion. Releases require GREEN. Never acknowledge YELLOW or infer
+GREEN inside this skill.
 
-For each failure, present:
-- File path
-- Classification (source code bug, workspace issue, environment, timeout, etc.)
-- Error summary (first 2-3 lines)
-- PR correlation (if the script was recently modified)
-- Traceback snippet (collapsible)
+### 4. Explain adverse evidence
 
-Group failures by classification so the user can see patterns (e.g. "3 environment failures — all ModuleNotFoundError for the same package").
+For each build failure, show its file, classification, short error, relevant
+traceback tail, and recent-PR correlation. Group repeated failures by likely
+locus: library source, workspace, environment, timeout, or release workflow.
 
-### 5. Check for Copilot Analysis
-
-If a GitHub Issue was created by the build (labelled `ai-analysis`):
+If the build filed an `ai-analysis` issue, inspect its comments as additional
+context:
 
 ```bash
-gh issue list --repo Jammy2211/PyAutoBuild --label "ai-analysis" --limit 5 --json number,title,url,comments
+gh issue list --repo PyAutoLabs/PyAutoBuild --label ai-analysis --limit 5 \
+  --json number,title,url,comments
+gh api repos/PyAutoLabs/PyAutoBuild/issues/<number>/comments --jq '.[].body'
 ```
 
-Fetch the most recent one matching this run. Check if Copilot has posted analysis comments:
+Also list skipped scripts that appear stale or risky. GUI-only skips may remain
+informational; skips for known bugs or missing capabilities require an open,
+current reason.
 
-```bash
-gh api repos/Jammy2211/PyAutoBuild/issues/<number>/comments --jq '.[].body'
-```
+### 5. Route by the Heart verdict
 
-If Copilot analysis exists, summarise its key findings (root causes, recommendations, go/no-go).
+- **GREEN**: present the evidence and ask the human whether to invoke the Brain
+  `release` skill (`/release` or `/build` in Claude, depending on the requested
+  mode). Manual releases remain `human-required`.
+- **STALE**: list the exact evidence Heart requires refreshing and route to the
+  corresponding validation command. Do not release.
+- **YELLOW / RED**: route each reason and build failure to a fix or
+  investigation. Do not offer a release override.
 
-### 6. Skipped Tests Review
+For fixes, use the current harness's `start-library` or `start-workspace` skill
+(`/start_library` or `/start_workspace` in Claude) after filing a concise
+PyAutoMind prompt through `intake`. Environment and workflow failures normally
+target PyAutoBuild; source or script failures target the owning library or
+workspace.
 
-Show the count of skipped tests and flag any that seem stale or risky:
-- Scripts skipped due to known bugs — are those bugs still open?
-- Scripts skipped due to missing features — has the feature been implemented?
-- GUI scripts — always skipped, no action needed
-
-### 7. Release Decision
-
-Ask the user:
-
-```
-What would you like to do?
-
-  (a) Release — all tests pass, proceed with release
-  (b) Fix and rebuild — failures need fixing before release
-  (c) Release anyway — accept known failures and proceed
-  (d) Investigate — dig deeper into specific failures before deciding
-```
-
-#### If (a) Release:
-
-Confirm the version number and that the `release` and `release_workspaces` jobs will execute. The release jobs in the workflow are already gated on test success, so if tests passed, they should have run. Verify:
-
-```bash
-gh run view <run-id> --repo Jammy2211/PyAutoBuild --json jobs --jq '.jobs[] | select(.name | startswith("release")) | {name, conclusion}'
-```
-
-If the release jobs completed successfully, report "Release complete" with the version number.
-
-If the release jobs were skipped (because `skip_release` was true or tests failed), offer to re-trigger with release enabled.
-
-#### If (b) Fix and rebuild:
-
-Identify which failures need fixing and where the fix likely lives:
-- **Source code bugs** → "Run `/start_library` to fix these in the library code"
-- **Workspace issues** → "Run `/start_workspace` to fix these workspace scripts"
-- **Environment issues** → "These may need workflow/dependency changes in PyAutoBuild"
-
-Create a mini-prompt summarising the failures to give context for the next dev session. Write it to `PyAutoMind/release_fixes.md`:
-
-```markdown
-## Release Fix: <date>
-
-### Failures to fix
-
-1. `autolens/scripts/modeling/start_here.py` — AttributeError: 'FitImaging' has no attribute 'log_likelihood'
-   - Classification: source_code_bug
-   - Likely fix: check PyAutoLens FitImaging API changes
-
-2. `autofit/scripts/searches/nest/UltraNest.py` — ModuleNotFoundError: No module named 'ultranest'
-   - Classification: environment
-   - Likely fix: add ultranest to optional requirements or update no_run.yaml
-
-### Suggested approach
-<brief recommendation based on failure patterns>
-```
-
-Tell the user: "Failure context written to `PyAutoMind/release_fixes.md`. Run `/start_dev` to begin fixing."
-
-#### If (c) Release anyway:
-
-Warn about the known failures. If `skip_release` was set to true in the original run, offer to re-dispatch with `skip_release=false`:
-
-```bash
-gh workflow run release.yml --repo Jammy2211/PyAutoBuild --field minor_version=<N> --field skip_scripts=true --field skip_notebooks=true --field skip_release=false
-```
-
-#### If (d) Investigate:
-
-Ask which failure(s) to investigate. For each:
-- Show the full traceback
-- Show the relevant source code (read the failing script)
-- Show recent git log for the file
-- If PR-correlated, show the PR diff
-
-Let the user explore until they're ready to choose (a), (b), or (c).
+If the user chooses investigation, show the full traceback, relevant source,
+recent file history, and correlated PR diff until the failure has a defensible
+locus. Heart remains the final readiness authority after any fix or refresh.
