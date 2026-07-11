@@ -57,6 +57,7 @@ LOCAL_ONLY_FAMILIES = (
     "worktree_drift",
     "script_timing",
     "import_time",
+    "unit_test_timing",
     "profiling_drift",
     "test_run",
     "version_skew",
@@ -397,6 +398,30 @@ def build_board(
                 for e in (imp.get("red") or [])[:5]
             ]
             sections.append(Section("import_time", "Import timing", st, summary, details))
+
+    # Unit-test timing (advisory; off-tick) -----------------------------------
+    if "unit_test_timing" in unobserved:
+        sections.append(_unobs_section("unit_test_timing", "Unit-test timing"))
+    else:
+        ut = snapshot.get("unit_test_timing") or {}
+        if ut:
+            r = _as_int(ut.get("red_count"))
+            y = _as_int(ut.get("yellow_count"))
+            g = _as_int(ut.get("green_count"))
+            if r:
+                st, summary = FAIL, f"{r} test regressions (>3× baseline), {y} slow (>1.5×)"
+            elif y:
+                st, summary = WARN, f"{y} tests >1.5× baseline, {g} within"
+            elif not _as_int(ut.get("repos_measured")):
+                st, summary = WARN, "no suite runnable (set HYGIENE_PYTHON / PYAUTO_ROOT)"
+            else:
+                st, summary = OK, f"{g} tracked tests within baseline"
+            details = [
+                f"✗ {e['repo']}  {e['test'].split('::')[-1]}  "
+                f"{e['latest_seconds']:.2f}s vs {e['baseline_seconds']:.2f}s ({e['ratio']}×)"
+                for e in (ut.get("red") or [])[:5]
+            ]
+            sections.append(Section("unit_test_timing", "Unit-test timing", st, summary, details))
 
     # Profiling pinned-value drift -------------------------------------------
     if "profiling_drift" in unobserved:
