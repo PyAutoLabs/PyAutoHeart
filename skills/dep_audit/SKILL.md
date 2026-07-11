@@ -1,7 +1,6 @@
 ---
-name: dep_audit
+name: dep-audit
 description: Audit dependency version caps across all PyAuto repos, compare against PyPI latest, and report a risk-tiered upgrade summary.
-user-invocable: true
 ---
 
 Audit dependency version constraints across the PyAuto ecosystem, compare them against the latest versions on PyPI, and produce a risk-tiered upgrade report.
@@ -11,9 +10,11 @@ A **PyAutoHeart** check — dependency drift is part of the health/readiness sur
 ## Usage
 
 ```
-/dep_audit              # full audit of all repos
-/dep_audit PyAutoFit    # audit a single repo
+$dep-audit              # full audit of all repos
+$dep-audit PyAutoFit    # audit a single repo
 ```
+
+In Claude, invoke the same skill as `/dep_audit`.
 
 ## Steps
 
@@ -142,6 +143,7 @@ This map should be updated when constraints move between repos.
 ## Notes
 
 - This skill is read-only — it produces an audit report but does not change any files.
-- To act on the audit, use `/start_dev` with a prompt file describing the upgrades.
+- To act on the audit, use `$start-dev` (`/start_dev` in Claude) with a prompt
+  file describing the upgrades.
 - Run this quarterly or before any major release to catch stale constraints early.
 - The "installed" column reflects the current venv, which may lag behind what the constraints allow. A fresh `pip install` in a clean venv would pull the latest allowed version.

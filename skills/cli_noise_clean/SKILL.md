@@ -1,7 +1,6 @@
 ---
 name: cli-noise-clean
 description: Audit CLI output from tests and workspace scripts for warnings, stray prints, and library noise, then report fixes.
-user-invocable: true
 ---
 
 Audit CLI output across PyAuto repos for noise — warnings, stray print statements, verbose logging, and third-party library messages — then report what needs fixing.
@@ -11,10 +10,12 @@ A **PyAutoHeart** check — output-noise classification is part of the validatio
 ## Usage
 
 ```
-/cli_noise_clean                # full audit: pytest + workspace scripts
-/cli_noise_clean pytest         # pytest collection + short run only
-/cli_noise_clean scripts        # workspace scripts only
+$cli-noise-clean                # full audit: pytest + workspace scripts
+$cli-noise-clean pytest         # pytest collection + short run only
+$cli-noise-clean scripts        # workspace scripts only
 ```
+
+In Claude, invoke the same skill as `/cli_noise_clean`.
 
 ## Environment Variables
 

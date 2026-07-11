@@ -1,15 +1,15 @@
 ---
 name: smoke-test
 description: Run targeted workspace smoke tests to verify downstream scripts still work after library changes.
-user-invocable: true
 ---
 
 Run a curated set of workspace scripts to verify that library changes haven't
 broken downstream tutorials and examples.
 
 A **PyAutoHeart** validation skill — Heart owns tests/validation/readiness. This
-is the workspace-script check the ship workflow feeds into: `/ship_library` and
-`/ship_workspace` gate through the Health Agent → Heart, and this skill is the
+is the workspace-script check the ship workflow feeds into: `$ship-library` and
+`$ship-workspace` (`/ship_library` and `/ship_workspace` in Claude) gate through
+the Health Agent → Heart, and this skill is the
 workspace half of that verdict. It reads the PyAutoMind registry for the active
 issue but its job is validation, not state. Organ boundary + execution-environment
 model: PyAutoBrain `skills/WORKFLOW.md`.
@@ -17,10 +17,12 @@ model: PyAutoBrain `skills/WORKFLOW.md`.
 ## Usage
 
 ```
-/smoke-test                     # run all six workspaces (default)
-/smoke-test autofit             # run only autofit_workspace (only when explicitly requested)
-/smoke-test autogalaxy autolens # run specific workspaces (only when explicitly requested)
+$smoke-test                     # run all six workspaces (default)
+$smoke-test autofit             # run only autofit_workspace (only when explicitly requested)
+$smoke-test autogalaxy autolens # run specific workspaces (only when explicitly requested)
 ```
+
+In Claude, invoke the same skill as `/smoke_test`.
 
 ## Workspace mapping
 
@@ -76,7 +78,7 @@ ask the user. Comment template: [`reference.md`](reference.md) → "Issue commen
 ### 6. Persist summary to the status cache
 
 Write a per-workspace JSON summary to `~/.cache/pyauto/smoke/<workspace>.json`
-so `/health status` can show the latest smoke state. Shape + field rules:
+so `$health status` can show the latest smoke state. Shape + field rules:
 [`reference.md`](reference.md) → "Status cache". Idempotent; safe to skip if the
 cache dir can't be created.
 

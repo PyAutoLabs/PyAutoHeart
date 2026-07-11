@@ -1,8 +1,9 @@
-# Active Work Dashboard — the `/health status` leg
+# Active Work Dashboard — the `$health status` leg
 
 > Reference procedure, not a top-level command. This was `/pyauto-status`; it is
-> now reached as **`/health status`** (see `PyAutoBrain/skills/health/health.md`).
-> `/health` is the single health door; this file is the dashboard leg it drives.
+> now reached as **`$health status`** (`/health status` in Claude; see
+> `PyAutoBrain/skills/health/health.md`). `$health` is the single health door;
+> this file is the dashboard leg it drives.
 
 Show a dashboard of all active work across the PyAuto repos. Use it to check for
 conflicts before starting work, or when resuming a session to see what's in
@@ -107,9 +108,10 @@ blocked**. This is the key value of the dashboard for planned work.
 
 ### 6. Suggest actions
 
-Per flag: ready planned task → `/start_library` / `/start_workspace`; conflict →
+Per flag: ready planned task → `$start-library` / `$start-workspace`
+(`/start_library` / `/start_workspace` in Claude); conflict →
 finish one task first; unregistered → register in `active.md` or reset to main;
-stale → remove from `active.md` or re-run `/start_library`.
+stale → remove from `active.md` or re-run `$start-library`.
 
 ## Notes
 

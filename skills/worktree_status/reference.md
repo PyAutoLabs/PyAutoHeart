@@ -1,6 +1,7 @@
-# Worktree status — the /health worktrees leg
+# Worktree status — the `$health worktrees` leg
 
-Procedure for the `/health worktrees` leg (the former standalone `worktree_status` skill).
+Procedure for the `$health worktrees` leg (`/health worktrees` in Claude; the
+former standalone `worktree_status` skill).
 
 Diagnostic skill. Lists every worktree root under `$PYAUTO_WT_ROOT` (default `~/Code/PyAutoLabs-wt`), the task it belongs to per `active.md`, and the branch and dirty state of every real worktree inside it.
 
@@ -8,7 +9,9 @@ A **PyAutoHeart** diagnostic — Heart owns the health/diagnostic surface; it
 **reads** the PyAutoMind work registry (`active.md`) but never mutates it. The
 execution-environment model is in PyAutoBrain `skills/WORKFLOW.md`.
 
-This skill is **read-only**. It never creates, removes, or modifies worktrees. Use `/start_library` / `/ship_library` / the post-merge cleanup flow for mutations.
+This skill is **read-only**. It never creates, removes, or modifies worktrees.
+Use `$start-library` / `$ship-library` (`/start_library` / `/ship_library` in
+Claude) or the post-merge cleanup flow for mutations.
 
 ## Steps
 
@@ -68,14 +71,14 @@ Active Worktrees
 ----------------
 
 jax-search-logging  (~/Code/PyAutoLabs-wt/jax-search-logging)
-  issue: https://github.com/rhayes777/PyAutoFit/issues/42
+  issue: https://github.com/PyAutoLabs/PyAutoFit/issues/42
   activate: source ~/Code/PyAutoLabs-wt/jax-search-logging/activate.sh
   repos:
     PyAutoFit    feature/jax-search-logging  clean     (3 commits unpushed)
     PyAutoArray  feature/jax-search-logging  2 dirty   (pushed)
 
 psf-oversampling  (~/Code/PyAutoLabs-wt/psf-oversampling)
-  issue: https://github.com/Jammy2211/PyAutoArray/issues/50
+  issue: https://github.com/PyAutoLabs/PyAutoArray/issues/50
   activate: source ~/Code/PyAutoLabs-wt/psf-oversampling/activate.sh
   repos:
     PyAutoArray  feature/psf-oversampling  clean  (up to date)
