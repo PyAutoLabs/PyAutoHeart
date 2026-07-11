@@ -1,10 +1,10 @@
-# Green-Light Sweep — the `/health check` leg
+# Green-Light Sweep — the `$health check` leg
 
 > Reference procedure, not a top-level command. This was the `/health_check`
-> skill; it is now reached as **`/health check`** (see
-> `PyAutoBrain/skills/health/health.md`). `/health` is the single health door;
+> skill; it is now reached as **`$health check`** (`/health check` in Claude;
+> see `PyAutoBrain/skills/health/health.md`). `$health` is the single health door;
 > this file is the sweep leg it drives. A **PyAutoHeart** capability — Heart owns
-> health assessment; the Brain's `/health` door drives it.
+> health assessment; the Brain's `$health` skill drives it.
 
 Quick "is everything still green?" sweep across the PyAuto stack. Refreshes local `main` against `origin/main` for every repo, then runs unit tests in libraries and smoke tests in workspaces. Reports a single pass/fail matrix.
 
@@ -23,16 +23,16 @@ Quick "is everything still green?" sweep across the PyAuto stack. Refreshes loca
 - PyAutoLens
 - PyAutoBuild
 
-**Workspaces (run `/smoke_test`):** exactly the curated set `/smoke_test` maps —
+**Workspaces (run `$smoke-test`):** exactly the curated set `$smoke-test` maps —
 do not maintain a separate list here. As of writing that is `autofit_workspace`,
 `autogalaxy_workspace`, `autolens_workspace`, `autolens_workspace_test`,
-`euclid_strong_lens_modeling_pipeline`, and `HowToLens`. `/smoke_test` is the
+`euclid_strong_lens_modeling_pipeline`, and `HowToLens`. `$smoke-test` is the
 source of truth for this scope; defer to it rather than re-specifying it.
 
 **Out of scope — never touched:**
 - `autofit_workspace_developer`, `autolens_workspace_developer` — dev scratch
 - `autolens_base_project` — template
-- Any workspace `/smoke_test` does not map (e.g. `z_projects`, `bad`, `priors`)
+- Any workspace `$smoke-test` does not map (e.g. `z_projects`, `bad`, `priors`)
 
 Skip any in-scope entry that is missing or not a git repo.
 
@@ -83,7 +83,10 @@ If a library has no `test/` or `tests/` directory, mark as `no tests` and contin
 
 ### 4. Run workspace smoke tests
 
-Invoke the existing `/smoke_test` skill (its default runs its full curated set). Defer to its env-var / no_run / parallelism logic and its workspace mapping — do not reimplement or extend the workspace list here. Capture its per-workspace pass/fail counts.
+Invoke the existing `$smoke-test` skill (its default runs its full curated set).
+In Claude this is `/smoke_test`. Defer to its env-var / no_run / parallelism
+logic and workspace mapping; do not reimplement or extend the list. Capture its
+per-workspace pass/fail counts.
 
 ### 5. Report matrix
 
@@ -115,4 +118,7 @@ End with a single-line verdict: `All green` or `N failures across M repos — se
 - This is a read-mostly sweep. The only mutation is `git fetch` + `git merge --ff-only` on clean repos. No branch creation, deletion, stash, or rebase.
 - Run-time dominated by smoke tests. Library pytest in parallel is fast; smoke tests can take many minutes — that's expected.
 - Do not post results anywhere (no GitHub issue comment). This is a local check; output is for the user only.
-- If the user wants to skip the sync step (e.g. running offline), they can pass `--no-sync` to `/health check`. In that mode, step 2 is replaced with a single `git status` per repo and the Sync column reads `skipped (--no-sync)`.
+- If the user wants to skip the sync step (e.g. running offline), they can pass
+  `--no-sync` to `$health check` (`/health check` in Claude). In that mode, step
+  2 is replaced with a single `git status` per repo and the Sync column reads
+  `skipped (--no-sync)`.

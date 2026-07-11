@@ -33,6 +33,16 @@ gh run view <run-id> --repo PyAutoLabs/PyAutoBuild --json jobs \
 gh run view <run-id> --repo PyAutoLabs/PyAutoBuild --log-failed
 ```
 
+Classify the run mode from job names and conclusions before presenting any next
+action. Matrix suffixes may be present in the displayed job names.
+
+- **Rehearsal**: `rehearsal_version` succeeded and every `release` and
+  `release_workspaces` job was skipped or absent.
+- **Live**: at least one `release` or `release_workspaces` job has a conclusion
+  other than `skipped`, whether it passed, failed, or was cancelled.
+- **Unknown**: neither pattern is established. This includes an upstream failure
+  that skipped both terminal paths. Investigate; do not dispatch.
+
 The current workflow does not publish an aggregate `release-report` artifact.
 Do not invent per-script totals or tracebacks that are absent from the jobs and
 logs. Treat the available run data as evidence only; never derive `READY` or
@@ -55,6 +65,7 @@ Release Readiness Report
 Heart verdict: GREEN / STALE / YELLOW / RED
 Reasons: <verbatim Heart reasons>
 Build run: <URL>
+Run mode: rehearsal / live / unknown
 Build jobs: <successful / failed / skipped / cancelled counts>
 ```
 
@@ -84,17 +95,21 @@ current reason.
 
 ### 5. Route by the Heart verdict
 
-- **GREEN**: present the evidence and ask the human whether to invoke the Brain
-  `release` skill (`/release` or `/build` in Claude, depending on the requested
-  mode). Manual releases remain `human-required`.
+- **GREEN + successful rehearsal**: present the evidence and ask the human
+  whether to invoke the Brain `$release` skill (`/release` or `/build` in
+  Claude, depending on the requested mode). Manual releases remain
+  `human-required`.
+- **Live run**: report whether that release completed or failed. Never offer to
+  dispatch another release from review of a live run.
+- **Unknown mode**: investigate the job graph. Do not release.
 - **STALE**: list the exact evidence Heart requires refreshing and route to the
   corresponding validation command. Do not release.
 - **YELLOW / RED**: route each reason and build failure to a fix or
   investigation. Do not offer a release override.
 
-For fixes, use the current harness's `start-library` or `start-workspace` skill
-(`/start_library` or `/start_workspace` in Claude) after filing a concise
-PyAutoMind prompt through `intake`. Environment and workflow failures normally
+For fixes, use `$start-library` or `$start-workspace` (`/start_library` or
+`/start_workspace` in Claude) after filing a concise PyAutoMind prompt through
+`$intake` (`/intake` in Claude). Environment and workflow failures normally
 target PyAutoBuild; source or script failures target the owning library or
 workspace.
 

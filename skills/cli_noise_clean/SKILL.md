@@ -10,10 +10,12 @@ A **PyAutoHeart** check — output-noise classification is part of the validatio
 ## Usage
 
 ```
-/cli_noise_clean                # full audit: pytest + workspace scripts
-/cli_noise_clean pytest         # pytest collection + short run only
-/cli_noise_clean scripts        # workspace scripts only
+$cli-noise-clean                # full audit: pytest + workspace scripts
+$cli-noise-clean pytest         # pytest collection + short run only
+$cli-noise-clean scripts        # workspace scripts only
 ```
+
+In Claude, invoke the same skill as `/cli_noise_clean`.
 
 ## Environment Variables
 

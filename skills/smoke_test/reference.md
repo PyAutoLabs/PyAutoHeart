@@ -10,8 +10,9 @@ Each notebook in `smoke_notebooks.txt` runs via
 `/tmp` dir so the on-disk notebook stays clean. On failure, regenerate the single
 failing notebook from its source `.py` via PyAutoBuild's `py_to_notebook` and
 retry once (catches stale notebooks where the script moved on but the `.ipynb`
-wasn't refreshed by `/pre_build`'s `generate.py`). Whole-workspace regeneration
-stays `generate.py`'s job — smoke only regenerates the one failing notebook.
+wasn't refreshed by `$pre-build` (`/pre_build` in Claude). Whole-workspace
+regeneration stays `generate.py`'s job — smoke only regenerates the one failing
+notebook.
 
 ## Environment config
 
@@ -117,11 +118,10 @@ steps:
 WORK_DIR="$(pwd)"
 for ws in autofit_workspace autogalaxy_workspace autolens_workspace \
           autolens_workspace_test euclid_strong_lens_modeling_pipeline HowToLens; do
-  [ -d "$WORK_DIR/$ws" ] || git clone "https://github.com/Jammy2211/$ws.git" "$WORK_DIR/$ws"
+  [ -d "$WORK_DIR/$ws" ] || git clone "https://github.com/PyAutoLabs/$ws.git" "$WORK_DIR/$ws"
 done
 for lib in PyAutoConf PyAutoFit PyAutoArray PyAutoGalaxy PyAutoLens; do
-  case "$lib" in PyAutoConf|PyAutoFit) ORG=rhayes777 ;; *) ORG=Jammy2211 ;; esac
-  [ -d "$WORK_DIR/$lib" ] || git clone "https://github.com/$ORG/$lib.git" "$WORK_DIR/$lib"
+  [ -d "$WORK_DIR/$lib" ] || git clone "https://github.com/PyAutoLabs/$lib.git" "$WORK_DIR/$lib"
 done
 export PYTHONPATH="$WORK_DIR/PyAutoConf:$WORK_DIR/PyAutoFit:$WORK_DIR/PyAutoArray:$WORK_DIR/PyAutoGalaxy:$WORK_DIR/PyAutoLens:$PYTHONPATH"
 export NUMBA_CACHE_DIR=/tmp/numba_cache MPLCONFIGDIR=/tmp/matplotlib

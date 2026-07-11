@@ -1,8 +1,8 @@
-# Release-Run Dashboard — the `/health full` leg
+# Release-Run Dashboard — the `$health full` leg
 
 > Reference procedure, not a top-level command. This was `/pyauto-status-full`;
-> it is now reached as **`/health full`** (see
-> `PyAutoBrain/skills/health/health.md`). `/health` is the single health door;
+> it is now reached as **`$health full`** (`/health full` in Claude; see
+> `PyAutoBrain/skills/health/health.md`). `$health` is the single health door;
 > this file is the release-run dashboard leg it drives.
 
 Render the most recent PyAutoBuild full-run report as a release-readiness dashboard. Use this to inspect timing and failures from the last `python autobuild/run_all.py`. Read-only.
@@ -14,13 +14,13 @@ Heart reports). The authoritative live verdict is `pyauto-heart readiness`.
 ## Usage
 
 ```
-/health full
+$health full
 ```
 
-This is the deeper sibling of `/health status` (the active-work dashboard):
+This is the deeper sibling of `$health status` (the active-work dashboard):
 
-- `/health status` — what's in flight right now (planned/active/recently-completed tasks, branches, dirty repos).
-- `/health full` — what the last full release-prep run produced (per-workspace pass/fail/timing, slowest scripts, failure tracebacks).
+- `$health status` — what's in flight right now (planned/active/recently-completed tasks, branches, dirty repos).
+- `$health full` — what the last full release-prep run produced (per-workspace pass/fail/timing, slowest scripts, failure tracebacks).
 
 ## Steps
 
@@ -109,7 +109,8 @@ If only one run exists, omit this section silently.
 ### 5. Notes
 
 - Read-only — never modifies PyAutoBuild output, never deletes runs, never touches the `latest` symlink.
-- No GitHub posting (matches `/health status` convention). The user can decide to share findings manually.
+- No GitHub posting (matches the `$health status` convention). The user can
+  decide to share findings manually.
 - For quick browsing, the markdown report at `<run_path>/report.md` already contains the same data — this skill is the conversational summary layer on top.
 
 ## Execution environments

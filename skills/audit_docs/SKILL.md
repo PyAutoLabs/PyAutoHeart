@@ -10,12 +10,14 @@ A **PyAutoHeart** check — documentation correctness is part of the validation 
 ## Usage
 
 ```
-/audit-docs                      # audit all three repos (default)
-/audit-docs PyAutoLens           # audit one repo
-/audit-docs PyAutoGalaxy PyAutoFit  # audit specific repos
-/audit-docs --fix                # audit all repos and auto-fix broken references
-/audit-docs --fix PyAutoLens     # fix one repo
+$audit-docs                         # audit all three repos (default)
+$audit-docs PyAutoLens              # audit one repo
+$audit-docs PyAutoGalaxy PyAutoFit  # audit specific repos
+$audit-docs --fix                   # audit all repos and auto-fix broken references
+$audit-docs --fix PyAutoLens        # fix one repo
 ```
+
+In Claude, invoke the same skill as `/audit-docs`.
 
 ## Repo Mapping
 
