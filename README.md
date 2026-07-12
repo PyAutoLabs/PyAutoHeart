@@ -10,7 +10,7 @@
 <!-- heart:begin -->
 ## 🔴 PyAuto health — **RED** (score 40)
 
-_snapshot `2026-07-11T07:10:26.834023+00:00` · just now_
+_snapshot `2026-07-12T07:27:43.334599+00:00` · just now_
 
 **Blockers:** autofit_workspace: Navigator Check failure on main
 
@@ -20,7 +20,10 @@ _snapshot `2026-07-11T07:10:26.834023+00:00` · just now_
 | 🔴 | Workspaces | 9 repos, 1 need attention |
 | ⚪ | Worktree drift | not observed here (dev-box only) |
 | ⚪ | Script timing | not observed here (dev-box only) |
+| ⚪ | Import timing | not observed here (dev-box only) |
+| ⚪ | Unit-test timing | not observed here (dev-box only) |
 | ⚪ | Profiling drift | not observed here (dev-box only) |
+| ⚪ | Workspace test-mode timing | not observed here (dev-box only) |
 | ⚪ | Test run | not observed here (dev-box only) |
 | ⚪ | Version skew | not observed here (dev-box only) |
 
