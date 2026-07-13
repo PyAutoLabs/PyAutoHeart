@@ -10,7 +10,7 @@
 <!-- heart:begin -->
 ## 🔴 PyAuto health — **RED** (score 40)
 
-_snapshot `2026-07-12T07:27:43.334599+00:00` · just now_
+_snapshot `2026-07-13T08:15:33.518222+00:00` · just now_
 
 **Blockers:** autofit_workspace: Navigator Check failure on main
 
