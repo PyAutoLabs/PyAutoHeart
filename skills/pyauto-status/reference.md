@@ -40,7 +40,7 @@ git -C <repo_path> log --oneline -1
 Then scan every task worktree root:
 
 ```bash
-source admin_jammy/software/worktree.sh
+source PyAutoBrain/bin/worktree.sh
 for entry in "$PYAUTO_WT_ROOT/<task>"/*; do
   [[ -L "$entry" ]] && continue
   [[ -e "$entry/.git" ]] || continue      # linked worktrees use a .git FILE

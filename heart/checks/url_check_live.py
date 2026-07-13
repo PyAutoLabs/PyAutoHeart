@@ -26,8 +26,8 @@ Usage in CI::
     Markdown body suitable for ``gh issue create --body-file -``.
 
 Interactive multi-repo audit and scripted rewrites are also supported (kept
-for parity with the originally-shipped ``admin_jammy/software/url_check/``
-tool — see ``--repos``, ``--fix-known-patterns``).
+for parity with the original standalone ``url_check`` tool this superseded —
+see ``--repos``, ``--fix-known-patterns``).
 """
 
 from __future__ import annotations

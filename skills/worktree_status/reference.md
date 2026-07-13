@@ -18,7 +18,7 @@ Claude) or the post-merge cleanup flow for mutations.
 ### 1. Source the worktree helper
 
 ```bash
-source admin_jammy/software/worktree.sh
+source PyAutoBrain/bin/worktree.sh
 ```
 
 This provides `worktree_list_claimed`, `worktree_root_path`, and the `PYAUTO_WT_ROOT` variable used below.
@@ -105,7 +105,7 @@ Only if warnings are present:
 ## Notes
 
 - This skill is read-only.
-- It assumes `admin_jammy/software/worktree.sh` is sourceable from the current directory (run from the PyAutoLabs root, or pass `PYAUTO_MAIN` explicitly).
+- It assumes `PyAutoBrain/bin/worktree.sh` is sourceable from the current directory (run from the PyAutoLabs root, or pass `PYAUTO_MAIN` explicitly).
 - "Dirty" means any uncommitted change, including untracked files.
 - "Unpushed" is counted against the branch's upstream; a branch with no upstream is reported as "no upstream" rather than a commit count.
 
