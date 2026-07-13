@@ -528,9 +528,28 @@ check_f() {
     # Emulate the Colab base environment: Colab preinstalls the scientific
     # stack and JAX; the injected setup cell installs the PyAuto packages
     # --no-deps on top of that.
-    step "pip install $PIP_INSTALL_TARGET jax (emulating Colab's preinstalled env)"
-    if ! pip install "${PIP_INDEX_ARGS[@]}" "$PIP_INSTALL_TARGET" jax |& tee /tmp/F_pip.log; then
-        RESULTS+=("F|FAIL|pip install $PIP_INSTALL_TARGET jax failed")
+    #
+    # When a version is pinned (a TestPyPI rehearsal), pin ALL five PyAuto
+    # packages to it — otherwise pip installs `autolens` at the pinned dev
+    # version but resolves autoarray/autoconf/autofit/autogalaxy to the latest
+    # *final* release on PyPI (dev versions are pre-releases pip won't pick for
+    # a floor-only dependency), leaving Check F exercising an incoherent
+    # dev/released mix instead of the same wheels as Checks A/C/D. The later
+    # verbatim `pip install autoconf --no-deps` inside the driver then finds the
+    # pinned dev autoconf already satisfied, so it can't pull a released one.
+    local f_targets=("$PIP_INSTALL_TARGET")
+    if [ -n "$TARGET_VERSION" ]; then
+        f_targets=(
+            "autolens==$TARGET_VERSION"
+            "autoarray==$TARGET_VERSION"
+            "autoconf==$TARGET_VERSION"
+            "autofit==$TARGET_VERSION"
+            "autogalaxy==$TARGET_VERSION"
+        )
+    fi
+    step "pip install ${f_targets[*]} jax (emulating Colab's preinstalled env)"
+    if ! pip install "${PIP_INDEX_ARGS[@]}" "${f_targets[@]}" jax |& tee /tmp/F_pip.log; then
+        RESULTS+=("F|FAIL|pip install ${f_targets[*]} jax failed")
         tail_log "Check F pip output" "$(cat /tmp/F_pip.log 2>/dev/null)"
         deactivate
         return
@@ -587,13 +606,21 @@ assert os.path.isdir(os.path.join(WS_DIR, "config")), "workspace config/ missing
 assert os.path.isdir(os.path.join(WS_DIR, "dataset")), "workspace dataset/ missing"
 
 # --- one real notebook cell (the top of imaging/start_here) ---
+#
+# Load the SAME dataset the current imaging/start_here.py loads: the bundled
+# `cosmos_web_ring` JWST example (one of the few datasets that ship committed
+# with the workspace, cloned above by setup_colab). The old `dataset/imaging/
+# simple/*.fits` path was never bundled and is no longer used by start_here —
+# after the release dataset `-f` leak fix (PyAutoBuild#150) it would only exist
+# if simulated at run time, so loading it here crashed FileNotFoundError while
+# Check A (which runs start_here.py) passed.
 import autolens as al
 
 dataset = al.Imaging.from_fits(
-    data_path="dataset/imaging/simple/data.fits",
-    noise_map_path="dataset/imaging/simple/noise_map.fits",
-    psf_path="dataset/imaging/simple/psf.fits",
-    pixel_scales=0.1,
+    data_path="dataset/imaging/cosmos_web_ring/data.fits",
+    noise_map_path="dataset/imaging/cosmos_web_ring/noise_map.fits",
+    psf_path="dataset/imaging/cosmos_web_ring/psf.fits",
+    pixel_scales=0.06,
 )
 print(f"cell OK: loaded imaging dataset, shape {dataset.data.shape_native}")
 PYEOF
