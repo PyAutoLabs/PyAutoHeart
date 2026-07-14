@@ -48,6 +48,7 @@ Schema of ``validation_report.json`` (``schema_version`` 1)::
         "integrate": {"status": "pass", "profile": "release", "run_url": "..."}
       },
       "totals": {"passed": N, "failed": N, "skipped": N, "timeout": N},
+      "advisory_timeouts": N,           # declared-slow real-search timeouts (YELLOW, not RED)
       "per_project": {                  # per-workspace pass/fail/skip/timeout
         "autolens_workspace":      {"passed": .., "failed": .., ...},
         "autolens_workspace_test": {"passed": .., "failed": .., ...}
@@ -58,6 +59,14 @@ Schema of ``validation_report.json`` (``schema_version`` 1)::
       "run_urls": {"rehearse": "...", "integrate": "..."},
       "ts": "2026-06-30T12:00:00+00:00"
     }
+
+``advisory_timeouts`` counts declared-slow real-search scripts that timed out
+but are workspace-declared advisory-tier (``config/build/advisory.yaml``): they
+still ran and are reported, but their timeout is advisory, so it does NOT flip
+``release_ready``. The readiness gate raises a YELLOW reason when it is nonzero —
+this is what lets ``mode=release`` reach its shippable yellow instead of
+RED-blocking on the perf-flake tail. A timeout on an UNdeclared script is a
+plain ``timeout`` and still fails the stage.
 
 ``release_ready`` is the **pass/fail** axis only: it is ``false`` if any ran
 stage failed. Release *fidelity* and *freshness* (``profile == release``,
@@ -187,6 +196,9 @@ class _Accumulator:
         self.totals: dict[str, int] = {k: 0 for k in _COUNT_KEYS}
         self.per_project: dict[str, dict[str, int]] = {}
         self.failures: list[dict[str, Any]] = []
+        # Advisory-tier timeouts across stages: not a failure axis (see
+        # add_stage), surfaced by readiness as a YELLOW reason.
+        self.advisory_timeouts: int = 0
         self.run_urls: dict[str, str] = {}
         self._explicit_ready: bool | None = None
         # True once a real stage artifact (add_stage) has contributed counts.
@@ -249,6 +261,9 @@ class _Accumulator:
         for f in data.get("failures", []) or []:
             if isinstance(f, dict):
                 self.failures.append(f)
+        adv = data.get("advisory_timeouts")
+        if isinstance(adv, (int, float)):
+            self.advisory_timeouts += int(adv)
         self.add_commit_shas(data.get("commit_shas"))
 
     def add_commit_shas(self, shas: Any) -> None:
@@ -288,6 +303,9 @@ class _Accumulator:
             for f in data.get("failures", []) or []:
                 if isinstance(f, dict):
                     self.failures.append(f)
+            adv = data.get("advisory_timeouts")
+            if isinstance(adv, (int, float)):
+                self.advisory_timeouts += int(adv)
         for k, v in (data.get("run_urls") or {}).items():
             self.run_urls.setdefault(str(k), str(v))
         if isinstance(data.get("release_ready"), bool):
@@ -376,6 +394,7 @@ def ingest(
         "totals": acc.totals,
         "per_project": acc.per_project,
         "failures": acc.failures,
+        "advisory_timeouts": acc.advisory_timeouts,
         "run_urls": acc.run_urls,
         "ts": _now_iso(now),
     }
@@ -433,6 +452,21 @@ def to_stage_report(
         if isinstance(f, dict):
             failures.append(dict(f))
 
+    # Advisory-tier timeouts are NOT failures (Build's aggregate already keeps
+    # them out of `ready`): a timeout on a workspace-declared advisory-tier
+    # (known-slow real-search) script is advisory, not release-blocking. We carry
+    # the COUNT through so readiness can raise a YELLOW reason — the release
+    # reaches its shippable yellow instead of RED-blocking on the perf-flake tail
+    # (PyAutoHeart mode=release advisory-tiering). Fall back to the summary count
+    # if the aggregate predates the explicit list.
+    advisory_raw = aggregate.get("advisory_timeouts")
+    if isinstance(advisory_raw, list):
+        advisory_count = len(advisory_raw)
+    else:
+        summary_counts = aggregate.get("summary")
+        summary_counts = summary_counts if isinstance(summary_counts, dict) else {}
+        advisory_count = int(summary_counts.get("timeout_advisory", 0) or 0)
+
     # Strict boolean check (not truthiness): this is a CI contract, so a
     # malformed/non-boolean "ready" (e.g. a stray string "false", which is
     # truthy in Python) must never be read as a pass.
@@ -450,6 +484,8 @@ def to_stage_report(
     report["summary"] = summary
     report["per_project"] = per_project
     report["failures"] = failures
+    if advisory_count:
+        report["advisory_timeouts"] = advisory_count
     return report
 
 
@@ -512,12 +548,14 @@ def _print_summary(report: dict[str, Any]) -> None:
     stages = ", ".join(f"{n}:{s.get('status', '?')}" for n, s in (report.get("stages") or {}).items())
     version = report.get("testpypi_version") or "?"
     prof = report.get("profile") or "?"
+    adv = int(report.get("advisory_timeouts", 0) or 0)
+    adv_str = f"  advisory-timeouts: {adv}" if adv else ""
     print(f"{glyph} {c_info('validate')} {label} {c_meta(f'v{version}  profile={prof}')}")
     print(
         c_meta(
             f"  stages: {stages or 'none'}  "
             f"totals: {t.get('passed', 0)}p/{t.get('failed', 0)}f/"
-            f"{t.get('skipped', 0)}s/{t.get('timeout', 0)}t"
+            f"{t.get('skipped', 0)}s/{t.get('timeout', 0)}t{adv_str}"
         )
     )
 

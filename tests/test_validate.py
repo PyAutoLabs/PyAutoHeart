@@ -363,6 +363,54 @@ def test_to_stage_report_is_ingestable(tmp_path):
     assert report["totals"] == {"passed": 58, "failed": 0, "skipped": 2, "timeout": 0}
 
 
+# --- advisory tier: declared-slow real-search timeouts are YELLOW, not RED ---
+
+AGGREGATE_ADVISORY = {
+    "ready": True,  # Build already keeps timeout_advisory out of the failure set
+    "summary": {"passed": 55, "failed": 0, "skipped": 2, "timeout": 0, "timeout_advisory": 3},
+    "per_project": {"autolens_workspace_test": {"passed": 55, "failed": 0, "skipped": 2, "timeout": 0}},
+    "failures": [],
+    "advisory_timeouts": [
+        {"project": "autolens_workspace_test", "file": "scripts/multi/shared_preloads.py"},
+        {"project": "autolens_workspace_test", "file": "scripts/interferometer/delaunay.py"},
+        {"project": "autolens_workspace_test", "file": "scripts/jax_grad/imaging_lp.py"},
+    ],
+}
+
+
+def test_to_stage_report_carries_advisory_timeout_count():
+    """An advisory-only aggregate still passes, but carries the advisory count."""
+    report = validate.to_stage_report(AGGREGATE_ADVISORY, stage="integrate", profile="release")
+    assert report["status"] == "pass"
+    assert report["advisory_timeouts"] == 3
+    # Advisory timeouts are NOT folded into the failure list.
+    assert report["failures"] == []
+
+
+def test_to_stage_report_advisory_falls_back_to_summary_count():
+    """If the aggregate predates the explicit list, use the summary count."""
+    aggregate = {
+        "ready": True,
+        "summary": {"passed": 55, "failed": 0, "skipped": 0, "timeout": 0, "timeout_advisory": 2},
+        "per_project": {},
+        "failures": [],
+    }
+    report = validate.to_stage_report(aggregate, stage="integrate")
+    assert report["advisory_timeouts"] == 2
+
+
+def test_ingest_carries_advisory_timeouts_to_report(tmp_path):
+    stage_report = validate.to_stage_report(
+        AGGREGATE_ADVISORY, stage="integrate", profile="release",
+        version="2026.6.30.1.dev64501", commit_shas=SHAS,
+    )
+    _write(tmp_path / "integrate.json", stage_report)
+    _write(tmp_path / "rehearsal.json", REHEARSAL)
+    report = validate.ingest([tmp_path])
+    assert report["release_ready"] is True  # advisory timeouts do NOT block
+    assert report["advisory_timeouts"] == 3
+
+
 # --- CLI: --emit-stage-report ------------------------------------------------
 
 

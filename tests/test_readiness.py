@@ -220,6 +220,27 @@ def test_validation_failed_is_red():
     assert v["score"] == 60  # validation_failed penalty 40
 
 
+def test_validation_advisory_timeouts_are_yellow_not_red():
+    # Declared-slow real-search timeouts de-gate the mode=release perf tail: a
+    # fresh, source-matching, passing report that carries advisory_timeouts is
+    # YELLOW (the release's shippable resting state), never RED.
+    report = _green_validation_report()
+    report["advisory_timeouts"] = 3
+    v = compute(make_snapshot(validation_report=report))
+    assert v["verdict"] == "yellow"
+    assert not v["red_reasons"]
+    assert any("advisory-tier script timeout(s)" in r and "not release-blocking" in r
+               for r in v["yellow_reasons"])
+
+
+def test_validation_zero_advisory_timeouts_stays_green():
+    report = _green_validation_report()
+    report["advisory_timeouts"] = 0
+    v = compute(make_snapshot(validation_report=report))
+    assert v["verdict"] == "green"
+    assert not any("advisory-tier" in r for r in v["reasons"])
+
+
 def test_validation_stale_by_sha_is_stale_tier():
     # A report whose commit_shas no longer match the current main HEADs is
     # expired evidence: the source moved on since the rehearsal → freshness

@@ -121,3 +121,40 @@ dispatching `workspace-validation.yml` in `mode: release`), an ingested
 rehearsal-only report still (correctly) gates YELLOW: the source was built and
 TestPyPI-installed, but not yet exercised at release fidelity. `mode: release`
 is what supplies the `integrate` stage that flips this to GREEN-eligible.
+
+## The advisory tier (gate on correctness, not the perf-flake tail)
+
+`mode: release` runs the FULL script set, and a *population* of genuinely-slow
+**real-search** scripts (`PYAUTO_TEST_MODE=0`/`1` real Nautilus fits +
+finite-difference JAX gradients) flakes around the per-script timeout cap — the
+failing set shifts run to run under CI load. Left ungated, one such timeout flips
+the whole `integrate` stage to RED, conflating **correctness** with
+**perf-flakiness**. Raising `BUILD_SCRIPT_TIMEOUT` and adding `no_run` SLOW-skips
+one script at a time does not converge (and SLOW-skipping erodes coverage — the
+script stops running at all).
+
+The **advisory tier** separates the two axes:
+
+- A workspace declares known-slow real-search scripts in a companion
+  **`config/build/advisory.yaml`** — same flat-list + inline-comment format and
+  path-matching semantics as `no_run.yaml`, marker `# ADVISORY <YYYY-MM-DD> -
+  <reason>`. Unlike a `no_run` SLOW-skip, an advisory-listed script **still runs
+  and is reported** — only its *timeout* is de-gated. Growing the list therefore
+  never erodes coverage, so it converges where SLOW-skips whack-a-mole.
+- Build's runner (`run_python.py` → `build_util.py`) records a timeout on an
+  advisory-listed script as `timeout_advisory` (result_collector `Status`), not
+  `timeout`. `aggregate_results.py` keeps `timeout_advisory` **out** of the
+  failure set, so `ready` (and the stage's pass/fail) is unaffected, and surfaces
+  the count in an "Advisory-Tier Timeouts" report section.
+- `heart/validate.py` carries the count into the report as `advisory_timeouts`;
+  `heart/readiness.py` raises a **YELLOW** reason when it is nonzero
+  (`validation_advisory_timeout`). This is what lets a correctness-clean release
+  reach its shippable **GREEN/YELLOW** instead of RED-blocking on the perf tail.
+- A timeout on any **undeclared** script is a plain `timeout` and still **fails**
+  the stage (RED) — a script that should be fast timing out is a real signal.
+  Only the declared-slow population is de-gated, and only its *timeouts* (a
+  genuine exception on an advisory script is still a failure).
+
+The advisory list is a tracked backlog, not a hiding place: it surfaces in the
+aggregate report, the CI step summary, and Heart's YELLOW reasons. Durable
+speedups that let entries be removed are the Profiling Agent's job.

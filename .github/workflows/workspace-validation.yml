@@ -301,10 +301,15 @@ jobs:
           # mode=release runs REAL searches (PYAUTO_TEST_MODE=0) and finite-difference
           # JAX gradient scripts, which legitimately exceed the 300s smoke cap
           # (build_util.py BUILD_SCRIPT_TIMEOUT default). Raise it here so a slow-but-
-          # correct script isn't a false release blocker. This is a stopgap while the
-          # Profiling Agent drives the JAX compile/eval-time speedups (PyAutoMind
-          # draft/feature/profiling/profiling_agent_jax_compile_time_scope.md); smoke
-          # mode is unchanged (still 300s).
+          # correct script isn't a false release blocker; smoke mode is unchanged
+          # (still 300s). A raised cap alone does NOT converge (the flaky set shifts
+          # run-to-run around whatever cap is chosen), so the advisory tier is the
+          # real fix: a timeout on a script listed in a workspace's
+          # config/build/advisory.yaml is recorded as `timeout_advisory` — reported
+          # and folded into a Heart YELLOW reason, but NOT release-blocking — while a
+          # timeout on any UNdeclared script still fails the run (RED). Durable
+          # speedups remain the Profiling Agent's job (PyAutoMind
+          # draft/feature/profiling/profiling_agent_jax_compile_time_scope.md).
           BUILD_SCRIPT_TIMEOUT: "1800"
         run: |
           # Deliberately NOT adding library source dirs to PYTHONPATH (closes
@@ -541,6 +546,10 @@ jobs:
         if: always()
         run: |
           if [ -f stage_report.json ]; then
+            adv="$(python3 -c "import json;print(json.load(open('stage_report.json')).get('advisory_timeouts',0))" 2>/dev/null || echo 0)"
+            if [ "$adv" != "0" ]; then
+              echo "> ⚠️ $adv advisory-tier (declared-slow real-search) timeout(s) — reported as YELLOW, NOT release-blocking. A timeout on an undeclared script would still be RED." >> "$GITHUB_STEP_SUMMARY"
+            fi
             {
               echo '```json'
               cat stage_report.json

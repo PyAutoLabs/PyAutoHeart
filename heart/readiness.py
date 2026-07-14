@@ -132,6 +132,10 @@ _WEIGHTS: dict[str, tuple[int, int]] = {
     "validation_unknown": (12, 12),
     "validation_profile": (12, 12),
     "validation_stale": (10, 10),
+    # Advisory-tier (declared-slow real-search) timeouts in the release
+    # validation: a YELLOW caution, not a blocker — the perf tail is de-gated
+    # from RED so the release can reach its shippable yellow.
+    "validation_advisory_timeout": (8, 8),
 }
 
 
@@ -396,6 +400,18 @@ def compute(
     # YELLOW axis — a passing-but-stale report is a caution, not a blocker.
     vr = snapshot.get("validation_report")
     if isinstance(vr, dict) and vr:
+        # Advisory-tier timeouts are a YELLOW caution regardless of the pass/fail
+        # axis: declared-slow real-search scripts that timed out but are NOT
+        # release-blocking (the mode=release perf-flake tail, de-gated from RED).
+        # Kept loud + tracked here rather than silently hidden; red still
+        # dominates yellow structurally if a real stage also failed.
+        advisory_timeouts = _as_int(vr.get("advisory_timeouts", 0))
+        if advisory_timeouts > 0:
+            yellow.append(
+                f"{advisory_timeouts} advisory-tier script timeout(s) in release "
+                "validation (slow real-search; not release-blocking)"
+            )
+            hit("validation_advisory_timeout")
         ready = vr.get("release_ready")
         if ready is False:
             failed_stages = [
