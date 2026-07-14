@@ -297,6 +297,15 @@ jobs:
             --report-dir test-results
       - name: "Run Python scripts [mode=release, wheels, release profile, no source on PYTHONPATH]"
         if: needs.find_scripts.outputs.mode == 'release'
+        env:
+          # mode=release runs REAL searches (PYAUTO_TEST_MODE=0) and finite-difference
+          # JAX gradient scripts, which legitimately exceed the 300s smoke cap
+          # (build_util.py BUILD_SCRIPT_TIMEOUT default). Raise it here so a slow-but-
+          # correct script isn't a false release blocker. This is a stopgap while the
+          # Profiling Agent drives the JAX compile/eval-time speedups (PyAutoMind
+          # draft/feature/profiling/profiling_agent_jax_compile_time_scope.md); smoke
+          # mode is unchanged (still 300s).
+          BUILD_SCRIPT_TIMEOUT: "1800"
         run: |
           # Deliberately NOT adding library source dirs to PYTHONPATH (closes
           # Gap A) — `import autolens` etc. resolve to the pip-installed
