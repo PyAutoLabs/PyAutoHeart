@@ -425,3 +425,146 @@ def test_run_out_override(tmp_path, monkeypatch):
 
     importlib.reload(state_mod)
     importlib.reload(v_mod)
+
+
+# --- verify_install: carried as evidence, not only as a veto ----------------
+#
+# Stage 3 has always run verify_install A-E against the wheels, but the sidecar
+# was consulted only in the failure direction, so a PASS contributed nothing and
+# the readiness leg reported "install verification not run" forever. These cover
+# the carry + persist path that closes that gap.
+
+VERIFY_INSTALL_PASS = {
+    "ts": "2026-07-15T10:00:00+00:00",
+    "ready": True,
+    "version": "2026.7.15.1.dev66201",
+    "index": "testpypi",
+    "checks": [
+        {"check": "A", "status": "PASS", "detail": "pip install + start_here.py"},
+        {"check": "C", "status": "SKIP", "detail": "conda not on PATH"},
+    ],
+}
+
+
+def test_normalize_verify_install_rejects_unusable_sidecars():
+    # An absent or malformed result must never read as a pass — it has to leave
+    # the leg saying "not run" rather than inventing evidence.
+    assert validate.normalize_verify_install(None) is None
+    assert validate.normalize_verify_install({}) is None
+    assert validate.normalize_verify_install("nope") is None
+    assert validate.normalize_verify_install({"checks": []}) is None
+
+
+def test_normalize_verify_install_keeps_index_and_coerces_ready():
+    vi = validate.normalize_verify_install(VERIFY_INSTALL_PASS)
+    assert vi["ready"] is True
+    assert vi["index"] == "testpypi"
+    assert vi["version"] == "2026.7.15.1.dev66201"
+    assert [c["check"] for c in vi["checks"]] == ["A", "C"]
+    # Strict: only a real True is a pass (a stray truthy string is not).
+    assert validate.normalize_verify_install({"ready": "false"})["ready"] is False
+    # A pre-index sidecar stays unknown rather than being guessed at.
+    assert validate.normalize_verify_install({"ready": True})["index"] is None
+
+
+def test_to_stage_report_carries_passing_verify_install():
+    report = validate.to_stage_report(
+        AGGREGATE_PASS, stage="integrate", verify_install=VERIFY_INSTALL_PASS
+    )
+    # A pass is carried as evidence and does NOT flip the stage's pass/fail axis.
+    assert report["status"] == "pass"
+    assert report["verify_install"]["ready"] is True
+    assert report["verify_install"]["index"] == "testpypi"
+
+
+def test_to_stage_report_omits_verify_install_when_absent():
+    report = validate.to_stage_report(AGGREGATE_PASS, stage="integrate")
+    assert "verify_install" not in report
+
+
+def test_cli_emit_stage_report_carries_verify_install(tmp_path):
+    agg_path = _write(tmp_path / "report.json", AGGREGATE_PASS)
+    vi_path = _write(tmp_path / "verify_install.json", VERIFY_INSTALL_PASS)
+    out_path = tmp_path / "stage_report.json"
+    rc = validate.main([
+        "--emit-stage-report", str(agg_path),
+        "--verify-install", str(vi_path),
+        "--out", str(out_path),
+    ])
+    assert rc == 0
+    written = json.loads(out_path.read_text())
+    assert written["status"] == "pass"
+    assert written["verify_install"]["index"] == "testpypi"
+
+
+def test_run_persists_verify_install_sidecar_from_stage_artifact(tmp_path, monkeypatch):
+    """The end-to-end gap this task closes: Stage 3 pass -> readiness sidecar."""
+    monkeypatch.setenv("HEART_STATE_DIR", str(tmp_path))
+    import heart.state as state_mod
+    importlib.reload(state_mod)
+    import heart.validate as v_mod
+    importlib.reload(v_mod)
+
+    src = tmp_path / "artifacts"
+    src.mkdir()
+    stage = dict(INTEGRATE)
+    stage["verify_install"] = VERIFY_INSTALL_PASS
+    _write(src / "integrate.json", stage)
+
+    report = v_mod.run([src])
+
+    sidecar = tmp_path / "verify_install.json"
+    assert sidecar.is_file(), "ingest must write the sidecar readiness reads"
+    written = json.loads(sidecar.read_text())
+    assert written["ready"] is True
+    assert written["index"] == "testpypi"
+    # It stays out of validation_report.json — not part of that schema.
+    assert "verify_install" not in report
+
+    importlib.reload(state_mod)
+    importlib.reload(v_mod)
+
+
+def test_run_without_verify_install_leaves_sidecar_untouched(tmp_path, monkeypatch):
+    monkeypatch.setenv("HEART_STATE_DIR", str(tmp_path))
+    import heart.state as state_mod
+    importlib.reload(state_mod)
+    import heart.validate as v_mod
+    importlib.reload(v_mod)
+
+    src = tmp_path / "artifacts"
+    src.mkdir()
+    _write(src / "integrate.json", INTEGRATE)  # no verify_install block
+    v_mod.run([src])
+    assert not (tmp_path / "verify_install.json").exists()
+
+    importlib.reload(state_mod)
+    importlib.reload(v_mod)
+
+
+def test_run_keeps_newest_verify_install_across_artifacts(tmp_path, monkeypatch):
+    """Re-ingesting an older artifact must not walk the leg backwards."""
+    monkeypatch.setenv("HEART_STATE_DIR", str(tmp_path))
+    import heart.state as state_mod
+    importlib.reload(state_mod)
+    import heart.validate as v_mod
+    importlib.reload(v_mod)
+
+    src = tmp_path / "artifacts"
+    src.mkdir()
+    old = dict(INTEGRATE)
+    old["verify_install"] = dict(VERIFY_INSTALL_PASS, ts="2026-07-01T00:00:00+00:00",
+                                 ready=False)
+    new = dict(INTEGRATE)
+    new["stage"] = "integrate"
+    new["verify_install"] = VERIFY_INSTALL_PASS  # ts 2026-07-15
+    _write(src / "a_old.json", old)
+    _write(src / "b_new.json", new)
+
+    v_mod.run([src])
+    written = json.loads((tmp_path / "verify_install.json").read_text())
+    assert written["ts"] == "2026-07-15T10:00:00+00:00"
+    assert written["ready"] is True
+
+    importlib.reload(state_mod)
+    importlib.reload(v_mod)

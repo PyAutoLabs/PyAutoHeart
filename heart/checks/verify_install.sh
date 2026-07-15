@@ -67,8 +67,9 @@ Options:
                       non-PyAuto deps (applies to A, C, D, E). Use this for a
                       pre-release rehearsal against a TestPyPI dry-run upload.
   --keep              Don't clean up venvs / conda envs / clones at the end.
-  --report-json PATH  Also write a machine-readable {ts,ready,version,checks}
-                      JSON sidecar to PATH (consumed by pyauto-heart readiness).
+  --report-json PATH  Also write a machine-readable {ts,ready,version,index,
+                      checks} JSON sidecar to PATH (consumed by pyauto-heart
+                      readiness; `index` is testpypi or pypi).
   -h, --help          Show this help.
 USAGE
 }
@@ -691,8 +692,14 @@ fi
 
 if [ -n "$REPORT_JSON" ]; then
     if [ "$n_fail" -eq 0 ]; then ready_bool=true; else ready_bool=false; fi
+    # Which index the wheels came from travels with the result. A --testpypi run
+    # proves the about-to-ship wheels install; it says nothing about the current
+    # PyPI release. Readiness reports the index rather than flattening the two,
+    # so the verdict never claims more than was verified.
+    if [ "$USE_TESTPYPI" -eq 1 ]; then vi_index=testpypi; else vi_index=pypi; fi
     printf '%s\n' "${RESULTS[@]}" | \
       VI_READY="$ready_bool" VI_VERSION="$TARGET_VERSION" VI_REPORT_JSON="$REPORT_JSON" \
+      VI_INDEX="$vi_index" \
       python3 -c '
 import datetime, json, os, sys
 checks = []
@@ -706,6 +713,7 @@ out = {
     "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     "ready": os.environ["VI_READY"] == "true",
     "version": os.environ.get("VI_VERSION") or None,
+    "index": os.environ.get("VI_INDEX") or "pypi",
     "checks": checks,
 }
 path = os.environ["VI_REPORT_JSON"]

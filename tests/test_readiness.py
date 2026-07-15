@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 
 import pytest
@@ -183,6 +184,88 @@ def test_install_verification_fresh_pass_is_green():
     v = compute(make_snapshot())
     assert v["verdict"] == "green"
     assert not any("install" in r for r in v["reasons"])
+
+
+def test_install_verification_reasons_name_the_index():
+    """A testpypi pass must never read as proof that installing from PyPI works.
+
+    Stage 3 verifies the about-to-ship wheels from TestPyPI, which satisfies this
+    leg for a release gate (human decision, 2026-07-15) — but the verdict has to
+    say which install path it actually verified.
+    """
+    stale_snap = make_snapshot(verify_install={
+        "ready": True, "ts": "2026-05-01T00:00:00+00:00",  # ~31d before snapshot ts
+        "index": "testpypi", "checks": [],
+    })
+    assert any(
+        "install verification stale (testpypi," in r
+        for r in compute(stale_snap)["stale_reasons"]
+    )
+
+    red_snap = make_snapshot(verify_install={
+        "ready": False, "ts": "2026-06-01T00:00:00+00:00", "index": "testpypi",
+        "checks": [{"check": "B", "status": "FAIL"}],
+    })
+    assert any(
+        "install verification FAILED (testpypi;" in r
+        for r in compute(red_snap)["red_reasons"]
+    )
+
+
+def test_install_verification_without_index_reports_unknown():
+    """A sidecar written before `index` existed must not be guessed at."""
+    snap = make_snapshot(verify_install={
+        "ready": True, "ts": "2026-05-01T00:00:00+00:00", "checks": [],
+    })
+    assert any(
+        "install verification stale (index unknown," in r
+        for r in compute(snap)["stale_reasons"]
+    )
+
+
+def test_ingested_stage_verify_install_clears_the_not_run_leg(tmp_path, monkeypatch):
+    """The gap this task closes, end to end: Stage 3 pass -> leg satisfied.
+
+    Before this, Stage 3 ran verify_install against the wheels and passed, the
+    result was discarded, and readiness reported "install verification not run"
+    forever — which held Heart at YELLOW and meant the GREEN-gated nightly could
+    never ship unattended.
+    """
+    monkeypatch.setenv("HEART_STATE_DIR", str(tmp_path))
+    import heart.state as state_mod
+    importlib.reload(state_mod)
+    import heart.validate as v_mod
+    importlib.reload(v_mod)
+
+    stage_artifact = {
+        "stage": "integrate",
+        "status": "pass",
+        "profile": "release",
+        "summary": {"passed": 543, "failed": 0, "skipped": 87, "timeout": 0},
+        "verify_install": {
+            "ts": "2026-07-15T10:00:00+00:00", "ready": True, "index": "testpypi",
+            "version": "2026.7.15.1.dev66201",
+            "checks": [{"check": "A", "status": "PASS", "detail": "pip install"}],
+        },
+    }
+    src = tmp_path / "artifacts"
+    src.mkdir()
+    (src / "integrate.json").write_text(json.dumps(stage_artifact))
+
+    v_mod.run([src])
+
+    # readiness reads the sidecar through the snapshot, exactly as in production.
+    snap = make_snapshot(
+        ts="2026-07-15T12:00:00+00:00",
+        validation_report=_green_validation_report("2026-07-15T10:00:00+00:00"),
+        verify_install=json.loads((tmp_path / "verify_install.json").read_text()),
+    )
+    v = compute(snap)
+    assert not any("install verification not run" in r for r in v["stale_reasons"])
+    assert not any("install" in r for r in v["reasons"])
+
+    importlib.reload(state_mod)
+    importlib.reload(v_mod)
 
 
 # --- release-validation hard gate (M2) -----------------------------------
