@@ -96,6 +96,10 @@ SCHEMA_VERSION = 1
 
 VALIDATION_REPORT_FILE = state.HEART_STATE_DIR / "validation_report.json"
 VALIDATION_HISTORY_DIR = state.HEART_STATE_DIR / "validation_history"
+# The install-verification sidecar readiness reads (see heart/state.py's
+# snapshot). Written either by `verify_install --report-json` directly (a local
+# run) or by `--ingest` folding the block out of a Stage 3 artifact.
+VERIFY_INSTALL_FILE = state.HEART_STATE_DIR / "verify_install.json"
 
 _COUNT_KEYS = ("passed", "failed", "skipped", "timeout")
 
@@ -188,6 +192,10 @@ class _Accumulator:
         self.per_project: dict[str, dict[str, int]] = {}
         self.failures: list[dict[str, Any]] = []
         self.run_urls: dict[str, str] = {}
+        # The verify_install sidecar a stage artifact carried, if any. Kept out
+        # of validation_report.json (it is not part of that schema) — `run()`
+        # persists it to the separate sidecar path readiness reads.
+        self.verify_install: dict[str, Any] | None = None
         self._explicit_ready: bool | None = None
         # True once a real stage artifact (add_stage) has contributed counts.
         # add_report() consults this so merging an old validation_report.json
@@ -250,6 +258,24 @@ class _Accumulator:
             if isinstance(f, dict):
                 self.failures.append(f)
         self.add_commit_shas(data.get("commit_shas"))
+        self.add_verify_install(data.get("verify_install"))
+
+    def add_verify_install(self, sidecar: Any) -> None:
+        """Keep the newest verify_install block seen across ingested artifacts.
+
+        Newest-by-``ts`` so that re-ingesting an older artifact alongside a newer
+        one cannot walk the readiness leg backwards. A block without a usable
+        ``ts`` only seeds an empty slot; it never displaces a timestamped one.
+        """
+        vi = normalize_verify_install(sidecar)
+        if vi is None:
+            return
+        if self.verify_install is None:
+            self.verify_install = vi
+            return
+        new_ts, cur_ts = vi.get("ts"), self.verify_install.get("ts")
+        if new_ts and (not cur_ts or str(new_ts) > str(cur_ts)):
+            self.verify_install = vi
 
     def add_commit_shas(self, shas: Any) -> None:
         if not isinstance(shas, dict):
@@ -308,20 +334,19 @@ class _Accumulator:
         return bool(rehearse and rehearse.get("status") == "pass")
 
 
-def ingest(
+def _fold(
     sources: Sequence[str | Path],
     *,
     profile: str | None = None,
     testpypi_version: str | None = None,
     commit_shas: dict[str, str] | None = None,
-    now: datetime.datetime | None = None,
-) -> dict[str, Any]:
-    """Fold the given artifacts into a single ``validation_report`` dict.
+) -> _Accumulator:
+    """Fold the given artifacts into an accumulator (reads only; no writes).
 
-    Pure (no I/O side effects beyond reading the source files); ``run`` persists
-    the result. Explicit ``profile`` / ``testpypi_version`` / ``commit_shas``
-    override / seed whatever the artifacts carry — the Release Agent uses these
-    to inject the HEADs it built from.
+    Split out of ``ingest`` so ``run`` can reach the fold state itself — the
+    ``verify_install`` sidecar a stage artifact carries is deliberately NOT part
+    of the ``validation_report`` schema, so ``ingest``'s return value cannot
+    carry it and ``run`` persists it from here instead.
     """
     acc = _Accumulator()
     if commit_shas:
@@ -366,6 +391,11 @@ def ingest(
     if profile:
         acc.profile = profile
 
+    return acc
+
+
+def _distill(acc: _Accumulator, now: datetime.datetime | None = None) -> dict[str, Any]:
+    """Render an accumulator as a ``validation_report`` dict."""
     return {
         "schema_version": SCHEMA_VERSION,
         "release_ready": acc.release_ready(),
@@ -381,6 +411,66 @@ def ingest(
     }
 
 
+def ingest(
+    sources: Sequence[str | Path],
+    *,
+    profile: str | None = None,
+    testpypi_version: str | None = None,
+    commit_shas: dict[str, str] | None = None,
+    now: datetime.datetime | None = None,
+) -> dict[str, Any]:
+    """Fold the given artifacts into a single ``validation_report`` dict.
+
+    Pure (no I/O side effects beyond reading the source files); ``run`` persists
+    the result. Explicit ``profile`` / ``testpypi_version`` / ``commit_shas``
+    override / seed whatever the artifacts carry — the Release Agent uses these
+    to inject the HEADs it built from.
+    """
+    return _distill(
+        _fold(
+            sources,
+            profile=profile,
+            testpypi_version=testpypi_version,
+            commit_shas=commit_shas,
+        ),
+        now=now,
+    )
+
+
+def normalize_verify_install(sidecar: Any) -> dict[str, Any] | None:
+    """Normalize a ``verify_install.json`` sidecar into the block we carry/persist.
+
+    Returns ``None`` for anything that isn't a usable sidecar, so a missing or
+    malformed file leaves the readiness leg reporting "not run" — an absent
+    result and a bad one must never read as a pass.
+
+    ``index`` records which package index the wheels came from. A ``--testpypi``
+    run proves the about-to-ship wheels install; it is not evidence about the
+    current PyPI release. Sidecars written before this field existed carry no
+    index, which stays ``None`` (unknown) rather than being guessed at.
+    """
+    if not isinstance(sidecar, dict) or "ready" not in sidecar:
+        return None
+    checks: list[dict[str, Any]] = []
+    for c in sidecar.get("checks") or []:
+        if isinstance(c, dict):
+            checks.append(
+                {
+                    "check": c.get("check"),
+                    "status": c.get("status"),
+                    "detail": c.get("detail"),
+                }
+            )
+    index = sidecar.get("index")
+    return {
+        "ts": sidecar.get("ts"),
+        "ready": sidecar.get("ready") is True,
+        "version": sidecar.get("version"),
+        "index": str(index) if index else None,
+        "checks": checks,
+    }
+
+
 def to_stage_report(
     aggregate: dict[str, Any],
     *,
@@ -391,6 +481,7 @@ def to_stage_report(
     run_url: str | None = None,
     extra_failures: Sequence[dict[str, Any]] | None = None,
     force_fail: bool = False,
+    verify_install: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Translate a Build ``aggregate_results.py`` report.json into a stage report.
 
@@ -406,6 +497,13 @@ def to_stage_report(
     ``force_fail`` lets the caller fold a result Build's aggregate step knows
     nothing about (e.g. ``verify_install`` A-E against the same wheels) into the
     stage's pass/fail axis without inventing a second stage.
+
+    ``verify_install`` carries that same sidecar through as *evidence* rather
+    than only as a veto. Before this existed the sidecar was consulted solely in
+    the failure direction, so a **passing** run contributed nothing and the
+    readiness leg it feeds reported "install verification not run" forever — the
+    check ran in CI and its result was discarded. ``--ingest`` persists this
+    block to the sidecar path ``heart.readiness`` reads.
     """
     summary_raw = aggregate.get("summary")
     summary_raw = summary_raw if isinstance(summary_raw, dict) else {}
@@ -450,6 +548,9 @@ def to_stage_report(
     report["summary"] = summary
     report["per_project"] = per_project
     report["failures"] = failures
+    vi = normalize_verify_install(verify_install)
+    if vi is not None:
+        report["verify_install"] = vi
     return report
 
 
@@ -474,20 +575,30 @@ def run(
     Persistence stays entirely inside ``~/.pyauto-heart/`` — the canonical report
     plus an append-only ``validation_history/`` archive so Heart tracks release
     health over time without ever mutating a source repo.
+
+    Also persists any ``verify_install`` block an ingested stage artifact carried
+    to ``VERIFY_INSTALL_FILE``, which is what actually feeds the readiness leg
+    (``heart/state.py`` reads that path into the snapshot). Stage 3 has always
+    run the check; before this it had nowhere to land, so the leg reported
+    "install verification not run" no matter how many times it passed.
     """
-    report = ingest(
+    acc = _fold(
         sources,
         profile=profile,
         testpypi_version=testpypi_version,
         commit_shas=commit_shas,
-        now=now,
     )
+    report = _distill(acc, now=now)
     target = out or VALIDATION_REPORT_FILE
     state.atomic_write_json(target, report)
     try:
         state.atomic_write_json(VALIDATION_HISTORY_DIR / _archive_name(report), report)
     except OSError:
         pass  # history is best-effort; the canonical report is what matters
+    # `out` redirects the report for inspection (tests, dry runs); the sidecar is
+    # a live readiness input, so it is only written on a real ingest.
+    if acc.verify_install is not None and out is None:
+        state.atomic_write_json(VERIFY_INSTALL_FILE, acc.verify_install)
     return report
 
 
@@ -540,7 +651,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--stage", default="integrate", help="stage name for --emit-stage-report (default: integrate)")
     ap.add_argument(
         "--verify-install", default=None, metavar="FILE",
-        help="verify_install.json sidecar; ready==false forces --emit-stage-report to fail",
+        help="verify_install.json sidecar; carried into the stage report as evidence "
+        "(--ingest persists it for the readiness leg), and ready==false additionally "
+        "forces --emit-stage-report to fail",
     )
     ap.add_argument("--run-url", default=None, help="CI run URL attached to the stage / its failures")
     ap.add_argument("--profile", default=None, help="override the env profile the integration tier ran under")
@@ -560,6 +673,7 @@ def main(argv: list[str] | None = None) -> int:
         aggregate = _read_json(Path(ns.emit_stage_report)) or {}
         force_fail = False
         extra_failures: list[dict[str, Any]] = []
+        vi: Any = None
         if ns.verify_install:
             vi = _read_json(Path(ns.verify_install))
             if isinstance(vi, dict) and vi.get("ready") is False:
@@ -577,6 +691,7 @@ def main(argv: list[str] | None = None) -> int:
             run_url=ns.run_url,
             extra_failures=extra_failures,
             force_fail=force_fail,
+            verify_install=vi,
         )
         out_path = Path(ns.out) if ns.out else Path("stage_report.json")
         out_path.write_text(json.dumps(stage_report, indent=2, sort_keys=True))

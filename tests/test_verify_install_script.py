@@ -48,3 +48,19 @@ def test_check_f_wired_into_selection_and_runner():
 def test_no_stale_workspace_owner():
     # The workspaces moved Jammy2211 -> PyAutoLabs; clones must use the new owner.
     assert "github.com/Jammy2211/autolens_workspace" not in SCRIPT.read_text()
+
+
+def test_sidecar_records_the_package_index():
+    # readiness reports this index, so a --testpypi run never reads as proof that
+    # installing from PyPI works. Static check: running the writer for real means
+    # a venv + a PyPI install, which this file deliberately never does.
+    text = SCRIPT.read_text()
+    assert 'vi_index=testpypi; else vi_index=pypi' in text
+    assert 'VI_INDEX="$vi_index"' in text
+    assert '"index": os.environ.get("VI_INDEX") or "pypi",' in text
+
+
+def test_help_documents_the_sidecar_index():
+    result = run("--help")
+    assert result.returncode == 0
+    assert "index" in result.stdout

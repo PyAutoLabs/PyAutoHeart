@@ -29,6 +29,14 @@ untouched, default `mode: smoke` per-PR path):
   `release-stage-report` artifact for the Release Agent to feed into
   `pyauto-heart validate --ingest`.
 
+  The `verify_install` result is folded in **both directions**: a failure forces
+  the stage to `fail`, and the sidecar itself is carried into the stage report as
+  evidence, which `--ingest` persists to `~/.pyauto-heart/verify_install.json` —
+  the install-verification readiness leg's input. Until 2026-07-15 only the
+  failure direction existed, so a passing Stage 3 check was discarded and the leg
+  reported `install verification not run` no matter how often it passed, holding
+  Heart at YELLOW.
+
 `mode: release` is scoped to the `autofit`/`autogalaxy`/`autolens` workspaces
 and their `*_workspace_test` siblings only — the HowTo* tutorial repos have no
 `env_vars_release.yaml` and stay out of the release-fidelity script matrix
@@ -105,6 +113,10 @@ carries `profile` and `commit_shas`, so the gate can enforce them):
    checkout** (for `config/` + `dataset/`), with no source on `PYTHONPATH`.
 
 The integration run also performs `verify_install` A–E against the same wheels.
+That result feeds the install-verification readiness leg (see "How the gate
+enforces these"), tagged `index: testpypi` — it proves the wheels **about to
+ship** install, which is the right evidence for a release gate, and is reported
+as such rather than as proof that installing from PyPI works today.
 
 ## How the gate enforces these
 
@@ -115,6 +127,13 @@ The integration run also performs `verify_install` A–E against the same wheels
 - `profile == release` (else YELLOW — a smoke-fidelity run is not a release gate),
 - `commit_shas` matching the current `main` HEADs (else YELLOW — stale source),
 - freshness (a rehearsal older than `VALIDATION_STALE_DAYS` is YELLOW).
+
+The install-verification leg is separate and reads
+`~/.pyauto-heart/verify_install.json`, written either by a local `pyauto-heart
+verify_install --report-json` run (`index: pypi`) or by `--ingest` folding the
+block out of a Stage 3 artifact (`index: testpypi`). Both satisfy the leg; the
+index is named in every reason line so the verdict states which install path it
+actually verified.
 
 Before M3 (or if the Release Agent only runs the M1 rehearsal and skips
 dispatching `workspace-validation.yml` in `mode: release`), an ingested
