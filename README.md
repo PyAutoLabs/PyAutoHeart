@@ -10,16 +10,16 @@
 <!-- between the heart:begin/heart:end markers is replaced with the rendered board). -->
 <!-- Live board: https://pyautolabs.github.io/PyAutoHeart/ -->
 <!-- heart:begin -->
-## 🟡 PyAuto health — **YELLOW** (score 60)
+## 🔴 PyAuto health — **RED** (score 5)
 
-_snapshot `2026-07-14T07:09:41.974430+00:00` · just now_
+_snapshot `2026-07-15T07:13:27.236081+00:00` · just now_
 
-**Warnings:** PyAutoMind: open PR 14d old
+**Blockers:** autofit_workspace: Navigator Check failure on main; autogalaxy_workspace: Navigator Check failure on main; autolens_workspace: Navigator Check failure on main
 
 | | Check | Status |
 |--|--|--|
 | 🟢 | Libraries | 5 repos nominal |
-| 🔵 | Workspaces | 9 repos nominal |
+| 🔴 | Workspaces | 9 repos, 3 need attention |
 | ⚪ | Worktree drift | not observed here (dev-box only) |
 | ⚪ | Script timing | not observed here (dev-box only) |
 | ⚪ | Import timing | not observed here (dev-box only) |
