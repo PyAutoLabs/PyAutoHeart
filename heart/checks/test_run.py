@@ -225,10 +225,6 @@ def run(results_dir: Path | None = None, fetch_cloud: bool | None = None) -> dic
         summary["cloud_url"] = cloud["url"]
         summary["source"] = "cloud"
 
-    sys.path.insert(0, str(HEART_HOME))
-    from heart import state
-
-    state.atomic_write_json(HEART_STATE_DIR / "test_run.json", summary)
     return summary
 
 
@@ -237,6 +233,12 @@ def main(argv: list[str]) -> int:
     summary = run(results_dir)
 
     sys.path.insert(0, str(HEART_HOME))
+    from heart import state
+
+    # Persist only here, at the tick/CLI entrypoint — run() is side-effect-free
+    # so library callers (and the test suite) can never clobber live state.
+    state.atomic_write_json(HEART_STATE_DIR / "test_run.json", summary)
+
     from heart.heart_color import c_ok, c_warn, c_fail, c_info, c_meta, glyph_ok, glyph_warn, glyph_fail
 
     if not summary:

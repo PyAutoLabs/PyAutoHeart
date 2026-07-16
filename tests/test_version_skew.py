@@ -119,3 +119,28 @@ def test_autolens_assistant_is_a_pinned_workspace():
     mapping = vs.workspace_library()
     assert "autolens_assistant" in mapping
     assert mapping["autolens_assistant"] == ("PyAutoLens", "autolens")
+
+
+# --- state-dir isolation (the 2026-07-15 clobber incident's sibling) -----------
+
+def test_run_writes_nothing_to_state_dir(tmp_path):
+    """run() must be side-effect-free: the write lives in main() only, so tests
+    (and any library caller) can never clobber live Heart state."""
+    import os
+    from pathlib import Path
+    state_dir = Path(os.environ["HEART_STATE_DIR"])
+    before = set(state_dir.glob("**/*")) if state_dir.exists() else set()
+    vs.run(root=tmp_path)
+    after = set(state_dir.glob("**/*")) if state_dir.exists() else set()
+    assert after == before
+
+
+def test_main_persists_result_to_state_dir(monkeypatch):
+    """The tick path (python -m heart.checks.version_skew) must still persist."""
+    import json
+    import os
+    from pathlib import Path
+    monkeypatch.setattr(vs, "run", lambda root=vs.PYAUTO_ROOT: {"workspaces": []})
+    assert vs.main(["version_skew"]) == 0
+    written = json.loads((Path(os.environ["HEART_STATE_DIR"]) / "version_skew.json").read_text())
+    assert written == {"workspaces": []}

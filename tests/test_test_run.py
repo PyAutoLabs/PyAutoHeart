@@ -150,3 +150,30 @@ def test_server_verdict_prefers_agent_file_over_gh(monkeypatch, tmp_path):
 def test_agent_supplied_verdict_absent_is_none(monkeypatch, tmp_path):
     monkeypatch.setattr(tr, "VALIDATION_FILE", tmp_path / "nope.json")
     assert tr._agent_supplied_verdict() is None
+
+
+# --- state-dir isolation (the 2026-07-15 clobber incident) ---------------------
+
+def test_run_writes_nothing_to_state_dir(tmp_path):
+    """run() must be side-effect-free: the write lives in main() only, so tests
+    (and any library caller) can never clobber live Heart state."""
+    import os
+    from pathlib import Path
+    state_dir = Path(os.environ["HEART_STATE_DIR"])
+    before = set(state_dir.glob("**/*")) if state_dir.exists() else set()
+    (tmp_path / "report.json").write_text(json.dumps({
+        "ready": True, "run_label": "R1", "summary": {"passed": 1}}))
+    tr.run(results_dir=tmp_path)
+    after = set(state_dir.glob("**/*")) if state_dir.exists() else set()
+    assert after == before
+
+
+def test_main_persists_summary_to_state_dir(tmp_path):
+    """The tick path (python -m heart.checks.test_run) must still persist."""
+    import os
+    from pathlib import Path
+    (tmp_path / "report.json").write_text(json.dumps({
+        "ready": True, "run_label": "R1", "summary": {"passed": 1}}))
+    assert tr.main(["test_run", str(tmp_path)]) == 0
+    written = json.loads((Path(os.environ["HEART_STATE_DIR"]) / "test_run.json").read_text())
+    assert written["ready"] is True and written["passed"] == 1
