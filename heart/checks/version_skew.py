@@ -157,16 +157,18 @@ def run(root: Path = PYAUTO_ROOT) -> dict[str, Any]:
             }
         )
     result = {"workspaces": workspaces}
-    sys.path.insert(0, str(HEART_HOME))
-    from heart import state
-
-    state.atomic_write_json(HEART_STATE_DIR / "version_skew.json", result)
     return result
 
 
 def main(argv: list[str]) -> int:
     result = run()
     sys.path.insert(0, str(HEART_HOME))
+    from heart import state
+
+    # Persist only here, at the tick/CLI entrypoint — run() is side-effect-free
+    # so library callers (and the test suite) can never clobber live state.
+    state.atomic_write_json(HEART_STATE_DIR / "version_skew.json", result)
+
     from heart.heart_color import c_ok, c_warn, c_fail, c_info, c_meta, glyph_ok, glyph_warn, glyph_fail
 
     workspaces = result["workspaces"]
