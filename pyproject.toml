@@ -19,7 +19,7 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["heart*", "pyautoheart*"]
+include = ["heart*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
