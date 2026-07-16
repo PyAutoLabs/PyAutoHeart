@@ -190,10 +190,14 @@ def _from_per_job(results_dir: Path) -> dict[str, Any]:
 
 
 def run(results_dir: Path | None = None, fetch_cloud: bool | None = None) -> dict[str, Any]:
-    default_path = results_dir is None
+    # fetch_cloud is decided by the CALLER, never inferred: the old
+    # `results_dir is None` inference meant main() — the tick and the mobile
+    # path — always disabled the cloud fetch, leaving the leg on stale local
+    # evidence while claiming to be server-first (PyAutoHeart#83 finding A).
+    # Library/test callers default to no network.
     results_dir = results_dir or TEST_RESULTS_LATEST
     if fetch_cloud is None:
-        fetch_cloud = default_path  # only hit the network on the real tick path
+        fetch_cloud = False
 
     summary: dict[str, Any]
     report = _read_json(results_dir / "report.json")
@@ -208,18 +212,32 @@ def run(results_dir: Path | None = None, fetch_cloud: bool | None = None) -> dic
             report_path.stat().st_mtime, datetime.timezone.utc
         ).isoformat()
 
-    # The server workspace-validation run is the authoritative continuous verdict
-    # (server-first: MCP-supplied file, else `gh`); it sets ready/ts so a missing
-    # local report.json no longer forces "unknown" when the cloud run is green.
-    # The local report, when present, still supplies the count detail.
+    # The server workspace-validation run (MCP-supplied file, else `gh`) sets
+    # ready/ts so a missing local report.json no longer forces "unknown" when
+    # the cloud run is green. The local report, when present, still supplies
+    # the count detail. When BOTH surfaces carry a verdict they must agree to
+    # be green — a disagreement is surfaced, never silently resolved in either
+    # direction (PyAutoHeart#83 §4-§5: a fresh local pass must not green the
+    # leg while the server surface fails, and vice versa).
     cloud = _server_verdict() if fetch_cloud else None
     if cloud is not None:
+        local_ready = summary.get("ready") if summary else None
         if not summary:
             summary = {
                 "passed": 0, "failed": 0, "skipped": 0, "timeout": 0,
                 "per_project": {}, "parked_stale_count": 0, "parked_stale": [],
             }
-        summary["ready"] = cloud["ready"]
+        summary["cloud_ready"] = cloud["ready"]
+        if local_ready is None:
+            summary["ready"] = cloud["ready"]
+        elif cloud["ready"] is None:
+            summary["ready"] = local_ready  # cloud run in progress: keep local
+        else:
+            summary["ready"] = bool(local_ready) and bool(cloud["ready"])
+            if bool(local_ready) != bool(cloud["ready"]):
+                summary["disagreement"] = (
+                    f"local ready={local_ready} vs cloud ready={cloud['ready']}"
+                )
         summary["ts"] = cloud["ts"]
         summary["run_label"] = summary.get("run_label") or f"cloud#{cloud['run_id']}"
         summary["cloud_url"] = cloud["url"]
@@ -230,7 +248,9 @@ def run(results_dir: Path | None = None, fetch_cloud: bool | None = None) -> dic
 
 def main(argv: list[str]) -> int:
     results_dir = Path(argv[1]) if len(argv) > 1 else TEST_RESULTS_LATEST
-    summary = run(results_dir)
+    # The tick/CLI is the real path: always consult the server verdict here,
+    # explicitly — this is the entrypoint the old inference silently disabled.
+    summary = run(results_dir, fetch_cloud=True)
 
     sys.path.insert(0, str(HEART_HOME))
     from heart import state

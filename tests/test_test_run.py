@@ -168,12 +168,63 @@ def test_run_writes_nothing_to_state_dir(tmp_path):
     assert after == before
 
 
-def test_main_persists_summary_to_state_dir(tmp_path):
+def test_main_persists_summary_to_state_dir(monkeypatch, tmp_path):
     """The tick path (python -m heart.checks.test_run) must still persist."""
     import os
     from pathlib import Path
+    monkeypatch.setattr(tr, "_server_verdict", lambda: None)  # hermetic
     (tmp_path / "report.json").write_text(json.dumps({
         "ready": True, "run_label": "R1", "summary": {"passed": 1}}))
     assert tr.main(["test_run", str(tmp_path)]) == 0
     written = json.loads((Path(os.environ["HEART_STATE_DIR"]) / "test_run.json").read_text())
     assert written["ready"] is True and written["passed"] == 1
+
+
+# --- entrypoint wiring + disagreement (PyAutoHeart#83 finding A) ----------------
+
+def test_main_consults_the_server_verdict(monkeypatch, tmp_path):
+    """The tick entrypoint must fetch the cloud verdict — the old inference
+    (fetch_cloud from `results_dir is None`) silently disabled it forever."""
+    import os
+    from pathlib import Path
+    monkeypatch.setattr(tr, "_server_verdict", lambda: {
+        "ready": False, "ts": "2026-07-16T00:00:00Z", "run_id": 3, "url": "U"})
+    (tmp_path / "report.json").write_text(json.dumps({
+        "ready": True, "run_label": "local", "summary": {"passed": 5}}))
+    assert tr.main(["test_run", str(tmp_path)]) == 0
+    written = json.loads((Path(os.environ["HEART_STATE_DIR"]) / "test_run.json").read_text())
+    assert written["source"] == "cloud"
+    assert written["cloud_ready"] is False
+
+
+def test_local_and_cloud_must_agree_to_be_green(monkeypatch, tmp_path):
+    # local False + cloud True → NOT green, disagreement surfaced (the mirror
+    # of the local-green/cloud-red hole; neither side wins silently).
+    (tmp_path / "report.json").write_text(json.dumps({
+        "ready": False, "run_label": "local", "summary": {"passed": 1, "failed": 2}}))
+    monkeypatch.setattr(tr, "_server_verdict", lambda: {
+        "ready": True, "ts": "t", "run_id": 4, "url": "u"})
+    out = tr.run(results_dir=tmp_path, fetch_cloud=True)
+    assert out["ready"] is False
+    assert "disagreement" in out
+    assert out["cloud_ready"] is True
+
+
+def test_cloud_in_progress_keeps_local_verdict(monkeypatch, tmp_path):
+    (tmp_path / "report.json").write_text(json.dumps({
+        "ready": True, "run_label": "local", "summary": {"passed": 1}}))
+    monkeypatch.setattr(tr, "_server_verdict", lambda: {
+        "ready": None, "ts": "t", "run_id": 5, "url": "u"})
+    out = tr.run(results_dir=tmp_path, fetch_cloud=True)
+    assert out["ready"] is True
+    assert out["cloud_ready"] is None
+    assert "disagreement" not in out
+
+
+def test_run_without_explicit_fetch_never_touches_network(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(tr, "_server_verdict", lambda: calls.append(1))
+    (tmp_path / "report.json").write_text(json.dumps({
+        "ready": True, "summary": {"passed": 1}}))
+    tr.run(results_dir=tmp_path)
+    assert calls == []
