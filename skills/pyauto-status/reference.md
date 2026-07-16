@@ -11,7 +11,7 @@ flight.
 
 This is a **PyAutoHeart** status view — Heart owns the health/readiness surface;
 it **reads** the PyAutoMind work registry (`active.md` / `planned.md` /
-`complete.md`) but never mutates it. Read-only.
+the `complete/` records) but never mutates it. Read-only.
 
 ## Steps
 
@@ -23,7 +23,8 @@ Read all three registry files (schemas in `PyAutoMind/README.md`):
   `blocked-by` field).
 - **`PyAutoMind/active.md`** — tasks in progress (`status`, optional
   `library-pr`, `worktree`, `repos:`).
-- **`PyAutoMind/complete.md`** — recently completed (show the last 5 for context).
+- **`PyAutoMind/complete/index.md`** — recently completed (generated
+  reverse-chronologically; show the first 5 record links for context).
 
 ### 2. Live-scan repos and worktrees
 
