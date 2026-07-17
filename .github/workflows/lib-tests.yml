@@ -22,7 +22,7 @@ on:
   workflow_call:
     inputs:
       package:
-        description: "PyAuto package under test: autoconf|autofit|autoarray|autogalaxy|autolens"
+        description: "PyAuto package under test: autoconf|autofit|autoarray|autogalaxy|autolens|autocti"
         required: true
         type: string
 
@@ -43,6 +43,7 @@ jobs:
             autoarray)  repo=PyAutoArray;  deps="PyAutoConf" ;;
             autogalaxy) repo=PyAutoGalaxy; deps="PyAutoConf PyAutoFit PyAutoArray" ;;
             autolens)   repo=PyAutoLens;   deps="PyAutoConf PyAutoFit PyAutoArray PyAutoGalaxy" ;;
+            autocti)    repo=PyAutoCTI;    deps="PyAutoConf PyAutoFit PyAutoArray" ;;
             *) echo "::error::unknown package '${{ inputs.package }}'"; exit 1 ;;
           esac
           echo "repo=$repo" >> "$GITHUB_OUTPUT"
@@ -70,6 +71,17 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
+
+      - name: Install arcticpy (autocti only — source-only C++ sdist)
+        if: ${{ inputs.package == 'autocti' }}
+        run: |
+          # arcticpy needs GSL headers to compile, and installing it with its
+          # own requirements downgrades numpy below 2.0 — so numpy is installed
+          # first and arcticpy is built without deps or build isolation.
+          sudo apt-get update && sudo apt-get install -y libgsl-dev
+          pip install --upgrade pip setuptools wheel
+          pip install numpy
+          pip install arcticpy==2.6 --no-build-isolation --no-deps
 
       - name: Install (deps + package from source, [optional] extras)
         run: |
