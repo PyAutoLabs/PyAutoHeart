@@ -20,6 +20,8 @@ repos:
       owner: PyAutoLabs
     - name: PyAutoLens
       owner: PyAutoLabs
+    - name: PyAutoCTI
+      owner: PyAutoLabs
 
   build_workflow:
     - name: PyAutoBuild
@@ -34,6 +36,8 @@ repos:
       owner: PyAutoLabs
     - name: autolens_workspace
       owner: PyAutoLabs
+    - name: autocti_workspace
+      owner: PyAutoLabs
 
   workspaces_test:
     - name: autofit_workspace_test
@@ -41,6 +45,8 @@ repos:
     - name: autogalaxy_workspace_test
       owner: PyAutoLabs
     - name: autolens_workspace_test
+      owner: PyAutoLabs
+    - name: autocti_workspace_test
       owner: PyAutoLabs
 
   workspaces_developer:
