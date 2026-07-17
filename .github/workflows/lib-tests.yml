@@ -80,7 +80,7 @@ jobs:
           # first and arcticpy is built without deps or build isolation.
           sudo apt-get update && sudo apt-get install -y libgsl-dev
           pip install --upgrade pip setuptools wheel
-          pip install numpy
+          pip install numpy cython
           pip install arcticpy==2.6 --no-build-isolation --no-deps
 
       - name: Install (deps + package from source, [optional] extras)
