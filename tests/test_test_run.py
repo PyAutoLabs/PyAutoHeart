@@ -228,3 +228,28 @@ def test_run_without_explicit_fetch_never_touches_network(monkeypatch, tmp_path)
         "ready": True, "summary": {"passed": 1}}))
     tr.run(results_dir=tmp_path)
     assert calls == []
+
+
+def test_surface_is_carried_from_report_to_sidecar(tmp_path):
+    """The leg must be able to state what the run measured (#83 §5.3)."""
+    surface = {
+        "projects": ["autolens", "howtolens"],
+        "shards": ["autolens/imaging"],
+        "run_types": ["script"],
+        "env_profiles": ["env_vars.yaml"],
+        "script_count": 42,
+    }
+    (tmp_path / "report.json").write_text(json.dumps({
+        "ready": True, "run_label": "R1", "summary": {"passed": 42},
+        "surface": surface,
+    }))
+    out = tr.run(results_dir=tmp_path)
+    assert out["surface"] == surface
+
+
+def test_surface_absent_from_old_report_is_none_not_a_crash(tmp_path):
+    # Reports predating the surface block must still parse.
+    (tmp_path / "report.json").write_text(json.dumps({
+        "ready": True, "run_label": "old", "summary": {"passed": 1}}))
+    out = tr.run(results_dir=tmp_path)
+    assert out["surface"] is None

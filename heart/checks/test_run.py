@@ -153,6 +153,10 @@ def _from_report(report: dict[str, Any]) -> dict[str, Any]:
         "run_label": report.get("run_label", ""),
         "parked_stale_count": len(parked),
         "parked_stale": parked,
+        # The surface this report measured (projects/shards/run_types/env
+        # profile). Carried through so the leg's history is comparable at all:
+        # a count is only a trend against the same denominator (#83 §5.3).
+        "surface": report.get("surface"),
         "source": "report",
     }
 
