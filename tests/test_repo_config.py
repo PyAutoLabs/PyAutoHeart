@@ -49,10 +49,21 @@ def test_thresholds_have_expected_fields(config):
     assert thresholds["script_timing"]["baseline_window"] >= 3
 
 
-def test_22_repos_polled(config):
-    """Sanity check the polled count — bumps need a deliberate update."""
+def test_25_repos_polled(config):
+    """Sanity check the polled count — bumps need a deliberate update.
+    (25 since the CTI resurrection added PyAutoCTI + autocti_workspace +
+    autocti_workspace_test to the polled registry.)"""
     total = sum(len(v) for v in config["repos"].values())
-    assert total == 22, f"expected 22 polled repos, got {total}"
+    assert total == 25, f"expected 25 polled repos, got {total}"
+
+
+def test_cti_polled_but_not_release_gating(config):
+    """A resurrecting library is polled for health but excluded from the
+    release-validation gate until it ships (release_gate: false)."""
+    from heart import readiness
+
+    assert "PyAutoCTI" in readiness.load_library_names()
+    assert "PyAutoCTI" not in readiness.load_release_gate_names()
 
 
 def _all_names(config):
