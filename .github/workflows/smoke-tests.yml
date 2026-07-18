@@ -51,13 +51,13 @@ jobs:
         with:
           path: workspace
 
-      - name: Clone dependency chain + PyAutoBuild (matching branch if it exists)
+      - name: Clone dependency chain + PyAutoHands (matching branch if it exists)
         shell: bash
         run: |
           set -e
           BRANCH="${{ github.head_ref || github.ref_name }}"
           OWNER="${{ github.repository_owner }}"
-          for dep in ${{ inputs.chain }} PyAutoBuild; do
+          for dep in ${{ inputs.chain }} PyAutoHands; do
             git clone "https://github.com/$OWNER/$dep" "$dep"
             if git -C "$dep" ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
               echo "Branch $BRANCH exists in $dep — checking it out"
@@ -87,7 +87,7 @@ jobs:
           JAX_ENABLE_X64: "True"
           NUMBA_CACHE_DIR: /tmp/numba_cache
           MPLCONFIGDIR: /tmp/matplotlib
-          PYTHONPATH: ${{ github.workspace }}/PyAutoBuild/autobuild
+          PYTHONPATH: ${{ github.workspace }}/PyAutoHands/autobuild
         run: |
           cd workspace
           python .github/scripts/run_smoke.py

@@ -2,7 +2,7 @@
 rolling per-script duration baselines, classify regressions.
 
 Inputs:
-- PyAutoBuild/test_results/latest/ (symlink to most recent run dir)
+- PyAutoHands/test_results/latest/ (symlink to most recent run dir)
 - Per-script JSON: <workspace>__<dir>__script.json containing
   `results` list with `file`, `duration_seconds`, `status`.
 
@@ -40,7 +40,7 @@ HEART_TIMINGS_DIR = HEART_STATE_DIR / "timings"
 HEART_HOME = Path(__file__).resolve().parents[2]
 CONFIG_PATH = HEART_HOME / "config" / "repos.yaml"
 PYAUTO_ROOT = Path(__file__).resolve().parents[3] if Path(__file__).resolve().parents[3].name == "PyAutoLabs" else Path.home() / "Code" / "PyAutoLabs"
-TEST_RESULTS_LATEST = PYAUTO_ROOT / "PyAutoBuild" / "test_results" / "latest"
+TEST_RESULTS_LATEST = PYAUTO_ROOT / "PyAutoHands" / "test_results" / "latest"
 
 
 def load_thresholds() -> tuple[float, float, int]:

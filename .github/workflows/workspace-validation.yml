@@ -30,7 +30,7 @@ name: Workspace Validation
 #     out of scope for M3, scripts are the release-validation surface.
 #
 # Run mechanics (script_matrix.py / run_python.py / aggregate_results.py) are
-# Build's executor primitives — checked out from PyAutoBuild, not duplicated,
+# Build's executor primitives — checked out from PyAutoHands, not duplicated,
 # in EITHER mode. Heart's own code (heart/checks/verify_install.sh,
 # heart/validate.py) is checked out from THIS repo (default actions/checkout).
 #
@@ -101,11 +101,11 @@ jobs:
         env:
           MODE_INPUT: ${{ inputs.mode }}
         run: echo "mode=${MODE_INPUT:-smoke}" >> "$GITHUB_OUTPUT"
-      - name: Checkout PyAutoBuild (run primitives)
+      - name: Checkout PyAutoHands (run primitives)
         uses: actions/checkout@v4
         with:
-          repository: PyAutoLabs/PyAutoBuild
-          path: PyAutoBuild
+          repository: PyAutoLabs/PyAutoHands
+          path: PyAutoHands
       - name: Clone workspaces (paths match script_matrix project names)
         run: |
           set -e
@@ -132,7 +132,7 @@ jobs:
           else
             PROJECTS="autofit autogalaxy autolens autofit_test autogalaxy_test autolens_test howtogalaxy howtolens howtofit"
           fi
-          matrix="$(python3 PyAutoBuild/autobuild/script_matrix.py $PROJECTS)"
+          matrix="$(python3 PyAutoHands/autobuild/script_matrix.py $PROJECTS)"
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
   generate_notebooks:
@@ -154,11 +154,11 @@ jobs:
           - { name: howtolens, workspace: HowToLens }
           - { name: howtofit, workspace: HowToFit }
     steps:
-      - name: Checkout PyAutoBuild (generate.py)
+      - name: Checkout PyAutoHands (generate.py)
         uses: actions/checkout@v4
         with:
-          repository: PyAutoLabs/PyAutoBuild
-          path: PyAutoBuild
+          repository: PyAutoLabs/PyAutoHands
+          path: PyAutoHands
       - name: Checkout workspace
         uses: actions/checkout@v4
         with:
@@ -174,9 +174,9 @@ jobs:
         run: pip install jupyter ipynb-py-convert PyYAML
       - name: Generate notebooks
         run: |
-          export PYTHONPATH="$PYTHONPATH:$(pwd)/PyAutoBuild"
+          export PYTHONPATH="$PYTHONPATH:$(pwd)/PyAutoHands"
           pushd workspace
-          python3 "$(pwd)/../PyAutoBuild/autobuild/generate.py" "${{ matrix.project.name }}"
+          python3 "$(pwd)/../PyAutoHands/autobuild/generate.py" "${{ matrix.project.name }}"
       - name: Upload generated notebooks
         if: always()
         uses: actions/upload-artifact@v4
@@ -194,11 +194,11 @@ jobs:
         python-version: ["3.12"]
         project: ${{ fromJSON(needs.find_scripts.outputs.matrix) }}
     steps:
-      - name: Checkout PyAutoBuild (run primitives)
+      - name: Checkout PyAutoHands (run primitives)
         uses: actions/checkout@v4
         with:
-          repository: PyAutoLabs/PyAutoBuild
-          path: PyAutoBuild
+          repository: PyAutoLabs/PyAutoHands
+          path: PyAutoHands
       - name: Resolve workspace repo for ${{ matrix.project.name }}
         id: ws
         run: |
@@ -290,9 +290,9 @@ jobs:
         if: needs.find_scripts.outputs.mode == 'smoke'
         run: |
           LIBS="$(pwd)/libs"
-          export PYTHONPATH="$LIBS/PyAutoConf:$LIBS/PyAutoArray:$LIBS/PyAutoFit:$LIBS/PyAutoGalaxy:$LIBS/PyAutoLens:$(pwd)/PyAutoBuild:$PYTHONPATH"
+          export PYTHONPATH="$LIBS/PyAutoConf:$LIBS/PyAutoArray:$LIBS/PyAutoFit:$LIBS/PyAutoGalaxy:$LIBS/PyAutoLens:$(pwd)/PyAutoHands:$PYTHONPATH"
           pushd workspace
-          python3 "$(pwd)/../PyAutoBuild/autobuild/run_python.py" \
+          python3 "$(pwd)/../PyAutoHands/autobuild/run_python.py" \
             "${{ matrix.project.name }}" "scripts/${{ matrix.project.directory }}" \
             --report-dir test-results
       - name: "Run Python scripts [mode=release, wheels, release profile, no source on PYTHONPATH]"
@@ -319,7 +319,7 @@ jobs:
             echo "::error::$ENV_CONFIG missing — no release profile defined for this workspace"
             exit 1
           fi
-          python3 "$(pwd)/../PyAutoBuild/autobuild/run_python.py" \
+          python3 "$(pwd)/../PyAutoHands/autobuild/run_python.py" \
             "${{ matrix.project.name }}" "scripts/${{ matrix.project.directory }}" \
             --report-dir test-results \
             --env-config "$ENV_CONFIG"
@@ -350,12 +350,12 @@ jobs:
           else
             echo "run=true" >> "$GITHUB_OUTPUT"
           fi
-      - name: Checkout PyAutoBuild (run primitives)
+      - name: Checkout PyAutoHands (run primitives)
         if: steps.gate.outputs.run == 'true'
         uses: actions/checkout@v4
         with:
-          repository: PyAutoLabs/PyAutoBuild
-          path: PyAutoBuild
+          repository: PyAutoLabs/PyAutoHands
+          path: PyAutoHands
       - name: Resolve workspace repo
         if: steps.gate.outputs.run == 'true'
         id: ws
@@ -406,9 +406,9 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         run: |
           LIBS="$(pwd)/libs"
-          export PYTHONPATH="$LIBS/PyAutoConf:$LIBS/PyAutoArray:$LIBS/PyAutoFit:$LIBS/PyAutoGalaxy:$LIBS/PyAutoLens:$(pwd)/PyAutoBuild:$PYTHONPATH"
+          export PYTHONPATH="$LIBS/PyAutoConf:$LIBS/PyAutoArray:$LIBS/PyAutoFit:$LIBS/PyAutoGalaxy:$LIBS/PyAutoLens:$(pwd)/PyAutoHands:$PYTHONPATH"
           pushd workspace
-          python3 "$(pwd)/../PyAutoBuild/autobuild/run.py" \
+          python3 "$(pwd)/../PyAutoHands/autobuild/run.py" \
             "${{ matrix.project.name }}" "notebooks/${{ matrix.project.directory }}" \
             --report-dir test-results
       - name: Upload notebook results
@@ -424,11 +424,11 @@ jobs:
     needs: [run_scripts, run_notebooks]
     if: always()
     steps:
-      - name: Checkout PyAutoBuild (aggregate_results)
+      - name: Checkout PyAutoHands (aggregate_results)
         uses: actions/checkout@v4
         with:
-          repository: PyAutoLabs/PyAutoBuild
-          path: PyAutoBuild
+          repository: PyAutoLabs/PyAutoHands
+          path: PyAutoHands
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -441,8 +441,8 @@ jobs:
           merge-multiple: true
       - name: Aggregate into report.json
         run: |
-          export PYTHONPATH="$PYTHONPATH:$(pwd)/PyAutoBuild"
-          python3 PyAutoBuild/autobuild/aggregate_results.py all-results/ \
+          export PYTHONPATH="$PYTHONPATH:$(pwd)/PyAutoHands"
+          python3 PyAutoHands/autobuild/aggregate_results.py all-results/ \
             --output report.json --markdown report.md
       - name: Post summary
         if: always()

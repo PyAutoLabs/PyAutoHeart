@@ -37,7 +37,7 @@ adapts with no edits.
 |---|---|
 | [`capabilities.yaml`](./capabilities.yaml) | Machine-readable manifest of every Heart capability — the abstract-provider self-description the Brain agent reads. |
 | [`capabilities.md`](./capabilities.md) | Human-readable audit of Heart's full health surface (CLI, checks, readiness, workflows, state, docs). |
-| [`pyautobuild_boundary_audit.md`](./pyautobuild_boundary_audit.md) | Audit confirming no health/readiness gating logic has drifted into PyAutoBuild, with the one naming nuance and a follow-up. |
+| [`pyautobuild_boundary_audit.md`](./pyautobuild_boundary_audit.md) | Audit confirming no health/readiness gating logic has drifted into PyAutoHands, with the one naming nuance and a follow-up. |
 
 ## Quick use (from the Brain agent)
 

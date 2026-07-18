@@ -2,7 +2,7 @@
 
 Rolls the continuous-health signals already in ``state.json`` into a single
 green / yellow / red verdict answering "is it safe to release?". This is the
-**authoritative** release gate: PyAutoBuild is a pure executor and no longer
+**authoritative** release gate: PyAutoHands is a pure executor and no longer
 runs its own readiness checks (``verify_workspace_versions.sh`` was removed) —
 the orchestrator (PyAutoAgent's release agent) consults this verdict via
 ``pyauto-heart readiness --json`` and only dispatches Build's ``release.yml``
@@ -43,7 +43,7 @@ acknowledgement.
 
 **Profiles** (``--profile``): ``default`` is the dev-box verdict described
 above, byte-for-byte unchanged. ``release-ci`` is the scheduled-nightly
-release gate (``PyAutoBuild/docs/nightly_release_design.md`` §5): the same
+release gate (``PyAutoHands/docs/nightly_release_design.md`` §5): the same
 gates evaluated over a snapshot the nightly driver assembles **in CI**, where
 dev-box-local evidence (``repo_state``, ``version_skew``, ``script_timing``,
 the local ``test_run`` cache, ``manifest_drift``, ``profiling_drift``) does

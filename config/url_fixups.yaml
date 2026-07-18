@@ -30,8 +30,8 @@ rewrites:
   replacement: github.com/johannesulf/nautilus
   description: joshspeagle/nautilus → johannesulf/nautilus
 - pattern: github\.com/rhayes777/PyAutoBuild
-  replacement: github.com/PyAutoLabs/PyAutoBuild
-  description: rhayes777/PyAutoBuild → PyAutoLabs/PyAutoBuild
+  replacement: github.com/PyAutoLabs/PyAutoHands
+  description: rhayes777/PyAutoBuild → PyAutoLabs/PyAutoHands
 - pattern: www\.sphinx-doc\.org/en/main
   replacement: www.sphinx-doc.org/en/master
   description: sphinx-doc /en/main → /en/master

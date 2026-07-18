@@ -13,7 +13,7 @@ provider:
   role: >-
     The health and vital-signs authority of the PyAuto organism. Owns ALL
     health/readiness checking. Observer-only: reads repos and emits verdicts,
-    never writes into other repos, never triggers PyAutoBuild/Hands.
+    never writes into other repos, never triggers PyAutoHands/Hands.
   canonical_cli: pyauto-heart
   python_package: heart             # `import heart`
 
@@ -35,7 +35,7 @@ primary_query:
 gate:
   authority: "pyauto-heart readiness"   # the single is-it-safe-to-release gate
   semantics:
-    green:  "Healthy. PyAutoBuild may proceed automatically."
+    green:  "Healthy. PyAutoHands may proceed automatically."
     yellow: "Mostly healthy. Work may proceed; human review recommended."
     red:    "Blocked. Do not release until the blocking reasons clear."
   rule: "red dominates yellow dominates green; an unknown is YELLOW, never silently green."
@@ -70,8 +70,8 @@ continuous_checks:
     gate_role: "YELLOW on timing regressions / slow scripts"
   - id: test_run
     impl: heart/checks/test_run.py
-    measures: "latest PyAutoBuild report.json verdict (ready / counts / stale parked)"
-    consumes: "PyAutoBuild test_results/latest/report.json (Build executor primitive)"
+    measures: "latest PyAutoHands report.json verdict (ready / counts / stale parked)"
+    consumes: "PyAutoHands test_results/latest/report.json (Build executor primitive)"
     gate_role: "YELLOW if workspace validation not passing / stale / unknown (standing debt, advisory)"
   - id: version_skew
     impl: heart/checks/version_skew.py

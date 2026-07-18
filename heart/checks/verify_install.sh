@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # heart/checks/verify_install.sh — deep install-readiness check for PyAutoLens.
 #
-# Owned by PyAutoHeart (moved from PyAutoBuild): all release-readiness checking
+# Owned by PyAutoHeart (moved from PyAutoHands): all release-readiness checking
 # is Heart's job. This is a *deep, on-demand* check — it creates throwaway venvs
 # / conda envs and installs from PyPI, so it takes minutes and must NEVER run in
 # the <30s `tick` loop. Invoke it via `pyauto-heart verify_install`, which passes

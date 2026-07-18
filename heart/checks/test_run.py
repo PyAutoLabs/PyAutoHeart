@@ -1,6 +1,6 @@
-"""heart/checks/test_run.py — surface the latest PyAutoBuild test-run verdict.
+"""heart/checks/test_run.py — surface the latest PyAutoHands test-run verdict.
 
-PyAutoBuild's release pipeline writes an aggregated ``report.json`` into each
+PyAutoHands's release pipeline writes an aggregated ``report.json`` into each
 run directory (reachable via the ``test_results/latest`` symlink). It carries
 the single most important release signal — a top-level ``ready`` boolean —
 plus per-status counts, per-project breakdown, and the ``slow_skips`` /
@@ -32,7 +32,7 @@ from typing import Any
 HEART_HOME = Path(__file__).resolve().parents[2]
 _p3 = Path(__file__).resolve().parents[3]
 PYAUTO_ROOT = _p3 if _p3.name == "PyAutoLabs" else Path.home() / "Code" / "PyAutoLabs"
-TEST_RESULTS_LATEST = PYAUTO_ROOT / "PyAutoBuild" / "test_results" / "latest"
+TEST_RESULTS_LATEST = PYAUTO_ROOT / "PyAutoHands" / "test_results" / "latest"
 HEART_STATE_DIR = Path(
     os.environ.get("HEART_STATE_DIR")
     or Path.home() / ".pyauto-heart"

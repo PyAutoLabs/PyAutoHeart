@@ -36,7 +36,7 @@ Usage: health [sync|release|audit] [--all]
     health            cross-repo git-sync dashboard (branch, behind/ahead, dirty)
     health sync       same as bare `health`
     health --all      sync dashboard with the full raw dirty listing (noise included)
-    health release    last PyAutoBuild release-prep run dashboard
+    health release    last PyAutoHands release-prep run dashboard
     health audit      structural repo-health audit (non-repo dirs, stashes, dead branches)
 
 Release-run helpers: health-report / health-json / health-triage.

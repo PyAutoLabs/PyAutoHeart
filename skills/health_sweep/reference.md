@@ -21,7 +21,7 @@ Quick "is everything still green?" sweep across the PyAuto stack. Refreshes loca
 - PyAutoFit
 - PyAutoGalaxy
 - PyAutoLens
-- PyAutoBuild
+- PyAutoHands
 
 **Workspaces (run `$smoke-test`):** exactly the curated set `$smoke-test` maps —
 do not maintain a separate list here. As of writing that is `autofit_workspace`,
@@ -100,7 +100,7 @@ PyAutoArray                | main   | already up to date | ✓ unit (1240/1240)
 PyAutoFit                  | main   | dirty — skipped  | ✗ unit (3 failed)
 PyAutoGalaxy               | main   | synced           | ✓ unit (980/980)
 PyAutoLens                 | main   | synced           | ✓ unit (1530/1530)
-PyAutoBuild                | main   | synced           | no tests
+PyAutoHands                | main   | synced           | no tests
 autofit_workspace          | main   | synced           | ✓ smoke (8/8)
 autogalaxy_workspace       | main   | synced           | ✓ smoke (8/8)
 autolens_workspace         | main   | synced           | ✗ smoke (1 failed)

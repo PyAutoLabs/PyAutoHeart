@@ -13,7 +13,7 @@
 #   - name: Run live URL audit
 #     id: url_audit
 #     run: |
-#       body=$(bash PyAutoBuild/autobuild/url_check_live.sh repo) && rc=0 || rc=$?
+#       body=$(bash PyAutoHands/autobuild/url_check_live.sh repo) && rc=0 || rc=$?
 #       echo "$body" > /tmp/url_audit_body.md
 #       echo "rc=$rc" >> "$GITHUB_OUTPUT"
 

@@ -28,7 +28,7 @@ repos:
       release_gate: false
 
   build_workflow:
-    - name: PyAutoBuild
+    - name: PyAutoHands
       owner: PyAutoLabs
     - name: PyAutoMind
       owner: PyAutoLabs

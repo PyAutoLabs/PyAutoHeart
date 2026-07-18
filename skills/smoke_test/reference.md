@@ -8,7 +8,7 @@ the verbose mechanics.
 Each notebook in `smoke_notebooks.txt` runs via
 `jupyter nbconvert --to notebook --execute`, with the executed copy written to a
 `/tmp` dir so the on-disk notebook stays clean. On failure, regenerate the single
-failing notebook from its source `.py` via PyAutoBuild's `py_to_notebook` and
+failing notebook from its source `.py` via PyAutoHands's `py_to_notebook` and
 retry once (catches stale notebooks where the script moved on but the `.ipynb`
 wasn't refreshed by `$pre-build` (`/pre_build` in Claude). Whole-workspace
 regeneration stays `generate.py`'s job — smoke only regenerates the one failing

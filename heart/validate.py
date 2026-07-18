@@ -234,7 +234,7 @@ class _Accumulator:
                 stage[key] = data[key]
         self.stages["rehearse"] = stage
         if data.get("build_sha"):
-            self.commit_shas.setdefault("PyAutoBuild", str(data["build_sha"]))
+            self.commit_shas.setdefault("PyAutoHands", str(data["build_sha"]))
 
     def add_stage(self, data: dict[str, Any]) -> None:
         self._stage_counts_seen = True

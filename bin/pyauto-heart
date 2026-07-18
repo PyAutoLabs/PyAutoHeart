@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # bin/pyauto-heart — the PyAutoHeart CLI dispatcher.
 #
-# Subcommand pattern mirrors PyAutoBuild/bin/autobuild so users see a
+# Subcommand pattern mirrors PyAutoHands/bin/autobuild so users see a
 # familiar shape. Help is auto-generated from SHORT_DESC.
 
 set -u
@@ -196,7 +196,7 @@ RED  = a real release blocker (a library's CI failing / off main / dirty /
 YELLOW = caution (timing regressions, stale PRs/parked scripts, a workspace
        pinned behind, or an unknown such as a missing test-run report).
 
-This is the authoritative release gate: PyAutoBuild is a pure executor and
+This is the authoritative release gate: PyAutoHands is a pure executor and
 runs no readiness checks of its own. The release agent dispatches release.yml
 only when this verdict is green.
 EOF

@@ -1,7 +1,7 @@
 """heart/checks/workspace_testmode_timing.py — time curated workspace scripts run
 in integration TEST MODE, track a rolling baseline, flag regressions.
 
-Distinct from ``script_timing``, which reads PyAutoBuild ``run_all`` durations
+Distinct from ``script_timing``, which reads PyAutoHands ``run_all`` durations
 (the release/CI path). This leg runs a curated set of workspace ``start_here``
 scripts with ``PYAUTO_TEST_MODE=2`` + ``PYAUTO_WORKSPACE_SMALL_DATASETS=1`` — the
 developer-loop mode named in the original hygiene prompt — and times them.

@@ -36,7 +36,7 @@ Audited at commit `a2543d0` (Rename PyAutoPulse to PyAutoHeart).
   PyAutoMind `active.md` (orphan / missing / dirty). Monitoring.
 - **script_timing** (`checks/script_timing.py`) — per-script duration vs rolling
   baseline (`>1.5x` slow, `>3x` regression). YELLOW.
-- **test_run** (`checks/test_run.py`) — reads PyAutoBuild's
+- **test_run** (`checks/test_run.py`) — reads PyAutoHands's
   `test_results/latest/report.json` (the workspace-validation verdict). YELLOW
   when not passing / stale / unknown (workspace debt is advisory, never a hard
   block).
@@ -51,7 +51,7 @@ Audited at commit `a2543d0` (Rename PyAutoPulse to PyAutoHeart).
 - **verify_install** (`checks/verify_install.sh`) — pip & conda install-path
   checks A–E in throwaway envs across Python versions. RED if last run
   `ready==false`; YELLOW if stale (`>14d`) or never run. Moved here from
-  PyAutoBuild — install verification is Heart's job.
+  PyAutoHands — install verification is Heart's job.
 - **url_check / url_sweep / url_check_live** — offline regex guard, ecosystem
   sweep, and live HTTP reachability audit. **Monitoring only — never gates
   readiness.**
