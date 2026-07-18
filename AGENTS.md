@@ -8,7 +8,7 @@ release?" gate.
 
 ## The boundary
 
-The organs, boundaries and the `Brain → Heart (gate) → Hands (execute)` call
+The organs, boundaries and the `Brain → Heart (gate) → Build (execute)` call
 chain are defined once in `PyAutoBrain/ORGANISM.md`. Heart's side of it:
 **observer only** — it reads and emits the authoritative
 green/stale/yellow/red verdict, never writes into other repos, and never
