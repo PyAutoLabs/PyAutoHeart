@@ -22,6 +22,10 @@ repos:
       owner: PyAutoLabs
     - name: PyAutoCTI
       owner: PyAutoLabs
+      # Polled for health/CI, but NOT part of the release-validation gate yet:
+      # PyAutoCTI is mid-resurrection (not released), so it has no release
+      # evidence to confirm. Flip to true (or drop this key) when CTI ships.
+      release_gate: false
 
   build_workflow:
     - name: PyAutoBuild

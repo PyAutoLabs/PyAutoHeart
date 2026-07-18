@@ -136,13 +136,33 @@ _WEIGHTS: dict[str, tuple[int, int]] = {
 
 
 def load_library_names(config_path: Path | str = CONFIG_PATH) -> list[str]:
-    """Return repos.libraries[].name from the policy file. Strict: the file
-    is in-repo and the group is load-bearing (the release gate) — a missing
-    or empty group is a config bug that must fail loudly."""
+    """Return every polled library — repos.libraries[].name from the policy
+    file. Strict: the file is in-repo and the group is load-bearing — a missing
+    or empty group is a config bug that must fail loudly.
+
+    This is the full *polled* set (what the tick monitors). The *release gate*
+    is a subset — see ``load_release_gate_names``."""
     cfg = yaml.safe_load(Path(config_path).read_text()) or {}
     libs = [r["name"] for r in cfg["repos"]["libraries"]]
     if not libs:
         raise ValueError(f"empty repos.libraries group in {config_path}")
+    return libs
+
+
+def load_release_gate_names(config_path: Path | str = CONFIG_PATH) -> list[str]:
+    """The release-gating libraries: polled libraries minus those a library
+    marks ``release_gate: false``. A library can be polled for health/CI
+    (monitoring) without being part of the release-validation gate — e.g. a
+    library mid-resurrection that is not yet released and so has no release
+    evidence to confirm. Absent key ⇒ gating (the default); only an explicit
+    ``false`` opts out. Strict: an empty result is a config bug."""
+    cfg = yaml.safe_load(Path(config_path).read_text()) or {}
+    libs = [
+        r["name"] for r in cfg["repos"]["libraries"]
+        if r.get("release_gate", True)
+    ]
+    if not libs:
+        raise ValueError(f"no release-gating libraries in {config_path}")
     return libs
 
 
@@ -163,8 +183,10 @@ TEST_STALE_DAYS = 10
 VALIDATION_STALE_DAYS = 7
 
 # The library repos whose current `main` HEAD must match a validation report's
-# recorded commit_shas for the release-validation gate to go GREEN.
-_GATE_SHA_LIBS = tuple(load_library_names())
+# recorded commit_shas for the release-validation gate to go GREEN. This is the
+# release-gating subset (a resurrecting, not-yet-released library is polled but
+# excluded — see load_release_gate_names).
+_GATE_SHA_LIBS = tuple(load_release_gate_names())
 
 
 def _sha_eq(a: Any, b: Any) -> bool:
@@ -206,7 +228,7 @@ def compute(
 ) -> dict[str, Any]:
     """Pure verdict function. Never raises on missing/partial data."""
     snapshot = snapshot or {}
-    libs = list(libraries) if libraries is not None else load_library_names()
+    libs = list(libraries) if libraries is not None else load_release_gate_names()
     req_wf = required_workflows if required_workflows is not None else load_required_workflows()
     repos = snapshot.get("repos", {}) or {}
     ref = _parse_ts(snapshot.get("ts")) or datetime.datetime.now(datetime.timezone.utc)
