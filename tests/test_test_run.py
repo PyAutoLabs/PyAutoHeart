@@ -1,4 +1,4 @@
-"""tests/test_test_run.py — parse PyAutoBuild test-run report into Heart JSON."""
+"""tests/test_test_run.py — parse PyAutoHands test-run report into Heart JSON."""
 
 from __future__ import annotations
 

@@ -1,6 +1,6 @@
 """heart/checks/version_skew.py — workspace pin vs installed library version.
 
-PyAutoBuild's ``verify_workspace_versions.sh`` blocks a release if any
+PyAutoHands's ``verify_workspace_versions.sh`` blocks a release if any
 workspace's pinned version is AHEAD of its installed library — but that only
 runs at ``pre_build`` time, so day-to-day the skew is invisible. This check
 makes it continuous.

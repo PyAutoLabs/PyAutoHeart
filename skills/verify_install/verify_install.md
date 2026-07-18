@@ -4,7 +4,7 @@ Release-readiness gate for PyAutoLens. Runs a suite of independent install-path 
 in throwaway venvs / conda envs and reports a per-check PASS / FAIL / SKIP table.
 
 The actual work lives in **`PyAutoHeart/heart/checks/verify_install.sh`** — release-readiness
-checking is PyAutoHeart's job (PyAutoBuild is a pure executor). This skill is a thin wrapper:
+checking is PyAutoHeart's job (PyAutoHands is a pure executor). This skill is a thin wrapper:
 invoke `pyauto-heart verify_install` (which also writes the JSON sidecar that
 `pyauto-heart readiness` consumes), read the report, expand any failures, and prompt the user
 about cleanup if they ran with `--keep`.
@@ -28,7 +28,7 @@ reported as **SKIP** and does not count toward overall failure.
 The script is self-contained and runs from any shell. The canonical entry point is
 `pyauto-heart verify_install`, which runs the checks and writes the readiness sidecar.
 (`autobuild verify_install` still works as a thin shim that delegates here, for anyone
-with PyAutoBuild on PATH.)
+with PyAutoHands on PATH.)
 
 ```bash
 pyauto-heart verify_install                       # run all checks (default)

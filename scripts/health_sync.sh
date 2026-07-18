@@ -41,7 +41,7 @@
 #                             /smoke-test skill). Green when failed=0, red
 #                             otherwise. Suppressed when no JSONs exist.
 #   - "Last autobuild run:" — aggregate from
-#                             ~/Code/PyAutoLabs/PyAutoBuild/test_results/*.json
+#                             ~/Code/PyAutoLabs/PyAutoHands/test_results/*.json
 #                             (committed by the autobuild release pipeline).
 #                             Suppressed when no JSONs exist.
 #   - "Hygiene:"            — nudge when the last /repo_cleanup audit stamp
@@ -365,10 +365,10 @@ for f in sorted(glob.glob(os.path.expanduser("~/.cache/pyauto/smoke/*.json"))):
 ' 2>/dev/null)
   fi
 
-  # Last autobuild run. Reads aggregate from PyAutoBuild/test_results/*.json
+  # Last autobuild run. Reads aggregate from PyAutoHands/test_results/*.json
   # (committed by the autobuild release pipeline). Counts only — failure
   # detail lives in the per-job JSON / the GitHub Actions run.
-  local pab_dir="$HOME/Code/PyAutoLabs/PyAutoBuild/test_results"
+  local pab_dir="$HOME/Code/PyAutoLabs/PyAutoHands/test_results"
   if [[ -d "$pab_dir" ]] && compgen -G "$pab_dir/*.json" > /dev/null; then
     local pab_summary
     pab_summary=$(python3 -c '
@@ -376,7 +376,7 @@ import json, os, glob
 total_p = total_f = total_s = num = 0
 projects = set()
 latest = ""
-for f in sorted(glob.glob(os.path.expanduser("~/Code/PyAutoLabs/PyAutoBuild/test_results/*.json"))):
+for f in sorted(glob.glob(os.path.expanduser("~/Code/PyAutoLabs/PyAutoHands/test_results/*.json"))):
     try:
         d = json.load(open(f))
         s = d.get("summary", {})
@@ -395,9 +395,9 @@ print(f"{latest[:10]}|{num}|{len(projects)}|{total_p}|{total_f}|{total_s}")
     if [[ -n "$pab_summary" ]]; then
       local pab_date njobs nproj pab_p pab_f pab_s sha
       IFS='|' read -r pab_date njobs nproj pab_p pab_f pab_s <<< "$pab_summary"
-      sha=$(git -C "$HOME/Code/PyAutoLabs/PyAutoBuild" rev-parse --short HEAD 2>/dev/null)
+      sha=$(git -C "$HOME/Code/PyAutoLabs/PyAutoHands" rev-parse --short HEAD 2>/dev/null)
       echo ""
-      printf "Last autobuild run: %s (PyAutoBuild commit %s)\n" "$pab_date" "${sha:-?}"
+      printf "Last autobuild run: %s (PyAutoHands commit %s)\n" "$pab_date" "${sha:-?}"
       local color='\033[32m'
       [[ "$pab_f" != "0" ]] && color='\033[31m'
       printf "  ${color}%s jobs across %s workspaces: %s passed, %s failed, %s skipped\033[0m\n" \

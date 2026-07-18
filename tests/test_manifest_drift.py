@@ -9,7 +9,7 @@ from heart.checks import manifest_drift as md
 
 OK_OUTPUT = """\
 check PyAutoHeart/config/repos.yaml: OK
-check PyAutoBuild/pre_build.sh: OK
+check PyAutoHands/pre_build.sh: OK
 check ensure_workspace_labels.sh: OK
 check local checkout origins: OK
 """

@@ -14,7 +14,7 @@ untouched, default `mode: smoke` per-PR path):
   `config/build/env_vars_release.yaml` — a self-contained sibling of
   `env_vars.yaml` (the `smoke` profile), passed to Build's `run_python.py`
   unmodified via its existing `--env-config` flag. No changes were needed in
-  PyAutoBuild's executor primitives to support this — `--env-config` already
+  PyAutoHands's executor primitives to support this — `--env-config` already
   accepted an arbitrary path.
 - `run_scripts`, when `mode: release`, `pip install`s the Stage-2 TestPyPI
   wheels at the rehearsed version and puts **no** library source on
@@ -60,7 +60,7 @@ cannot silently inherit smoke fidelity.
 ## The `release` profile (wired in M3)
 
 The intended release-fidelity env is already documented in
-`PyAutoBuild/.github/workflows/release.yml`:
+`PyAutoHands/.github/workflows/release.yml`:
 
 | Tier                 | `PYAUTO_TEST_MODE`               | `PYAUTO_SMALL_DATASETS` | `PYAUTO_FAST_PLOTS` |
 |----------------------|----------------------------------|-------------------------|---------------------|

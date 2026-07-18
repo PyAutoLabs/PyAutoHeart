@@ -62,8 +62,8 @@ def test_ingest_rehearsal_only(tmp_path):
     assert report["release_ready"] is True
     # no integration stage yet → no release profile (the gate keeps this YELLOW)
     assert report["profile"] is None
-    # the build sha is recorded under PyAutoBuild, not a library head
-    assert report["commit_shas"].get("PyAutoBuild") == "abc1234def5678"
+    # the build sha is recorded under PyAutoHands, not a library head
+    assert report["commit_shas"].get("PyAutoHands") == "abc1234def5678"
 
 
 def test_ingest_version_txt_fallback(tmp_path):

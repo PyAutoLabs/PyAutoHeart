@@ -4,7 +4,7 @@
 PyAutoBuild#155, Phase 2). **Method:** measured 2026-07-16 against the live
 state dir, the real repos, and the GitHub API; every number is re-measurable
 and should be re-measured before acting. Companion:
-`PyAutoBuild/docs/pre_build_failure_audit.md` (Phase 1).
+`PyAutoHands/docs/pre_build_failure_audit.md` (Phase 1).
 
 ## 1. Per-leg evidence map (deliverable 1)
 
@@ -120,7 +120,7 @@ while `test_run`'s local/cloud disagreement is silent.
    should guard "every floor names an installable release" (checkable against
    tags/PyPI), which is the invariant the 07-13 hand-bump actually violated.
 5. **HowTo* validation runs simulators before chapters** (§3 remediation) —
-   a workspace/PyAutoBuild-runner change, not a Heart change.
+   a workspace/PyAutoHands-runner change, not a Heart change.
 
 ## 6. Rejected / open decisions
 

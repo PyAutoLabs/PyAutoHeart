@@ -1,4 +1,4 @@
-"""tests/test_url_check.py — offline forbidden-URL regex guard (moved from PyAutoBuild)."""
+"""tests/test_url_check.py — offline forbidden-URL regex guard (moved from PyAutoHands)."""
 
 import subprocess
 from pathlib import Path

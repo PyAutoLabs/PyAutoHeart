@@ -712,7 +712,7 @@ def test_manifest_drift_unavailable_stays_green():
 
 # ---------------------------------------------------------------------------
 # release-ci profile (the scheduled-nightly gate — design §5 in
-# PyAutoBuild/docs/nightly_release_design.md). The driver assembles a snapshot
+# PyAutoHands/docs/nightly_release_design.md). The driver assembles a snapshot
 # in CI with no dev box: cloud-refreshable evidence only.
 # ---------------------------------------------------------------------------
 

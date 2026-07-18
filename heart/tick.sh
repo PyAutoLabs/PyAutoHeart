@@ -20,11 +20,11 @@ bash "$HEART_HOME/heart/checks/ci_status.sh"       || heart_log WARN "$(c_warn '
 bash "$HEART_HOME/heart/checks/open_prs.sh"        || heart_log WARN "$(c_warn 'open_prs failed')"
 bash "$HEART_HOME/heart/checks/worktree_drift.sh"  || heart_log WARN "$(c_warn 'worktree_drift failed')"
 
-# Python: script timing regressions. Needs a local PyAutoBuild test_results/latest.
-if [[ -d "$PYAUTO_ROOT/PyAutoBuild/test_results/latest" ]]; then
+# Python: script timing regressions. Needs a local PyAutoHands test_results/latest.
+if [[ -d "$PYAUTO_ROOT/PyAutoHands/test_results/latest" ]]; then
   PYTHONPATH="$HEART_HOME" python3 -m heart.checks.script_timing || heart_log WARN "$(c_warn 'script_timing failed')"
 else
-  heart_log INFO "$(c_meta 'script_timing: skipped (no PyAutoBuild/test_results/latest)')"
+  heart_log INFO "$(c_meta 'script_timing: skipped (no PyAutoHands/test_results/latest)')"
 fi
 
 # Python: profiling pinned-value drift. Reads autolens_profiling result JSONs.

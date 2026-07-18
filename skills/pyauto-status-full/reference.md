@@ -5,10 +5,10 @@
 > `PyAutoBrain/skills/health/health.md`). `$health` is the single health door;
 > this file is the release-run dashboard leg it drives.
 
-Render the most recent PyAutoBuild full-run report as a release-readiness dashboard. Use this to inspect timing and failures from the last `python autobuild/run_all.py`. Read-only.
+Render the most recent PyAutoHands full-run report as a release-readiness dashboard. Use this to inspect timing and failures from the last `python autobuild/run_all.py`. Read-only.
 
 A **PyAutoHeart** view — Heart owns the health/release-readiness surface; this
-skill summarises the artefacts a PyAutoBuild run leaves on disk (Build executes;
+skill summarises the artefacts a PyAutoHands run leaves on disk (Build executes;
 Heart reports). The authoritative live verdict is `pyauto-heart readiness`.
 
 ## Usage
@@ -26,10 +26,10 @@ This is the deeper sibling of `$health status` (the active-work dashboard):
 
 ### 1. Locate the latest run
 
-PyAutoBuild stores every full run under `~/Code/PyAutoLabs/PyAutoBuild/test_results/runs/<UTC-timestamp>/` and updates a `latest` symlink on success.
+PyAutoHands stores every full run under `~/Code/PyAutoLabs/PyAutoHands/test_results/runs/<UTC-timestamp>/` and updates a `latest` symlink on success.
 
 ```bash
-LATEST=~/Code/PyAutoLabs/PyAutoBuild/test_results/latest
+LATEST=~/Code/PyAutoLabs/PyAutoHands/test_results/latest
 ```
 
 If the symlink does not exist, no full run has completed yet. Print:
@@ -37,7 +37,7 @@ If the symlink does not exist, no full run has completed yet. Print:
 ```
 No full release-prep run on disk.
 
-To produce one, from PyAutoBuild root:
+To produce one, from PyAutoHands root:
   source ../activate.sh
   python autobuild/run_all.py
 ```
@@ -108,7 +108,7 @@ If only one run exists, omit this section silently.
 
 ### 5. Notes
 
-- Read-only — never modifies PyAutoBuild output, never deletes runs, never touches the `latest` symlink.
+- Read-only — never modifies PyAutoHands output, never deletes runs, never touches the `latest` symlink.
 - No GitHub posting (matches the `$health status` convention). The user can
   decide to share findings manually.
 - For quick browsing, the markdown report at `<run_path>/report.md` already contains the same data — this skill is the conversational summary layer on top.
@@ -119,6 +119,6 @@ This skill renders **local artefacts** produced by an autobuild full run. It is
 therefore meaningful only in a `local-dev` environment where those artefacts
 exist (see PyAutoBrain `skills/WORKFLOW.md` for the environment model). In a
 `web-github` / `analysis-only` / `ci-only` session there is no local run to
-render — if `~/Code/PyAutoLabs/PyAutoBuild/test_results/latest` does not exist,
+render — if `~/Code/PyAutoLabs/PyAutoHands/test_results/latest` does not exist,
 print the "no run on disk" message from step 1 and exit. (For the live
 release-readiness verdict from anywhere, use `pyauto-heart readiness` instead.)

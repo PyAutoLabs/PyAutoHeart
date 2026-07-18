@@ -1,18 +1,18 @@
-# PyAutoBuild boundary audit — has health/readiness logic drifted?
+# PyAutoHands boundary audit — has health/readiness logic drifted?
 
 The Health Agent task requires verifying that no health/readiness logic still
-lives in PyAutoBuild (Hands), which must be a **pure executor**. This is the
-audit. Performed against PyAutoBuild at `114ecec` (Merge #109,
+lives in PyAutoHands (Hands), which must be a **pure executor**. This is the
+audit. Performed against PyAutoHands at `114ecec` (Merge #109,
 build-pulse-agent-separation).
 
-## Verdict: clean — no health/readiness *gating* logic in PyAutoBuild
+## Verdict: clean — no health/readiness *gating* logic in PyAutoHands
 
 Every actual gate has already moved to PyAutoHeart. What remains in Build is
 executor primitives and documentation that correctly points at Heart.
 
 ### What was checked
 
-Searched all `*.sh / *.py / *.yml / *.md` in PyAutoBuild for
+Searched all `*.sh / *.py / *.yml / *.md` in PyAutoHands for
 `readiness | verify_workspace_version | health | version_skew | verify_install |
 url_check`.
 
@@ -61,5 +61,5 @@ vocabulary with Heart's authoritative verdict and could mislead a future reader.
 ```
 PyAutoHeart  — owns health checks + the authoritative readiness verdict.
 PyAutoBrain  — Health Agent reasons over Heart's outputs (owns no checks).
-PyAutoBuild  — executor; acts only after a GREEN/YELLOW/RED decision; runs no checks.
+PyAutoHands  — executor; acts only after a GREEN/YELLOW/RED decision; runs no checks.
 ```

@@ -1,6 +1,6 @@
 # Review Release: Triage Release Readiness
 
-Review the latest PyAutoBuild release evidence, ask PyAutoHeart for the
+Review the latest PyAutoHands release evidence, ask PyAutoHeart for the
 authoritative readiness verdict, and route the human to release, refresh, fix,
 or investigate. Build artifacts explain what ran; they never determine whether
 the organism is ready.
@@ -15,7 +15,7 @@ conductor coordinates any subsequent release action.
 List recent completed and in-progress runs:
 
 ```bash
-gh run list --workflow=release.yml --repo PyAutoLabs/PyAutoBuild --limit 5 \
+gh run list --workflow=release.yml --repo PyAutoLabs/PyAutoHands --limit 5 \
   --json databaseId,status,conclusion,createdAt,url
 ```
 
@@ -29,9 +29,9 @@ Read job conclusions from the selected run and fetch failed logs when needed:
 
 ```bash
 gh api --paginate \
-  'repos/PyAutoLabs/PyAutoBuild/actions/runs/<run-id>/jobs?per_page=100' \
+  'repos/PyAutoLabs/PyAutoHands/actions/runs/<run-id>/jobs?per_page=100' \
   --jq '.jobs[] | {id, name, status, conclusion}'
-gh run view <run-id> --repo PyAutoLabs/PyAutoBuild --log-failed
+gh run view <run-id> --repo PyAutoLabs/PyAutoHands --log-failed
 ```
 
 Use the Actions jobs API because the workspace's supported `gh 2.4.0` does not
@@ -105,7 +105,7 @@ only job conclusions and details present in the selected run's logs.
 For fixes, use `$start-library` or `$start-workspace` (`/start_library` or
 `/start_workspace` in Claude) after filing a concise PyAutoMind prompt through
 `$intake` (`/intake` in Claude). Environment and workflow failures normally
-target PyAutoBuild; source or script failures target the owning library or
+target PyAutoHands; source or script failures target the owning library or
 workspace.
 
 If the user chooses investigation, show the full traceback, relevant source,

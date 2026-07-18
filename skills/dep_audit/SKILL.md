@@ -28,7 +28,7 @@ For each library repo (PyAutoConf, PyAutoFit, PyAutoArray, PyAutoGalaxy, PyAutoL
 
 Parse each dependency string into: package name, version constraint (floor, cap, exact pin).
 
-Also check `PyAutoBuild/requirements.txt` for any additional constraints.
+Also check `PyAutoHands/requirements.txt` for any additional constraints.
 
 ### 2. Query PyPI for latest versions
 

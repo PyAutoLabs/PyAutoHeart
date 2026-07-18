@@ -2,7 +2,7 @@
 
 ``PyAutoMind/repos.yaml`` is the single source of repo *identity* (GitHub
 home, category, role). ``PyAutoMind/scripts/repos_sync.py --check`` verifies
-the other repo lists against it — Heart's ``config/repos.yaml``, PyAutoBuild's
+the other repo lists against it — Heart's ``config/repos.yaml``, PyAutoHands's
 ``pre_build.sh``, PyAutoBrain's ``bin/ensure_workspace_labels.sh``, and the actual
 ``origin`` remote of every local checkout. That check only fires when someone
 remembers to run it; this module makes it continuous by running it every tick
