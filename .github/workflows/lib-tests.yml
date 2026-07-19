@@ -57,7 +57,7 @@ jobs:
       - name: Clone dependency libraries (matching branch if it exists)
         run: |
           set -e
-          BRANCH="${{ github.ref_name }}"
+          BRANCH="${{ github.head_ref || github.ref_name }}"
           for dep in ${{ steps.map.outputs.deps }}; do
             git clone "https://github.com/PyAutoLabs/$dep" "$dep"
             if git -C "$dep" ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
