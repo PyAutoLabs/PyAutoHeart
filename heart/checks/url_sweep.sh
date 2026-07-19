@@ -22,7 +22,7 @@ CHECK_DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 # The repos that previously ran url_check.yml on every PR. Centralised here.
 URL_CHECK_REPOS=(
   HowToFit HowToGalaxy HowToLens
-  PyAutoConf PyAutoFit PyAutoArray PyAutoGalaxy PyAutoLens
+  PyAutoNerves PyAutoFit PyAutoArray PyAutoGalaxy PyAutoLens
   autofit_workspace autogalaxy_workspace autolens_workspace
   euclid_strong_lens_modeling_pipeline
 )

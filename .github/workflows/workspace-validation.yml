@@ -224,7 +224,7 @@ jobs:
         if: needs.find_scripts.outputs.mode == 'smoke'
         run: |
           set -e
-          for lib in PyAutoConf PyAutoArray PyAutoFit PyAutoGalaxy PyAutoLens; do
+          for lib in PyAutoNerves PyAutoArray PyAutoFit PyAutoGalaxy PyAutoLens; do
             git clone --depth 1 "https://github.com/PyAutoLabs/$lib" "libs/$lib"
           done
       - name: Set up Python ${{ matrix.python-version }}
@@ -290,7 +290,7 @@ jobs:
         if: needs.find_scripts.outputs.mode == 'smoke'
         run: |
           LIBS="$(pwd)/libs"
-          export PYTHONPATH="$LIBS/PyAutoConf:$LIBS/PyAutoArray:$LIBS/PyAutoFit:$LIBS/PyAutoGalaxy:$LIBS/PyAutoLens:$(pwd)/PyAutoHands:$PYTHONPATH"
+          export PYTHONPATH="$LIBS/PyAutoNerves:$LIBS/PyAutoArray:$LIBS/PyAutoFit:$LIBS/PyAutoGalaxy:$LIBS/PyAutoLens:$(pwd)/PyAutoHands:$PYTHONPATH"
           pushd workspace
           python3 "$(pwd)/../PyAutoHands/autobuild/run_python.py" \
             "${{ matrix.project.name }}" "scripts/${{ matrix.project.directory }}" \
@@ -380,7 +380,7 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         run: |
           set -e
-          for lib in PyAutoConf PyAutoArray PyAutoFit PyAutoGalaxy PyAutoLens; do
+          for lib in PyAutoNerves PyAutoArray PyAutoFit PyAutoGalaxy PyAutoLens; do
             git clone --depth 1 "https://github.com/PyAutoLabs/$lib" "libs/$lib"
           done
       - name: Download generated notebooks
@@ -406,7 +406,7 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         run: |
           LIBS="$(pwd)/libs"
-          export PYTHONPATH="$LIBS/PyAutoConf:$LIBS/PyAutoArray:$LIBS/PyAutoFit:$LIBS/PyAutoGalaxy:$LIBS/PyAutoLens:$(pwd)/PyAutoHands:$PYTHONPATH"
+          export PYTHONPATH="$LIBS/PyAutoNerves:$LIBS/PyAutoArray:$LIBS/PyAutoFit:$LIBS/PyAutoGalaxy:$LIBS/PyAutoLens:$(pwd)/PyAutoHands:$PYTHONPATH"
           pushd workspace
           python3 "$(pwd)/../PyAutoHands/autobuild/run.py" \
             "${{ matrix.project.name }}" "notebooks/${{ matrix.project.directory }}" \

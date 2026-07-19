@@ -28,7 +28,7 @@ Read all three registry files (schemas in `PyAutoMind/README.md`):
 
 ### 2. Live-scan repos and worktrees
 
-Scan each canonical checkout (PyAutoConf, PyAutoFit, PyAutoArray, PyAutoGalaxy,
+Scan each canonical checkout (PyAutoNerves, PyAutoFit, PyAutoArray, PyAutoGalaxy,
 PyAutoLens, autofit_workspace, autogalaxy_workspace, autolens_workspace,
 autolens_workspace_test, euclid_strong_lens_modeling_pipeline, HowToLens):
 

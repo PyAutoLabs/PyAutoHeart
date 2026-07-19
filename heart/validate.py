@@ -38,7 +38,7 @@ Schema of ``validation_report.json`` (``schema_version`` 1)::
       "testpypi_version": "2026.6.30.1.dev64501",
       "profile": "release",             # env profile the integration tier ran under
       "commit_shas": {                  # per-repo HEAD the rehearsal was built from
-        "PyAutoConf": "abc123...", "PyAutoFit": "...", "PyAutoArray": "...",
+        "PyAutoNerves": "abc123...", "PyAutoFit": "...", "PyAutoArray": "...",
         "PyAutoGalaxy": "...", "PyAutoLens": "..."
       },
       "stages": {                       # per-stage status (pass|fail|skip)

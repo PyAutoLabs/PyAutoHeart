@@ -73,7 +73,7 @@ unset `PYAUTO_SMALL_DATASETS` for full-resolution FITS scripts, keep JAX on for
 overrides remain per-script.
 
 The full library env-var surface (canonical entry:
-`PyAutoConf/autoconf/test_mode.py`) is 13 `PYAUTO_*` vars, not the 4 smoke
+`PyAutoNerves/autoconf/test_mode.py`) is 13 `PYAUTO_*` vars, not the 4 smoke
 defaults:
 
 ```

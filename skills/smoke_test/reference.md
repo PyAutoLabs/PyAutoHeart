@@ -120,10 +120,10 @@ for ws in autofit_workspace autogalaxy_workspace autolens_workspace \
           autolens_workspace_test euclid_strong_lens_modeling_pipeline HowToLens; do
   [ -d "$WORK_DIR/$ws" ] || git clone "https://github.com/PyAutoLabs/$ws.git" "$WORK_DIR/$ws"
 done
-for lib in PyAutoConf PyAutoFit PyAutoArray PyAutoGalaxy PyAutoLens; do
+for lib in PyAutoNerves PyAutoFit PyAutoArray PyAutoGalaxy PyAutoLens; do
   [ -d "$WORK_DIR/$lib" ] || git clone "https://github.com/PyAutoLabs/$lib.git" "$WORK_DIR/$lib"
 done
-export PYTHONPATH="$WORK_DIR/PyAutoConf:$WORK_DIR/PyAutoFit:$WORK_DIR/PyAutoArray:$WORK_DIR/PyAutoGalaxy:$WORK_DIR/PyAutoLens:$PYTHONPATH"
+export PYTHONPATH="$WORK_DIR/PyAutoNerves:$WORK_DIR/PyAutoFit:$WORK_DIR/PyAutoArray:$WORK_DIR/PyAutoGalaxy:$WORK_DIR/PyAutoLens:$PYTHONPATH"
 export NUMBA_CACHE_DIR=/tmp/numba_cache MPLCONFIGDIR=/tmp/matplotlib
 ```
 

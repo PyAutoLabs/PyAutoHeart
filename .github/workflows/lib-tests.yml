@@ -38,12 +38,12 @@ jobs:
         id: map
         run: |
           case "${{ inputs.package }}" in
-            autoconf|autonerves)   repo=PyAutoConf;   deps="" ;;
-            autofit)    repo=PyAutoFit;    deps="PyAutoConf" ;;
-            autoarray)  repo=PyAutoArray;  deps="PyAutoConf" ;;
-            autogalaxy) repo=PyAutoGalaxy; deps="PyAutoConf PyAutoFit PyAutoArray" ;;
-            autolens)   repo=PyAutoLens;   deps="PyAutoConf PyAutoFit PyAutoArray PyAutoGalaxy" ;;
-            autocti)    repo=PyAutoCTI;    deps="PyAutoConf PyAutoFit PyAutoArray" ;;
+            autoconf|autonerves)   repo=PyAutoNerves;   deps="" ;;
+            autofit)    repo=PyAutoFit;    deps="PyAutoNerves" ;;
+            autoarray)  repo=PyAutoArray;  deps="PyAutoNerves" ;;
+            autogalaxy) repo=PyAutoGalaxy; deps="PyAutoNerves PyAutoFit PyAutoArray" ;;
+            autolens)   repo=PyAutoLens;   deps="PyAutoNerves PyAutoFit PyAutoArray PyAutoGalaxy" ;;
+            autocti)    repo=PyAutoCTI;    deps="PyAutoNerves PyAutoFit PyAutoArray" ;;
             *) echo "::error::unknown package '${{ inputs.package }}'"; exit 1 ;;
           esac
           echo "repo=$repo" >> "$GITHUB_OUTPUT"

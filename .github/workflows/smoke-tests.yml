@@ -6,7 +6,7 @@ name: Smoke Tests (reusable)
 #   jobs:
 #     smoke:
 #       uses: PyAutoLabs/PyAutoHeart/.github/workflows/smoke-tests.yml@main
-#       with: { chain: "PyAutoConf PyAutoFit PyAutoArray PyAutoGalaxy PyAutoLens" }
+#       with: { chain: "PyAutoNerves PyAutoFit PyAutoArray PyAutoGalaxy PyAutoLens" }
 #       secrets: inherit
 #
 # The workflow owns the ceremony (dependency-chain checkout at the matching
@@ -24,7 +24,7 @@ on:
   workflow_call:
     inputs:
       chain:
-        description: "Space-separated dependency libraries in install order, e.g. 'PyAutoConf PyAutoFit'"
+        description: "Space-separated dependency libraries in install order, e.g. 'PyAutoNerves PyAutoFit'"
         required: true
         type: string
       python-versions:

@@ -36,11 +36,11 @@ jobs:
         run: |
           install=package
           case "${{ inputs.package }}" in
-            autoconf|autonerves)   repo=PyAutoConf;   deps="" ;;
-            autofit)    repo=PyAutoFit;    deps="PyAutoConf" ;;
-            autoarray)  repo=PyAutoArray;  deps="PyAutoConf" ;;
-            autogalaxy) repo=PyAutoGalaxy; deps="PyAutoConf PyAutoFit PyAutoArray" ;;
-            autolens)   repo=PyAutoLens;   deps="PyAutoConf PyAutoFit PyAutoArray PyAutoGalaxy" ;;
+            autoconf|autonerves)   repo=PyAutoNerves;   deps="" ;;
+            autofit)    repo=PyAutoFit;    deps="PyAutoNerves" ;;
+            autoarray)  repo=PyAutoArray;  deps="PyAutoNerves" ;;
+            autogalaxy) repo=PyAutoGalaxy; deps="PyAutoNerves PyAutoFit PyAutoArray" ;;
+            autolens)   repo=PyAutoLens;   deps="PyAutoNerves PyAutoFit PyAutoArray PyAutoGalaxy" ;;
             # Docs-only repos: no pip package — install docs/requirements.txt.
             pyautoscientist) repo=PyAutoBrain; deps=""; install=requirements ;;
             *) echo "::error::unknown package '${{ inputs.package }}'"; exit 1 ;;

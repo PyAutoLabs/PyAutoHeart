@@ -16,7 +16,7 @@ Quick "is everything still green?" sweep across the PyAuto stack. Refreshes loca
 ## Scope
 
 **Libraries (run `pytest`):**
-- PyAutoConf
+- PyAutoNerves
 - PyAutoArray
 - PyAutoFit
 - PyAutoGalaxy
@@ -95,7 +95,7 @@ Single table, one row per repo:
 ```
 Repo                       | Branch | Sync             | Tests
 ---------------------------|--------|------------------|---------------------------
-PyAutoConf                 | main   | synced           | ✓ unit (412/412)
+PyAutoNerves                 | main   | synced           | ✓ unit (412/412)
 PyAutoArray                | main   | already up to date | ✓ unit (1240/1240)
 PyAutoFit                  | main   | dirty — skipped  | ✗ unit (3 failed)
 PyAutoGalaxy               | main   | synced           | ✓ unit (980/980)

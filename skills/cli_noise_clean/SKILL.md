@@ -37,7 +37,7 @@ PYAUTO_DISABLE_JAX=0            # JAX ON so we catch JAX-specific noise
 
 ### 2. Pytest noise audit
 
-For each library repo (PyAutoConf, PyAutoFit, PyAutoArray, PyAutoGalaxy, PyAutoLens):
+For each library repo (PyAutoNerves, PyAutoFit, PyAutoArray, PyAutoGalaxy, PyAutoLens):
 
 ```bash
 cd <repo_path>

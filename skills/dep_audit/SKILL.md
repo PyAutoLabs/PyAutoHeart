@@ -20,7 +20,7 @@ In Claude, invoke the same skill as `/dep_audit`.
 
 ### 1. Collect current constraints
 
-For each library repo (PyAutoConf, PyAutoFit, PyAutoArray, PyAutoGalaxy, PyAutoLens), read `pyproject.toml` and extract:
+For each library repo (PyAutoNerves, PyAutoFit, PyAutoArray, PyAutoGalaxy, PyAutoLens), read `pyproject.toml` and extract:
 
 - Every entry in `dependencies`
 - Every entry in `[project.optional-dependencies]` sections
@@ -95,9 +95,9 @@ Python: >=3.12
 
 | Package | Owner Repo | Constraint | Installed | Latest | Status | Tier |
 |---------|-----------|------------|-----------|--------|--------|------|
-| numpy | PyAutoConf | >=1.24,<3 | 2.4.4 | 2.4.4 | Current | — |
+| numpy | PyAutoNerves | >=1.24,<3 | 2.4.4 | 2.4.4 | Current | — |
 | scipy | PyAutoFit | <=1.17.1 | 1.14.0 | 1.17.1 | Cap stale | 1 |
-| jax | PyAutoConf | >=0.4.35,<0.10 | 0.4.38 | 0.9.2 | Cap stale | 2 |
+| jax | PyAutoNerves | >=0.4.35,<0.10 | 0.4.38 | 0.9.2 | Cap stale | 2 |
 ...
 
 Tier 1 — Safe cap bumps: <count> packages
@@ -125,9 +125,9 @@ This table defines which repo "owns" each constraint (i.e., where the version sp
 
 | Package | Owner | Inherited By |
 |---------|-------|-------------|
-| numpy | PyAutoConf | all |
-| jax, jaxlib | PyAutoConf | all |
-| jaxnnls | PyAutoConf | all |
+| numpy | PyAutoNerves | all |
+| jax, jaxlib | PyAutoNerves | all |
+| jaxnnls | PyAutoNerves | all |
 | scipy | PyAutoFit, PyAutoArray | Galaxy, Lens |
 | matplotlib | PyAutoFit (uncapped), PyAutoArray (floored) | Galaxy, Lens |
 | astropy | PyAutoArray, PyAutoGalaxy | Lens |
