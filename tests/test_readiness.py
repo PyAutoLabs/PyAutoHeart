@@ -9,7 +9,7 @@ import pytest
 
 from heart import readiness
 
-LIBS = ["PyAutoConf", "PyAutoFit", "PyAutoArray", "PyAutoGalaxy", "PyAutoLens"]
+LIBS = ["PyAutoNerves", "PyAutoFit", "PyAutoArray", "PyAutoGalaxy", "PyAutoLens"]
 
 # Deterministic 40-char main HEAD sha per library; the baseline validation
 # report's commit_shas match these, so the release-validation gate stays GREEN.
@@ -565,10 +565,10 @@ def test_red_dominates_yellow():
 
 def test_missing_library_is_stale_unknown():
     snap = make_snapshot()
-    del snap["repos"]["PyAutoConf"]
+    del snap["repos"]["PyAutoNerves"]
     v = compute(snap)
     assert v["verdict"] == "stale"
-    assert any("PyAutoConf" in r and "unknown" in r for r in v["stale_reasons"])
+    assert any("PyAutoNerves" in r and "unknown" in r for r in v["stale_reasons"])
 
 
 def test_empty_snapshot_not_green_no_crash():

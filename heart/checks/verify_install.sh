@@ -33,7 +33,7 @@
 set -uo pipefail   # NB: no -e — checks must continue past expected failures.
 
 # Unset PYTHONPATH so checks aren't shadowed by user-side editable installs.
-# When the calling shell exports PYTHONPATH=/path/to/PyAutoConf:/path/to/...
+# When the calling shell exports PYTHONPATH=/path/to/PyAutoNerves:/path/to/...
 # (a common setup when developing the libs), throwaway venvs created here
 # will still resolve `import autolens` etc. from those local source dirs
 # rather than from the just-installed PyPI artefacts. That defeats the

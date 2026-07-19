@@ -43,7 +43,7 @@ CONFIG_PATH = HEART_HOME / "config" / "repos.yaml"
 
 # Each library's suite is discovered via its own pytest config (testpaths), so we
 # just invoke pytest from the repo root. Import-name maps to repo dir name.
-DEFAULT_REPOS = ["PyAutoConf", "PyAutoFit", "PyAutoArray", "PyAutoGalaxy", "PyAutoLens"]
+DEFAULT_REPOS = ["PyAutoNerves", "PyAutoFit", "PyAutoArray", "PyAutoGalaxy", "PyAutoLens"]
 
 # A runner maps a repo checkout dir to {test_nodeid: call_seconds} for the
 # slowest tests, or None when the suite could not be run. Injected in tests.

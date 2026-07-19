@@ -18,7 +18,7 @@ DRIFT_OUTPUT = """\
 check PyAutoHeart/config/repos.yaml: OK
 check ensure_workspace_labels.sh: 2 mismatch(es)
   ✗ ensure_workspace_labels targets 'rhayes777/PyAutoFit', manifest says 'PyAutoLabs/PyAutoFit'
-  ✗ ensure_workspace_labels targets 'rhayes777/PyAutoConf', manifest says 'PyAutoLabs/PyAutoConf'
+  ✗ ensure_workspace_labels targets 'rhayes777/PyAutoNerves', manifest says 'PyAutoLabs/PyAutoNerves'
 check local checkout origins: 1 mismatch(es)
   ✗ 'PyAutoFit': origin is 'rhayes777/PyAutoFit', manifest says 'PyAutoLabs/PyAutoFit'
 """

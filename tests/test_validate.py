@@ -26,7 +26,7 @@ REHEARSAL = {
 }
 
 SHAS = {
-    "PyAutoConf": "1" * 40,
+    "PyAutoNerves": "1" * 40,
     "PyAutoFit": "2" * 40,
     "PyAutoArray": "3" * 40,
     "PyAutoGalaxy": "4" * 40,
@@ -194,7 +194,7 @@ def test_ingest_explicit_overrides(tmp_path):
     )
     assert report["profile"] == "release"
     assert report["testpypi_version"] == "9.9.9"
-    assert report["commit_shas"]["PyAutoConf"] == "1" * 40
+    assert report["commit_shas"]["PyAutoNerves"] == "1" * 40
 
 
 def test_ingest_explicit_file_path_not_dir(tmp_path):

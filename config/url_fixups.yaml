@@ -14,9 +14,9 @@ rewrites:
 - pattern: (github\.com|githubusercontent\.com)/Jammy2211/(PyAutoArray|PyAutoLens|PyAutoGalaxy)
   replacement: \1/PyAutoLabs/\2
   description: Jammy2211/<library> → PyAutoLabs/<library>
-- pattern: (github\.com|githubusercontent\.com)/(?:Jammy2211|rhayes777)/(PyAutoFit|PyAutoConf)
+- pattern: (github\.com|githubusercontent\.com)/(?:Jammy2211|rhayes777)/(PyAutoFit|PyAutoNerves)
   replacement: \1/PyAutoLabs/\2
-  description: Jammy2211|rhayes777/{PyAutoFit,PyAutoConf} → PyAutoLabs/...
+  description: Jammy2211|rhayes777/{PyAutoFit,PyAutoNerves} → PyAutoLabs/...
 - pattern: (github\.com|githubusercontent\.com)/rhayes777/PyAutoGalaxy
   replacement: \1/PyAutoLabs/PyAutoGalaxy
   description: rhayes777/PyAutoGalaxy → PyAutoLabs/PyAutoGalaxy

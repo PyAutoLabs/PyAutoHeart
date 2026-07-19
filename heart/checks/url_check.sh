@@ -41,8 +41,8 @@ ENTRIES=(
   # --- libraries moved Jammy2211|rhayes777 → PyAutoLabs ---
   'github\.com/Jammy2211/(PyAutoArray|PyAutoLens|PyAutoGalaxy)|||Jammy2211/<library> (use PyAutoLabs/<library>)'
   'githubusercontent\.com/Jammy2211/(PyAutoArray|PyAutoLens|PyAutoGalaxy)|||Jammy2211/<library> in raw URL (use PyAutoLabs/<library>)'
-  'github\.com/Jammy2211/(PyAutoFit|PyAutoConf)|||Jammy2211/(PyAutoFit|PyAutoConf) (use PyAutoLabs/...)'
-  'github\.com/rhayes777/(PyAutoFit|PyAutoConf|PyAutoGalaxy|PyAutoBuild)|||rhayes777/<lib> (use PyAutoLabs/<lib>)'
+  'github\.com/Jammy2211/(PyAutoFit|PyAutoNerves)|||Jammy2211/(PyAutoFit|PyAutoNerves) (use PyAutoLabs/...)'
+  'github\.com/rhayes777/(PyAutoFit|PyAutoNerves|PyAutoGalaxy|PyAutoBuild)|||rhayes777/<lib> (use PyAutoLabs/<lib>)'
 
   # --- workspace /tree/release/ — same fate as /blob/release/ ---
   'github\.com/PyAutoLabs/(autolens_workspace|autogalaxy_workspace|autofit_workspace)/tree/release/|||workspace /tree/release/ branch removed (use /tree/main/ or a tag)'

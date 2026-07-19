@@ -22,7 +22,7 @@ permissions:
 env:
   REPOS: >-
     HowToFit HowToGalaxy HowToLens
-    PyAutoConf PyAutoFit PyAutoArray PyAutoGalaxy PyAutoLens
+    PyAutoNerves PyAutoFit PyAutoArray PyAutoGalaxy PyAutoLens
     autofit_workspace autogalaxy_workspace autolens_workspace
     euclid_strong_lens_modeling_pipeline
 

@@ -16,7 +16,7 @@ import pytest
 
 from heart import dashboard
 
-LIBS = ["PyAutoConf", "PyAutoFit", "PyAutoArray", "PyAutoGalaxy", "PyAutoLens"]
+LIBS = ["PyAutoNerves", "PyAutoFit", "PyAutoArray", "PyAutoGalaxy", "PyAutoLens"]
 TS = "2026-06-01T00:00:00+00:00"
 
 

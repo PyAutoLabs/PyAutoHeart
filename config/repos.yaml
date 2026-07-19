@@ -10,7 +10,7 @@
 
 repos:
   libraries:
-    - name: PyAutoConf
+    - name: PyAutoNerves
       owner: PyAutoLabs
     - name: PyAutoFit
       owner: PyAutoLabs
