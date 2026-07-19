@@ -1,29 +1,37 @@
-"""heart/checks/version_skew.py — workspace pin vs installed library version.
+"""heart/checks/version_skew.py — workspace compatibility floor vs newest release.
 
-PyAutoHands's ``verify_workspace_versions.sh`` blocks a release if any
-workspace's pinned version is AHEAD of its installed library — but that only
-runs at ``pre_build`` time, so day-to-day the skew is invisible. This check
-makes it continuous.
+Under the pre-2026-07 model this check compared a workspace's recorded pin
+(``config/general.yaml`` → ``version.workspace_version`` / ``version.txt``)
+against the library ``__init__.py`` ``__version__`` stamp. That model is gone:
+releases no longer commit the stamp or the pin back to ``main`` (PyAutoConf#119 /
+PyAutoBuild#121 — the daily "Update version to X" commits were the CI-storm /
+cron-pause engine), so *both* artifacts are frozen and the old check was inert —
+permanently MATCH on stale values, unfailable by any release.
 
-For each polled workspace that carries a pin, it resolves:
+The live invariant now is the **compatibility floor**: each workspace records
+``config/general.yaml`` → ``version.minimum_library_version`` — the oldest
+library release whose API its scripts require — and users must be able to install
+a release that satisfies it. So this check compares:
 
-- the **pinned** version: ``config/general.yaml`` → ``version.workspace_version``,
-  falling back to a ``version.txt`` at the workspace root (same precedence as
-  ``verify_workspace_versions.sh``);
-- the **installed** library version: by regex-reading ``__version__`` from the
-  matching library's ``<pkg>/__init__.py`` source — never importing the heavy
-  library (keeps the tick cheap).
+- the **floor**: ``version.minimum_library_version`` for the workspace;
+- the **newest release**: the highest ``YYYY.M.D.B`` git tag on the mapped
+  library checkout (read with ``git tag`` — no library import, no network, cheap
+  enough for the <30s tick).
 
-Versions are ``YYYY.M.D.B`` tuples; the comparison yields MATCH / AHEAD /
-BEHIND / BAD. Two further statuses mirror the hard-fail conditions of
-``verify_workspace_versions.sh`` so Heart is the single authoritative readiness
-gate:
+Statuses:
 
-- **MISMATCH** — ``config/general.yaml`` and ``version.txt`` both exist and
-  disagree (a release-blocking inconsistency in ``verify_workspace_versions.sh``).
-- **UNKNOWN** — the library ``__init__.py`` could not be read (the workspace is
-  pinned but the library isn't checked out); surfaced as caution, never a hard
-  block, matching the script's ``SKIP (cannot import …)`` behaviour.
+- **UNSATISFIABLE** — floor > newest release: no released version satisfies the
+  floor, so a fresh ``pip install`` cannot pair with the workspace. Release-
+  blocking (this is the invariant nothing guarded before: the old leg was
+  unfailable by releases).
+- **OK** — floor <= newest release.
+- **BAD** — floor or newest release is unparseable.
+- **UNKNOWN** — the library isn't checked out / carries no release tags, so the
+  newest release can't be resolved; surfaced as caution, never a hard block.
+
+Not covered here (deeper, non-tick checks own it): whether the floor names a
+release that was later *yanked* on PyPI — that needs the PyPI API, not git tags.
+An informational "floor lags far behind newest" signal is a possible future add.
 
 The result lands at ``$HEART_STATE_DIR/version_skew.json``.
 """
@@ -33,6 +41,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -48,7 +57,8 @@ HEART_STATE_DIR = Path(
     or Path.home() / ".pyauto-heart"
 )
 
-_VERSION_RE = re.compile(r'^__version__\s*=\s*["\']([^"\']+)["\']', re.MULTILINE)
+_TAG_RE = re.compile(r"^\d{4}\.\d+\.\d+\.\d+$")
+
 
 def workspace_library(config_path: Path | str = CONFIG_PATH) -> dict[str, tuple[str, str]]:
     """workspace name -> (library repo dir, package dir), from the policy
@@ -59,48 +69,47 @@ def workspace_library(config_path: Path | str = CONFIG_PATH) -> dict[str, tuple[
     return {ws: (spec["library"], spec["package"]) for ws, spec in block.items()}
 
 
-def read_library_version(repo: str, pkg: str, root: Path = PYAUTO_ROOT) -> str | None:
-    """Regex-read ``__version__`` from ``<repo>/<pkg>/__init__.py`` (no import)."""
-    init = root / repo / pkg / "__init__.py"
+def read_workspace_floor(workspace: str, root: Path = PYAUTO_ROOT) -> str | None:
+    """The compatibility floor: ``config/general.yaml`` →
+    ``version.minimum_library_version``. Returns None when absent (the
+    workspace is not a floor candidate)."""
+    general = root / workspace / "config" / "general.yaml"
+    if not general.is_file():
+        return None
     try:
-        m = _VERSION_RE.search(init.read_text())
+        data = yaml.safe_load(general.read_text()) or {}
+    except yaml.YAMLError:
+        return None
+    floor = (data.get("version") or {}).get("minimum_library_version")
+    return str(floor).strip() if floor else None
+
+
+def _newest_version(tags: list[str]) -> str | None:
+    """Highest ``YYYY.M.D.B`` tag by numeric tuple, or None if none match."""
+    versions = [t.strip() for t in tags if _TAG_RE.match(t.strip())]
+    if not versions:
+        return None
+    return max(versions, key=lambda v: tuple(int(p) for p in v.split(".")))
+
+
+def newest_release_tag(repo: str, root: Path = PYAUTO_ROOT) -> str | None:
+    """Newest ``YYYY.M.D.B`` release tag on the library checkout (``git tag``),
+    or None when the repo isn't a checkout or carries no release tags. No
+    network — reads local tags only, so it stays inside the tick budget."""
+    repo_dir = root / repo
+    if not (repo_dir / ".git").exists():
+        return None
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(repo_dir), "tag"],
+            capture_output=True,
+            text=True,
+        )
     except OSError:
         return None
-    return m.group(1) if m else None
-
-
-def read_workspace_pin_sources(
-    workspace: str, root: Path = PYAUTO_ROOT
-) -> tuple[str | None, str | None]:
-    """Return ``(general_yaml_version, version_txt)`` — either may be None.
-
-    Kept separate from :func:`read_workspace_pin` so callers that need to detect
-    a general.yaml ↔ version.txt disagreement (MISMATCH) can see both sources.
-    """
-    ws = root / workspace
-    yaml_v: str | None = None
-    general = ws / "config" / "general.yaml"
-    if general.is_file():
-        try:
-            data = yaml.safe_load(general.read_text()) or {}
-            pin = (data.get("version") or {}).get("workspace_version")
-            if pin:
-                yaml_v = str(pin).strip()
-        except yaml.YAMLError:
-            pass
-    txt_v: str | None = None
-    vtxt = ws / "version.txt"
-    if vtxt.is_file():
-        t = vtxt.read_text().strip()
-        if t:
-            txt_v = t
-    return yaml_v, txt_v
-
-
-def read_workspace_pin(workspace: str, root: Path = PYAUTO_ROOT) -> str | None:
-    """Pinned version: config/general.yaml:version.workspace_version, then version.txt."""
-    yaml_v, txt_v = read_workspace_pin_sources(workspace, root)
-    return yaml_v if yaml_v is not None else txt_v
+    if proc.returncode != 0:
+        return None
+    return _newest_version(proc.stdout.splitlines())
 
 
 def _tuple(v: str) -> tuple[int, ...] | None:
@@ -110,54 +119,34 @@ def _tuple(v: str) -> tuple[int, ...] | None:
         return None
 
 
-def compare(pinned: str | None, installed: str | None) -> str:
-    """MATCH / AHEAD (pinned > installed) / BEHIND (pinned < installed) / BAD."""
-    pt, it = _tuple(pinned or ""), _tuple(installed or "")
-    if pt is None or it is None:
+def compare_floor(floor: str | None, newest: str | None) -> str:
+    """UNSATISFIABLE (floor > newest release) / OK (floor <= newest) / BAD."""
+    ft, nt = _tuple(floor or ""), _tuple(newest or "")
+    if ft is None or nt is None:
         return "BAD"
-    if pt == it:
-        return "MATCH"
-    return "AHEAD" if pt > it else "BEHIND"
+    return "UNSATISFIABLE" if ft > nt else "OK"
 
 
 def run(root: Path = PYAUTO_ROOT) -> dict[str, Any]:
     workspaces = []
-    for workspace, (repo, pkg) in workspace_library().items():
-        yaml_v, txt_v = read_workspace_pin_sources(workspace, root)
-        if yaml_v is None and txt_v is None:
-            continue  # no pin (e.g. *_test workspaces) → not a skew candidate
-        installed = read_library_version(repo, pkg, root)
-
-        # general.yaml ↔ version.txt disagreement is the same release-blocking
-        # condition verify_workspace_versions.sh fails on.
-        if yaml_v is not None and txt_v is not None and yaml_v != txt_v:
-            workspaces.append(
-                {
-                    "workspace": workspace,
-                    "library": repo,
-                    "pinned": yaml_v,
-                    "version_txt": txt_v,
-                    "installed": installed,
-                    "status": "MISMATCH",
-                }
-            )
-            continue
-
-        pinned = yaml_v if yaml_v is not None else txt_v
-        # Library not checked out → cannot compare. Caution, not a hard block
-        # (mirrors the script's "SKIP (cannot import <pkg>)").
-        status = "UNKNOWN" if installed is None else compare(pinned, installed)
+    for workspace, (repo, _pkg) in workspace_library().items():
+        floor = read_workspace_floor(workspace, root)
+        if floor is None:
+            continue  # no floor recorded → not a candidate
+        newest = newest_release_tag(repo, root)
+        # Library not checked out / no tags → cannot resolve the newest release.
+        # Caution, not a hard block.
+        status = "UNKNOWN" if newest is None else compare_floor(floor, newest)
         workspaces.append(
             {
                 "workspace": workspace,
                 "library": repo,
-                "pinned": pinned,
-                "installed": installed,
+                "floor": floor,
+                "newest_release": newest,
                 "status": status,
             }
         )
-    result = {"workspaces": workspaces}
-    return result
+    return {"workspaces": workspaces}
 
 
 def main(argv: list[str]) -> int:
@@ -172,28 +161,25 @@ def main(argv: list[str]) -> int:
     from heart.heart_color import c_ok, c_warn, c_fail, c_info, c_meta, glyph_ok, glyph_warn, glyph_fail
 
     workspaces = result["workspaces"]
-    ahead = [w for w in workspaces if w["status"] == "AHEAD"]
-    behind = [w for w in workspaces if w["status"] == "BEHIND"]
-    mismatch = [w for w in workspaces if w["status"] == "MISMATCH"]
+    unsatisfiable = [w for w in workspaces if w["status"] == "UNSATISFIABLE"]
     bad = [w for w in workspaces if w["status"] == "BAD"]
-    blocking = ahead + mismatch + bad  # release-blocking statuses
+    unknown = [w for w in workspaces if w["status"] == "UNKNOWN"]
+    blocking = unsatisfiable + bad  # release-blocking statuses
     if blocking:
         glyph = glyph_fail()
         parts = []
-        if ahead:
-            parts.append(c_fail(f"{len(ahead)} ahead"))
-        if mismatch:
-            parts.append(c_fail(f"{len(mismatch)} mismatch"))
+        if unsatisfiable:
+            parts.append(c_fail(f"{len(unsatisfiable)} unsatisfiable"))
         if bad:
             parts.append(c_warn(f"{len(bad)} bad"))
         label = " ".join(parts)
-    elif behind:
+    elif unknown:
         glyph = glyph_warn()
-        label = c_warn(f"{len(behind)} behind")
+        label = c_warn(f"{len(unknown)} unknown")
     else:
         glyph = glyph_ok()
-        label = c_ok(f"{len(workspaces)} in sync")
-    print(f"{glyph} {c_info('version_skew')} {label} {c_meta(f'({len(workspaces)} pinned)')}")
+        label = c_ok(f"{len(workspaces)} floors satisfiable")
+    print(f"{glyph} {c_info('version_skew')} {label} {c_meta(f'({len(workspaces)} floors)')}")
     return 0
 
 

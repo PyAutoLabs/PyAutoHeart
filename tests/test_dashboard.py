@@ -41,7 +41,7 @@ def make_snapshot(**overrides) -> dict:
         "script_timing": {"red_count": 0, "yellow_count": 0, "green_count": 10},
         "test_run": {"ready": True, "passed": 100, "failed": 0, "parked_stale_count": 0,
                      "run_label": "2026.6.1"},
-        "version_skew": {"workspaces": [{"workspace": "autolens_workspace", "status": "MATCH"}]},
+        "version_skew": {"workspaces": [{"workspace": "autolens_workspace", "status": "OK"}]},
         "validation_report": {
             "release_ready": True, "testpypi_version": "2026.6.1.1.dev100",
             "profile": "release", "stages": {"rehearse": {"status": "pass"},

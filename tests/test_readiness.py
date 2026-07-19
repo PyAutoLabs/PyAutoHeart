@@ -50,7 +50,7 @@ def make_snapshot(**overrides) -> dict:
         "repos": {lib: _green_lib(SHAS[lib]) for lib in LIBS},
         "script_timing": {"red_count": 0, "yellow_count": 0, "green_count": 10},
         "test_run": {"ready": True, "passed": 100, "failed": 0, "parked_stale_count": 0},
-        "version_skew": {"workspaces": [{"workspace": "autolens_workspace", "status": "MATCH"}]},
+        "version_skew": {"workspaces": [{"workspace": "autolens_workspace", "status": "OK"}]},
         # fresh passing install verification (ts == snapshot ts → age 0, not stale)
         "verify_install": {"ready": True, "ts": "2026-06-01T00:00:00+00:00",
                            "version": "2026.6.1.1", "checks": []},
@@ -109,31 +109,21 @@ def test_test_run_failing_is_yellow_not_red():
     assert v["score"] == 85
 
 
-def test_version_skew_ahead_is_red():
+def test_version_skew_unsatisfiable_floor_is_red():
     snap = make_snapshot(version_skew={"workspaces": [
-        {"workspace": "autolens_workspace", "pinned": "2026.6.1.1", "installed": "2026.5.1.1", "status": "AHEAD"}
+        {"workspace": "autolens_workspace", "library": "PyAutoLens",
+         "floor": "2026.8.1.1", "newest_release": "2026.7.15.1", "status": "UNSATISFIABLE"}
     ]})
     v = compute(snap)
     assert v["verdict"] == "red"
-    assert any("AHEAD" in r for r in v["red_reasons"])
-    assert v["score"] == 75
-
-
-def test_version_skew_mismatch_is_red():
-    snap = make_snapshot(version_skew={"workspaces": [
-        {"workspace": "autolens_workspace", "pinned": "2026.6.1.2",
-         "version_txt": "2026.1.1.1", "installed": "2026.6.1.2", "status": "MISMATCH"}
-    ]})
-    v = compute(snap)
-    assert v["verdict"] == "red"
-    assert any("general.yaml" in r and "version.txt" in r for r in v["red_reasons"])
+    assert any("floor" in r and "exceeds" in r for r in v["red_reasons"])
     assert v["score"] == 75
 
 
 def test_version_skew_bad_is_red():
     snap = make_snapshot(version_skew={"workspaces": [
-        {"workspace": "autolens_workspace", "pinned": "not.a.version",
-         "installed": "2026.6.1.2", "status": "BAD"}
+        {"workspace": "autolens_workspace", "floor": "not.a.version",
+         "newest_release": "2026.7.15.1", "status": "BAD"}
     ]})
     v = compute(snap)
     assert v["verdict"] == "red"
@@ -143,11 +133,11 @@ def test_version_skew_bad_is_red():
 def test_version_skew_unknown_is_stale_tier():
     snap = make_snapshot(version_skew={"workspaces": [
         {"workspace": "autolens_workspace", "library": "PyAutoLens",
-         "pinned": "2026.6.1.1", "installed": None, "status": "UNKNOWN"}
+         "floor": "2026.7.9.1", "newest_release": None, "status": "UNKNOWN"}
     ]})
     v = compute(snap)
     assert v["verdict"] == "stale"
-    assert any("version unknown" in r for r in v["stale_reasons"])
+    assert any("release unknown" in r for r in v["stale_reasons"])
 
 
 def test_install_verification_failed_is_red():
@@ -421,14 +411,6 @@ def test_old_open_pr_is_yellow():
     v = compute(snap)
     assert v["verdict"] == "yellow"
     assert any("open PR" in r for r in v["yellow_reasons"])
-
-
-def test_version_skew_behind_is_yellow():
-    snap = make_snapshot(version_skew={"workspaces": [
-        {"workspace": "autolens_workspace", "installed": "2026.6.1.1", "status": "BEHIND"}
-    ]})
-    v = compute(snap)
-    assert v["verdict"] == "yellow"
 
 
 def test_parked_stale_is_yellow():

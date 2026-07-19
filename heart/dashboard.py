@@ -501,19 +501,19 @@ def build_board(
         sections.append(_unobs_section("version_skew", "Version skew"))
     else:
         skew = (snapshot.get("version_skew") or {}).get("workspaces") or []
-        off = [w for w in skew if isinstance(w, dict) and w.get("status") not in ("MATCH", None)]
-        blocking = [w for w in off if str(w.get("status")).upper() in ("AHEAD", "MISMATCH", "BAD")]
+        off = [w for w in skew if isinstance(w, dict) and w.get("status") not in ("OK", None)]
+        blocking = [w for w in off if str(w.get("status")).upper() in ("UNSATISFIABLE", "BAD")]
         if off:
             st = FAIL if blocking else WARN
-            summary = f"{len(blocking)} blocking" if blocking else f"{len(off)} skewed"
+            summary = f"{len(blocking)} blocking" if blocking else f"{len(off)} unresolved"
             details = [
-                f"{w.get('status')}: {w.get('workspace')} pinned {w.get('pinned')} "
-                f"vs installed {w.get('installed')}"
+                f"{w.get('status')}: {w.get('workspace')} floor {w.get('floor')} "
+                f"vs newest {w.get('library')} release {w.get('newest_release')}"
                 for w in off[:8]
             ]
             sections.append(Section("version_skew", "Version skew", st, summary, details))
         elif skew:
-            sections.append(Section("version_skew", "Version skew", OK, "all workspaces in sync", []))
+            sections.append(Section("version_skew", "Version skew", OK, "all floors satisfiable", []))
 
     # Install verification ---------------------------------------------------
     vi = snapshot.get("verify_install") or {}

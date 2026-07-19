@@ -75,8 +75,8 @@ continuous_checks:
     gate_role: "YELLOW if workspace validation not passing / stale / unknown (standing debt, advisory)"
   - id: version_skew
     impl: heart/checks/version_skew.py
-    measures: "each workspace's pinned version vs the installed library"
-    gate_role: "RED if AHEAD / MISMATCH (general.yaml vs version.txt) / BAD; YELLOW if BEHIND / UNKNOWN"
+    measures: "each workspace's compatibility floor (minimum_library_version) vs the newest library release tag"
+    gate_role: "RED if UNSATISFIABLE (floor exceeds newest release) / BAD; STALE if UNKNOWN (newest release unresolvable)"
   - id: manifest_drift
     impl: heart/checks/manifest_drift.py
     measures: "repo identity (name/owner) in Heart/Build/labels lists and checkout origins vs the PyAutoMind/repos.yaml body map"

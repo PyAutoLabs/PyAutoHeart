@@ -1,4 +1,4 @@
-"""tests/test_version_skew.py — workspace pin vs installed library compare."""
+"""tests/test_version_skew.py — workspace compatibility floor vs newest release."""
 
 from __future__ import annotations
 
@@ -7,115 +7,115 @@ import pytest
 from heart.checks import version_skew as vs
 
 
-@pytest.mark.parametrize("pinned,installed,expected", [
-    ("2026.5.29.4", "2026.5.29.4", "MATCH"),
-    ("2026.6.1.1", "2026.5.29.4", "AHEAD"),
-    ("2026.5.1.1", "2026.5.29.4", "BEHIND"),
-    ("2026.5.29.4", None, "BAD"),
-    (None, "2026.5.29.4", "BAD"),
-    ("not.a.version", "2026.5.29.4", "BAD"),
-    ("2026.5.29", "2026.5.29.4", "BEHIND"),   # shorter tuple compares as less
+@pytest.mark.parametrize("floor,newest,expected", [
+    ("2026.7.9.1", "2026.7.9.1", "OK"),         # floor == newest release
+    ("2026.5.1.1", "2026.7.9.1", "OK"),         # floor older than newest
+    ("2026.7.15.1", "2026.7.9.1", "UNSATISFIABLE"),  # floor ahead of newest release
+    ("2026.7.9", "2026.7.9.1", "OK"),           # shorter tuple compares as less
+    ("2026.7.9.2", "2026.7.9.1", "UNSATISFIABLE"),
+    ("not.a.version", "2026.7.9.1", "BAD"),
+    ("2026.7.9.1", None, "BAD"),
+    (None, "2026.7.9.1", "BAD"),
 ])
-def test_compare(pinned, installed, expected):
-    assert vs.compare(pinned, installed) == expected
+def test_compare_floor(floor, newest, expected):
+    assert vs.compare_floor(floor, newest) == expected
 
 
-def test_read_library_version_regex(tmp_path):
-    repo = tmp_path / "PyAutoFit" / "autofit"
-    repo.mkdir(parents=True)
-    (repo / "__init__.py").write_text(
-        'from x import y\n__version__ = "2026.5.29.4"\nfoo = 1\n'
-    )
-    assert vs.read_library_version("PyAutoFit", "autofit", root=tmp_path) == "2026.5.29.4"
+@pytest.mark.parametrize("tags,expected", [
+    (["2026.5.29.4", "2026.7.9.1", "2026.7.15.1"], "2026.7.15.1"),
+    (["2026.7.9.1", "v-not-a-version", "latest"], "2026.7.9.1"),
+    (["2026.10.1.1", "2026.7.15.1"], "2026.10.1.1"),   # numeric, not lexical
+    ([], None),
+    (["nightly", "dev"], None),
+])
+def test_newest_version(tags, expected):
+    assert vs._newest_version(tags) == expected
 
 
-def test_read_library_version_missing(tmp_path):
-    assert vs.read_library_version("Nope", "nope", root=tmp_path) is None
-
-
-def test_read_workspace_pin_general_yaml_precedence(tmp_path):
+def test_read_workspace_floor(tmp_path):
     ws = tmp_path / "autolens_workspace" / "config"
     ws.mkdir(parents=True)
-    (ws / "general.yaml").write_text("version:\n  workspace_version: 2026.6.1.2\n")
-    # version.txt disagrees; general.yaml must win.
-    (tmp_path / "autolens_workspace" / "version.txt").write_text("2026.1.1.1\n")
-    assert vs.read_workspace_pin("autolens_workspace", root=tmp_path) == "2026.6.1.2"
+    (ws / "general.yaml").write_text(
+        "version:\n"
+        "  minimum_library_version: 2026.7.9.1\n"
+        "  workspace_version: 2026.7.9.1\n"
+    )
+    assert vs.read_workspace_floor("autolens_workspace", root=tmp_path) == "2026.7.9.1"
 
 
-def test_read_workspace_pin_version_txt_fallback(tmp_path):
-    ws = tmp_path / "autolens_workspace"
-    (ws / "config").mkdir(parents=True)
-    (ws / "config" / "general.yaml").write_text("version:\n  python_version_check: true\n")
-    (ws / "version.txt").write_text("2026.5.29.4\n")
-    assert vs.read_workspace_pin("autolens_workspace", root=tmp_path) == "2026.5.29.4"
+def test_read_workspace_floor_absent(tmp_path):
+    # A general.yaml with no floor key → None (not a candidate).
+    ws = tmp_path / "autolens_workspace" / "config"
+    ws.mkdir(parents=True)
+    (ws / "general.yaml").write_text("version:\n  python_version_check: true\n")
+    assert vs.read_workspace_floor("autolens_workspace", root=tmp_path) is None
+    # No config dir at all → None.
+    assert vs.read_workspace_floor("autofit_workspace", root=tmp_path) is None
 
 
-def test_read_workspace_pin_none_when_unpinned(tmp_path):
-    (tmp_path / "autolens_workspace_test").mkdir(parents=True)
-    assert vs.read_workspace_pin("autolens_workspace_test", root=tmp_path) is None
+def test_newest_release_tag_reads_git_tags(tmp_path):
+    import subprocess
+
+    repo = tmp_path / "PyAutoLens"
+    repo.mkdir()
+    env = {
+        "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+        "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
+    }
+    subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
+    (repo / "f").write_text("x")
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "c"], check=True, env={**env})
+    for t in ("2026.5.29.4", "2026.7.9.1", "2026.7.15.1"):
+        subprocess.run(["git", "-C", str(repo), "tag", t], check=True)
+    assert vs.newest_release_tag("PyAutoLens", root=tmp_path) == "2026.7.15.1"
 
 
-def test_run_skips_unpinned_and_classifies(tmp_path):
-    # autolens_workspace pinned ahead of installed; HowToFit in sync.
-    al = tmp_path / "autolens_workspace" / "config"
-    al.mkdir(parents=True)
-    (al / "general.yaml").write_text("version:\n  workspace_version: 2026.6.1.1\n")
-    lens = tmp_path / "PyAutoLens" / "autolens"
-    lens.mkdir(parents=True)
-    (lens / "__init__.py").write_text('__version__ = "2026.5.29.4"\n')
-    # no autofit_workspace dir at all → skipped silently
+def test_newest_release_tag_none_when_not_a_checkout(tmp_path):
+    (tmp_path / "PyAutoLens").mkdir()  # no .git
+    assert vs.newest_release_tag("PyAutoLens", root=tmp_path) is None
+
+
+def test_run_skips_workspaces_without_a_floor(tmp_path, monkeypatch):
+    # Only autolens_workspace has a floor; others are skipped silently.
+    ws = tmp_path / "autolens_workspace" / "config"
+    ws.mkdir(parents=True)
+    (ws / "general.yaml").write_text("version:\n  minimum_library_version: 2026.7.9.1\n")
+    monkeypatch.setattr(vs, "newest_release_tag", lambda repo, root=tmp_path: "2026.7.15.1")
     result = vs.run(root=tmp_path)
     by_ws = {w["workspace"]: w for w in result["workspaces"]}
-    assert by_ws["autolens_workspace"]["status"] == "AHEAD"
-    assert "autofit_workspace" not in by_ws  # unpinned/missing → skipped
+    assert by_ws["autolens_workspace"]["status"] == "OK"
+    assert "autofit_workspace" not in by_ws  # no floor → skipped
 
 
-def test_read_workspace_pin_sources_returns_both(tmp_path):
-    ws = tmp_path / "autolens_workspace"
-    (ws / "config").mkdir(parents=True)
-    (ws / "config" / "general.yaml").write_text(
-        "version:\n  workspace_version: 2026.6.1.2\n"
-    )
-    (ws / "version.txt").write_text("2026.1.1.1\n")
-    assert vs.read_workspace_pin_sources("autolens_workspace", root=tmp_path) == (
-        "2026.6.1.2",
-        "2026.1.1.1",
-    )
-
-
-def test_run_flags_general_yaml_version_txt_mismatch(tmp_path):
-    # general.yaml and version.txt both present and disagree → MISMATCH,
-    # the same release-blocking condition verify_workspace_versions.sh fails on.
-    ws = tmp_path / "autolens_workspace"
-    (ws / "config").mkdir(parents=True)
-    (ws / "config" / "general.yaml").write_text(
-        "version:\n  workspace_version: 2026.6.1.2\n"
-    )
-    (ws / "version.txt").write_text("2026.1.1.1\n")
-    lens = tmp_path / "PyAutoLens" / "autolens"
-    lens.mkdir(parents=True)
-    (lens / "__init__.py").write_text('__version__ = "2026.6.1.2"\n')
-    result = vs.run(root=tmp_path)
-    w = {x["workspace"]: x for x in result["workspaces"]}["autolens_workspace"]
-    assert w["status"] == "MISMATCH"
-    assert w["pinned"] == "2026.6.1.2" and w["version_txt"] == "2026.1.1.1"
-
-
-def test_run_unknown_when_library_not_checked_out(tmp_path):
-    # Pinned workspace but no library __init__.py to read → UNKNOWN (caution),
-    # never a hard block — mirrors the script's "SKIP (cannot import <pkg>)".
+def test_run_flags_unsatisfiable_floor(tmp_path, monkeypatch):
+    # Floor ahead of the newest released version → UNSATISFIABLE (release-blocking).
     ws = tmp_path / "autolens_workspace" / "config"
     ws.mkdir(parents=True)
-    (ws / "general.yaml").write_text("version:\n  workspace_version: 2026.6.1.1\n")
+    (ws / "general.yaml").write_text("version:\n  minimum_library_version: 2026.8.1.1\n")
+    monkeypatch.setattr(vs, "newest_release_tag", lambda repo, root=tmp_path: "2026.7.15.1")
+    result = vs.run(root=tmp_path)
+    w = {x["workspace"]: x for x in result["workspaces"]}["autolens_workspace"]
+    assert w["status"] == "UNSATISFIABLE"
+    assert w["floor"] == "2026.8.1.1" and w["newest_release"] == "2026.7.15.1"
+
+
+def test_run_unknown_when_newest_release_unresolvable(tmp_path, monkeypatch):
+    # Floored workspace but the library has no resolvable release tag → UNKNOWN
+    # (caution), never a hard block.
+    ws = tmp_path / "autolens_workspace" / "config"
+    ws.mkdir(parents=True)
+    (ws / "general.yaml").write_text("version:\n  minimum_library_version: 2026.7.9.1\n")
+    monkeypatch.setattr(vs, "newest_release_tag", lambda repo, root=tmp_path: None)
     result = vs.run(root=tmp_path)
     w = {x["workspace"]: x for x in result["workspaces"]}["autolens_workspace"]
     assert w["status"] == "UNKNOWN"
-    assert w["installed"] is None
+    assert w["newest_release"] is None
 
 
-def test_autolens_assistant_is_a_pinned_workspace():
+def test_autolens_assistant_is_a_polled_workspace():
     # Gap closed vs verify_workspace_versions.sh, which covers 8 workspaces.
-    # The map now lives in config/repos.yaml `version_skew` (the policy file).
+    # The map lives in config/repos.yaml `version_skew` (the policy file).
     mapping = vs.workspace_library()
     assert "autolens_assistant" in mapping
     assert mapping["autolens_assistant"] == ("PyAutoLens", "autolens")
