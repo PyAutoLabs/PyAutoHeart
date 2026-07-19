@@ -12,14 +12,16 @@ The verdict uses STRICT release gates:
 
 - **RED** (a real blocker) if any of the 5 libraries has failing CI, is off
   ``main``, has uncommitted source changes, or is behind origin; or any workspace
-  is pinned AHEAD of its installed library, has a ``general.yaml`` ↔
-  ``version.txt`` MISMATCH, or an unparseable (BAD) version; or the deep install
-  verification last reported ``ready == false``; or the release-validation
-  report last ingested reports ``release_ready == false`` (a stage failed).
+  records a compatibility floor (``version.minimum_library_version``) that
+  exceeds the newest released version of its library (UNSATISFIABLE — no
+  installable release can satisfy it), or an unparseable (BAD) floor/tag; or the
+  deep install verification last reported ``ready == false``; or the
+  release-validation report last ingested reports ``release_ready == false`` (a
+  stage failed).
 - **YELLOW** (caution) for soft signals: workspace-validation not passing (the
   workspace scripts/notebooks carry standing debt, so this is advisory — never a
   hard block), script-timing regressions, stale open PRs, stale parked scripts, a
-  workspace pinned BEHIND, a stale or never-run install verification, **no fresh
+  stale or never-run install verification, **no fresh
   release-validation report for the current source** (absent, stale by age, or
   whose ``commit_shas`` no longer match the current ``main`` HEADs, or which ran
   under a profile other than ``release``), and — crucially — any *unknown*
@@ -109,7 +111,7 @@ _WEIGHTS: dict[str, tuple[int, int]] = {
     "lib_dirty": (15, 30),
     "lib_behind": (20, 40),
     "test_failing": (15, 15),
-    "skew_ahead": (25, 50),
+    "skew_unsatisfiable": (25, 50),
     "lib_unknown": (10, 30),
     "test_unknown": (10, 10),
     "timing_red": (15, 15),
@@ -117,8 +119,6 @@ _WEIGHTS: dict[str, tuple[int, int]] = {
     "profiling_drift": (10, 30),
     "open_pr": (5, 15),
     "parked": (5, 15),
-    "skew_behind": (8, 24),
-    "skew_mismatch": (25, 50),
     "skew_bad": (25, 50),
     "skew_unknown": (10, 30),
     "install_not_ready": (40, 40),
@@ -344,33 +344,28 @@ def compute(
     else:
         scope_local("test run status unknown (no report.json)", "test_unknown")
 
-    # --- version skew (RED ahead / YELLOW behind) ---
+    # --- version skew (RED floor unsatisfiable / STALE unknown) ---
     skew = snapshot.get("version_skew")
     if isinstance(skew, dict):
         for w in skew.get("workspaces") or []:
             if not isinstance(w, dict):
                 continue
             status = str(w.get("status", "")).upper()
-            if status == "AHEAD":
-                red.append(f"{w.get('workspace')}: pinned {w.get('pinned')} AHEAD of installed {w.get('installed')}")
-                hit("skew_ahead")
-            elif status == "MISMATCH":
+            if status == "UNSATISFIABLE":
                 red.append(
-                    f"{w.get('workspace')}: general.yaml {w.get('pinned')} "
-                    f"≠ version.txt {w.get('version_txt')}"
+                    f"{w.get('workspace')}: floor {w.get('floor')} exceeds newest "
+                    f"{w.get('library')} release {w.get('newest_release')} "
+                    f"(no installable version satisfies it)"
                 )
-                hit("skew_mismatch")
+                hit("skew_unsatisfiable")
             elif status == "BAD":
                 red.append(
                     f"{w.get('workspace')}: unparseable version "
-                    f"(pinned {w.get('pinned')} / installed {w.get('installed')})"
+                    f"(floor {w.get('floor')} / newest {w.get('newest_release')})"
                 )
                 hit("skew_bad")
-            elif status == "BEHIND":
-                yellow.append(f"{w.get('workspace')}: pinned BEHIND installed {w.get('installed')}")
-                hit("skew_behind")
             elif status == "UNKNOWN":
-                stale.append(f"{w.get('workspace')}: installed {w.get('library')} version unknown")
+                stale.append(f"{w.get('workspace')}: newest {w.get('library')} release unknown")
                 hit("skew_unknown")
 
     # --- manifest drift (YELLOW — identity hygiene vs PyAutoMind/repos.yaml) ---
