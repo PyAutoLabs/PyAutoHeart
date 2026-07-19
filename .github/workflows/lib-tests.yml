@@ -38,7 +38,7 @@ jobs:
         id: map
         run: |
           case "${{ inputs.package }}" in
-            autoconf)   repo=PyAutoConf;   deps="" ;;
+            autoconf|autonerves)   repo=PyAutoConf;   deps="" ;;
             autofit)    repo=PyAutoFit;    deps="PyAutoConf" ;;
             autoarray)  repo=PyAutoArray;  deps="PyAutoConf" ;;
             autogalaxy) repo=PyAutoGalaxy; deps="PyAutoConf PyAutoFit PyAutoArray" ;;
