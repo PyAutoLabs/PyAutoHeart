@@ -14,16 +14,16 @@
 <!-- between the heart:begin/heart:end markers is replaced with the rendered board). -->
 <!-- Live board: https://pyautolabs.github.io/PyAutoHeart/ -->
 <!-- heart:begin -->
-## 🟡 PyAuto health — **YELLOW** (score 60)
+## 🔴 PyAuto health — **RED** (score 40)
 
-_snapshot `2026-07-19T07:25:24.690254+00:00` · just now_
+_snapshot `2026-07-20T07:57:01.366073+00:00` · just now_
 
-**Warnings:** PyAutoCTI: open PR 1387d old
+**Blockers:** autolens_workspace_test: Smoke Tests cancelled on main
 
 | | Check | Status |
 |--|--|--|
 | 🔴 | Libraries | 6 repos, 1 need attention |
-| 🟡 | Workspaces | 11 repos, 1 need attention |
+| 🔴 | Workspaces | 11 repos, 2 need attention |
 | ⚪ | Worktree drift | not observed here (dev-box only) |
 | ⚪ | Script timing | not observed here (dev-box only) |
 | ⚪ | Import timing | not observed here (dev-box only) |
