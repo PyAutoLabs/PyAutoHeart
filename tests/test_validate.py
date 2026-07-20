@@ -19,7 +19,7 @@ REHEARSAL = {
     "mode": "rehearsal",
     "index": "testpypi",
     "version": "2026.6.30.1.dev64501",
-    "packages": ["autoconf", "autoarray", "autofit", "autogalaxy", "autolens"],
+    "packages": ["autonerves", "autoarray", "autofit", "autogalaxy", "autolens"],
     "run_id": "645",
     "run_attempt": "1",
     "build_sha": "abc1234def5678",

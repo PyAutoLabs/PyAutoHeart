@@ -223,12 +223,12 @@ check_a() {
 
     step "showing installed versions"
     python -c "
-import autolens, autogalaxy, autoarray, autofit, autoconf
+import autolens, autogalaxy, autoarray, autofit, autonerves
 print(f'autolens:   {autolens.__version__}')
 print(f'autogalaxy: {autogalaxy.__version__}')
 print(f'autoarray:  {autoarray.__version__}')
 print(f'autofit:    {autofit.__version__}')
-print(f'autoconf:   {autoconf.__version__}')
+print(f'autonerves: {autonerves.__version__}')
 "
 
     step "cloning autolens_workspace"
@@ -265,7 +265,7 @@ print(f'autoconf:   {autoconf.__version__}')
 #
 # requires-python = ">=3.9", classifiers cover 3.9–3.13. 3.12 / 3.13 are the
 # recommended versions; 3.9 / 3.10 / 3.11 print a loud (bypassable) banner on
-# autoconf import. Check B confirms install + import works on each of
+# autonerves import. Check B confirms install + import works on each of
 # 3.9 / 3.10 / 3.11 / 3.13. Check A covers the recommended-default-python
 # path with full workspace script execution (typically python3 = 3.12).
 
@@ -303,10 +303,10 @@ check_b_one() {
         return
     fi
 
-    step "$pybin: importing autolens, autogalaxy, autoarray, autofit, autoconf"
+    step "$pybin: importing autolens, autogalaxy, autoarray, autofit, autonerves"
     local import_out import_rc=0
     import_out=$(python -c "
-import autolens, autogalaxy, autoarray, autofit, autoconf
+import autolens, autogalaxy, autoarray, autofit, autonerves
 print(f'autolens={autolens.__version__}')
 " 2>&1) || import_rc=$?
     deactivate
@@ -532,18 +532,18 @@ check_f() {
     #
     # When a version is pinned (a TestPyPI rehearsal), pin ALL five PyAuto
     # packages to it — otherwise pip installs `autolens` at the pinned dev
-    # version but resolves autoarray/autoconf/autofit/autogalaxy to the latest
+    # version but resolves autoarray/autonerves/autofit/autogalaxy to the latest
     # *final* release on PyPI (dev versions are pre-releases pip won't pick for
     # a floor-only dependency), leaving Check F exercising an incoherent
     # dev/released mix instead of the same wheels as Checks A/C/D. The later
-    # verbatim `pip install autoconf --no-deps` inside the driver then finds the
-    # pinned dev autoconf already satisfied, so it can't pull a released one.
+    # verbatim `pip install autonerves --no-deps` inside the driver then finds the
+    # pinned dev autonerves already satisfied, so it can't pull a released one.
     local f_targets=("$PIP_INSTALL_TARGET")
     if [ -n "$TARGET_VERSION" ]; then
         f_targets=(
             "autolens==$TARGET_VERSION"
             "autoarray==$TARGET_VERSION"
-            "autoconf==$TARGET_VERSION"
+            "autonerves==$TARGET_VERSION"
             "autofit==$TARGET_VERSION"
             "autogalaxy==$TARGET_VERSION"
         )
@@ -571,7 +571,7 @@ check_f() {
 
     # The driver is the injected notebook cell verbatim, plus assertions and
     # one real cell from the imaging start_here. Exit 3 = SKIP (installed
-    # autoconf predates the setup_colab registry).
+    # autonerves predates the setup_colab registry).
     step "running the Colab bootstrap driver"
     cat > /tmp/F_driver.py <<'PYEOF'
 import os
@@ -585,16 +585,16 @@ try:
     import google.colab
 
     subprocess.check_call(
-        [sys.executable, "-m", "pip", "install", "autoconf", "--no-deps"]
+        [sys.executable, "-m", "pip", "install", "autonerves", "--no-deps"]
     )
 except ImportError:
     pass
 
-from autoconf import setup_colab
+from autonerves import setup_colab
 
 if not hasattr(setup_colab, "setup"):
     print(
-        "SKIP: installed autoconf predates the setup_colab registry "
+        "SKIP: installed autonerves predates the setup_colab registry "
         "(ships with the next release)"
     )
     sys.exit(3)
@@ -634,7 +634,7 @@ PYEOF
     if [ "$drv_rc" -eq 0 ]; then
         RESULTS+=("F|PASS|Colab bootstrap + workspace clone + notebook cell")
     elif [ "$drv_rc" -eq 3 ]; then
-        RESULTS+=("F|SKIP|installed autoconf predates setup_colab registry (next release)")
+        RESULTS+=("F|SKIP|installed autonerves predates setup_colab registry (next release)")
     else
         RESULTS+=("F|FAIL|driver rc=$drv_rc")
         tail_log "Check F driver output" "$(cat /tmp/F_driver.log 2>/dev/null)"

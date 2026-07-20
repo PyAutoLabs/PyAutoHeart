@@ -54,7 +54,7 @@ HEART_HOME = Path(__file__).resolve().parents[2]
 CONFIG_PATH = HEART_HOME / "config" / "repos.yaml"
 
 # autolens pulls the whole stack; the others give a per-package breakdown.
-DEFAULT_PACKAGES = ["autoconf", "autofit", "autoarray", "autogalaxy", "autolens"]
+DEFAULT_PACKAGES = ["autonerves", "autofit", "autoarray", "autogalaxy", "autolens"]
 
 # A measurer maps a package import-name to its import duration in seconds, or
 # None when it cannot be imported (missing / errored / timed out). Injected in

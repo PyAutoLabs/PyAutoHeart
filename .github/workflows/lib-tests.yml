@@ -22,7 +22,7 @@ on:
   workflow_call:
     inputs:
       package:
-        description: "PyAuto package under test: autoconf|autofit|autoarray|autogalaxy|autolens|autocti"
+        description: "PyAuto package under test: autonerves|autofit|autoarray|autogalaxy|autolens|autocti"
         required: true
         type: string
 

@@ -16,7 +16,7 @@ name: Workspace Validation
 #     `pip install` the 5 libraries pinned at `testpypi_version` — NO library
 #     source on PYTHONPATH (closes assessment Gap A: the smoke path shadows the
 #     packages with source checkouts, so it never touches a wheel). Scripts
-#     still run FROM WITHIN each workspace checkout so autoconf resolves the
+#     still run FROM WITHIN each workspace checkout so autonerves resolves the
 #     workspace's own config/ + dataset/, not the wheel's packaged defaults
 #     (closes Gap 4). Uses the `release` env profile — each workspace/
 #     workspace_test repo's config/build/env_vars_release.yaml — which is
@@ -261,7 +261,7 @@ jobs:
           until python3 -m pip install \
                 --index-url https://test.pypi.org/simple/ \
                 --extra-index-url https://pypi.org/simple \
-                "autoconf[optional]==$TESTPYPI_VERSION" \
+                "autonerves[optional]==$TESTPYPI_VERSION" \
                 "autoarray[optional]==$TESTPYPI_VERSION" \
                 "autofit[optional]==$TESTPYPI_VERSION" \
                 "autogalaxy[optional]==$TESTPYPI_VERSION" \
@@ -310,7 +310,7 @@ jobs:
           # Deliberately NOT adding library source dirs to PYTHONPATH (closes
           # Gap A) — `import autolens` etc. resolve to the pip-installed
           # wheels. Still executed FROM WITHIN the workspace checkout (pushd)
-          # so autoconf resolves the workspace's own config/ + dataset/, not
+          # so autonerves resolves the workspace's own config/ + dataset/, not
           # the wheel's packaged defaults (closes Gap 4).
           set -e
           pushd workspace

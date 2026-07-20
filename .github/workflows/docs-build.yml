@@ -23,7 +23,7 @@ on:
   workflow_call:
     inputs:
       package:
-        description: "PyAuto package to build docs for: autoconf|autofit|autoarray|autogalaxy|autolens|pyautoscientist (docs-only)"
+        description: "PyAuto package to build docs for: autonerves|autofit|autoarray|autogalaxy|autolens|pyautoscientist (docs-only)"
         required: true
         type: string
 
