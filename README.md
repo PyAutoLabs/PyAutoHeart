@@ -16,7 +16,7 @@
 <!-- heart:begin -->
 ## 🔴 PyAuto health — **RED** (score 40)
 
-_snapshot `2026-07-20T07:57:01.366073+00:00` · just now_
+_snapshot `2026-07-21T07:31:32.594153+00:00` · just now_
 
 **Blockers:** autolens_workspace_test: Smoke Tests cancelled on main
 
