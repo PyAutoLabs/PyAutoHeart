@@ -49,7 +49,8 @@ the user explicitly passes workspace names.
 
 ### 2. Load env config + wipe stale output
 
-For each workspace, read `config/build/env_vars.yaml` to build the per-script env
+For each workspace, read `config/build/profile_smoke.yaml` (legacy
+`env_vars.yaml` is still accepted during the migration window) to build the per-script env
 prefix (`defaults` minus matching `overrides` `unset`s, plus optional
 `args_default`). Before launching, wipe `<workspace_root>/output/*` (glob — keep
 the tracked `output/` dir). Detail: [`reference.md`](reference.md) →
@@ -85,7 +86,7 @@ cache dir can't be created.
 ## Notes
 
 - Env vars, their exceptions, and `args_default` live in each workspace's
-  `config/build/env_vars.yaml`; the skip list in `config/build/no_run.yaml`. Edit
+  `config/build/profile_smoke.yaml`; the skip list in `config/build/no_run.yaml`. Edit
   those files — don't hardcode env vars here.
 - `smoke_tests.txt` files live in each workspace root.
 - Toggling `PYAUTO_SMALL_DATASETS` requires deleting `<workspace>/dataset/` (auto-
