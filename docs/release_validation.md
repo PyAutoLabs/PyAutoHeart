@@ -11,8 +11,7 @@ readiness hard gate. **M3 wires the acceptance criteria below into
 untouched, default `mode: smoke` per-PR path):
 
 - The `release` env profile lives in each workspace/`*_workspace_test` repo as
-  `config/build/profile_release.yaml` (legacy `env_vars_release.yaml` is still
-  accepted during the migration window) — a self-contained sibling of
+  `config/build/profile_release.yaml` — a self-contained sibling of
   `profile_smoke.yaml` (the `smoke` profile), passed to Build's `run_python.py`
   unmodified via its existing `--env-config` flag. No changes were needed in
   PyAutoHands's executor primitives to support this — `--env-config` already

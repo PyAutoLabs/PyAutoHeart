@@ -91,10 +91,9 @@ jobs:
         # in seconds instead of in the next nightly. Workspaces without a
         # release profile (user workspaces, HowTo*) are skipped.
         run: |
-          # Fire if the workspace carries a release profile under either name:
-          # canonical profile_release.yaml (PyAutoHands#161/#181 step 6 rename)
-          # or legacy env_vars_release.yaml. The validator resolves both names.
-          if [ -f workspace/config/build/profile_release.yaml ] || [ -f workspace/config/build/env_vars_release.yaml ]; then
+          # Fire if the workspace carries a release profile: the canonical
+          # profile_release.yaml (PyAutoHands#161/#181 step 6 rename).
+          if [ -f workspace/config/build/profile_release.yaml ]; then
             python PyAutoHands/autohands/validate_env_profiles.py workspace \
               --strict-derivation --strict-markers
           else
