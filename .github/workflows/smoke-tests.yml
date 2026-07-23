@@ -94,12 +94,16 @@ jobs:
         run: |
           # Fire if the workspace carries a smoke profile: the canonical
           # profile_smoke.yaml (PyAutoHands#161/#181 step 6 rename).
+          # --strict-declarations (PyAutoHands#187): pattern-overrides that are
+          # expressible as in-file '# ENV:' declarations are errors — the
+          # migration landed in every workspace, so new ones must not creep in.
           if [ -f workspace/config/build/profile_smoke.yaml ]; then
             if [ -f workspace/config/build/profile_release.yaml ]; then
               python PyAutoHands/autohands/validate_env_profiles.py workspace \
-                --strict-derivation --strict-markers
+                --strict-derivation --strict-markers --strict-declarations
             else
-              python PyAutoHands/autohands/validate_env_profiles.py workspace
+              python PyAutoHands/autohands/validate_env_profiles.py workspace \
+                --strict-declarations
             fi
           else
             echo "No config/build/profile_smoke.yaml — profile validation skipped."
