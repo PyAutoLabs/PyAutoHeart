@@ -1,4 +1,4 @@
-"""heart/checks/script_timing.py — read autobuild run_all results, track
+"""heart/checks/script_timing.py — read autohands run_all results, track
 rolling per-script duration baselines, classify regressions.
 
 Inputs:
@@ -63,7 +63,7 @@ def slug_for(workspace: str, directory: str, file_path: str) -> str:
     (e.g. ``imaging/modeling.py`` vs ``imaging/features/.../modeling.py``)
     do not collide on a shared leaf name.
     """
-    # The autobuild run_all writes ``file`` as an absolute path. Strip
+    # The autohands run_all writes ``file`` as an absolute path. Strip
     # everything up to and including "scripts/" so the slug is workspace-
     # relative.
     f = Path(file_path)

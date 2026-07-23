@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # bin/pyauto-heart — the PyAutoHeart CLI dispatcher.
 #
-# Subcommand pattern mirrors PyAutoHands/bin/autobuild so users see a
+# Subcommand pattern mirrors PyAutoHands/bin/autohands so users see a
 # familiar shape. Help is auto-generated from SHORT_DESC.
 
 set -u

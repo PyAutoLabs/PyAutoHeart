@@ -39,7 +39,7 @@ health release: no run found at $run_dir
 
 To produce one, from PyAutoHands root:
   source ../activate.sh
-  python autobuild/run_all.py
+  python autohands/run_all.py
 EOF
     return 1
   fi

@@ -5,7 +5,7 @@
 > `PyAutoBrain/skills/health/health.md`). `$health` is the single health door;
 > this file is the release-run dashboard leg it drives.
 
-Render the most recent PyAutoHands full-run report as a release-readiness dashboard. Use this to inspect timing and failures from the last `python autobuild/run_all.py`. Read-only.
+Render the most recent PyAutoHands full-run report as a release-readiness dashboard. Use this to inspect timing and failures from the last `python autohands/run_all.py`. Read-only.
 
 A **PyAutoHeart** view — Heart owns the health/release-readiness surface; this
 skill summarises the artefacts a PyAutoHands run leaves on disk (Build executes;
@@ -39,7 +39,7 @@ No full release-prep run on disk.
 
 To produce one, from PyAutoHands root:
   source ../activate.sh
-  python autobuild/run_all.py
+  python autohands/run_all.py
 ```
 
 …and exit. Do not invent data.
@@ -115,7 +115,7 @@ If only one run exists, omit this section silently.
 
 ## Execution environments
 
-This skill renders **local artefacts** produced by an autobuild full run. It is
+This skill renders **local artefacts** produced by an autohands full run. It is
 therefore meaningful only in a `local-dev` environment where those artefacts
 exist (see PyAutoBrain `skills/WORKFLOW.md` for the environment model). In a
 `web-github` / `analysis-only` / `ci-only` session there is no local run to
