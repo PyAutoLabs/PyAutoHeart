@@ -16,7 +16,8 @@ notebook.
 
 ## Environment config
 
-Each workspace's `config/build/env_vars.yaml` has:
+Each workspace's `config/build/profile_smoke.yaml` (legacy `env_vars.yaml` is
+still accepted during the migration window) has:
 
 - `defaults` — env vars applied to every script (`PYAUTO_TEST_MODE`,
   `PYAUTO_SMALL_DATASETS`, …).

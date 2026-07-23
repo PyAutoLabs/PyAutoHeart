@@ -11,8 +11,9 @@ readiness hard gate. **M3 wires the acceptance criteria below into
 untouched, default `mode: smoke` per-PR path):
 
 - The `release` env profile lives in each workspace/`*_workspace_test` repo as
-  `config/build/env_vars_release.yaml` — a self-contained sibling of
-  `env_vars.yaml` (the `smoke` profile), passed to Build's `run_python.py`
+  `config/build/profile_release.yaml` (legacy `env_vars_release.yaml` is still
+  accepted during the migration window) — a self-contained sibling of
+  `profile_smoke.yaml` (the `smoke` profile), passed to Build's `run_python.py`
   unmodified via its existing `--env-config` flag. No changes were needed in
   PyAutoHands's executor primitives to support this — `--env-config` already
   accepted an arbitrary path.
@@ -39,7 +40,7 @@ untouched, default `mode: smoke` per-PR path):
 
 `mode: release` is scoped to the `autofit`/`autogalaxy`/`autolens` workspaces
 and their `*_workspace_test` siblings only — the HowTo* tutorial repos have no
-`env_vars_release.yaml` and stay out of the release-fidelity script matrix
+`profile_release.yaml` and stay out of the release-fidelity script matrix
 (they are still exercised under `mode: smoke`, unchanged).
 
 ## Why a distinct profile
@@ -51,7 +52,7 @@ The per-PR smoke gate and the release gate are different jobs:
 - **release** — *does the exact source about to ship, installed from the built
   wheel, pass at release fidelity?* Slow, runs only for a release rehearsal.
 
-Both tiers' `config/build/env_vars.yaml` today default to smoke values
+Both tiers' `config/build/profile_smoke.yaml` today default to smoke values
 (`PYAUTO_TEST_MODE=2`, `PYAUTO_SMALL_DATASETS=1`, `PYAUTO_DISABLE_JAX=1`,
 `PYAUTO_FAST_PLOTS=1`). That is correct for a per-PR smoke and wrong for a
 release gate. The two must be **named, distinct profiles** so a release run
