@@ -83,21 +83,26 @@ jobs:
         run: mkdir -p /tmp/numba_cache /tmp/matplotlib
 
       - name: Validate env profiles (strict — PyAutoHands#161 step 5)
-        # Binding PR-time config gate for workspaces that carry a release
-        # profile (the *_workspace_test repos): both profiles must parse, no
-        # dead patterns, no PYAUTO_DISABLE_JAX enumeration creeping back
-        # (strict-derivation), and every script's resolved backend must match
-        # its JAX name marker (strict-markers). Config-only errors fail here
-        # in seconds instead of in the next nightly. Workspaces without a
-        # release profile (user workspaces, HowTo*) are skipped.
+        # Binding PR-time config gate for every workspace that carries a smoke
+        # profile: the profile must parse, no dead patterns, no legacy names.
+        # Config-only errors fail here in seconds instead of in the next
+        # nightly. The release-only strict flags — no PYAUTO_DISABLE_JAX
+        # enumeration creeping back (strict-derivation), every script's
+        # resolved backend matching its JAX name marker (strict-markers) —
+        # apply only where a canonical profile_release.yaml exists (the
+        # *_workspace_test repos).
         run: |
-          # Fire if the workspace carries a release profile: the canonical
-          # profile_release.yaml (PyAutoHands#161/#181 step 6 rename).
-          if [ -f workspace/config/build/profile_release.yaml ]; then
-            python PyAutoHands/autohands/validate_env_profiles.py workspace \
-              --strict-derivation --strict-markers
+          # Fire if the workspace carries a smoke profile: the canonical
+          # profile_smoke.yaml (PyAutoHands#161/#181 step 6 rename).
+          if [ -f workspace/config/build/profile_smoke.yaml ]; then
+            if [ -f workspace/config/build/profile_release.yaml ]; then
+              python PyAutoHands/autohands/validate_env_profiles.py workspace \
+                --strict-derivation --strict-markers
+            else
+              python PyAutoHands/autohands/validate_env_profiles.py workspace
+            fi
           else
-            echo "No config/build/profile_release.yaml — profile validation skipped."
+            echo "No config/build/profile_smoke.yaml — profile validation skipped."
           fi
 
       - name: Run smoke tests
