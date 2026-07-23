@@ -42,7 +42,7 @@ HEART_STATE_DIR = Path(
 # own .github/workflows/workspace-validation.yml) is the continuous source of
 # the workspace-integration verdict. The tick reads only its conclusion +
 # timestamp (cheap, same budget as ci_status); the full report.json detail still
-# comes from a local `autobuild run_all` when one is present.
+# comes from a local `autohands run_all` when one is present.
 VALIDATION_REPO = os.environ.get("GITHUB_REPOSITORY", "PyAutoLabs/PyAutoHeart")
 VALIDATION_WORKFLOW = "workspace-validation.yml"
 

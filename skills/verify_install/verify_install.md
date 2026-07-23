@@ -27,7 +27,7 @@ reported as **SKIP** and does not count toward overall failure.
 
 The script is self-contained and runs from any shell. The canonical entry point is
 `pyauto-heart verify_install`, which runs the checks and writes the readiness sidecar.
-(`autobuild verify_install` still works as a thin shim that delegates here, for anyone
+(`autohands verify_install` still works as a thin shim that delegates here, for anyone
 with PyAutoHands on PATH.)
 
 ```bash

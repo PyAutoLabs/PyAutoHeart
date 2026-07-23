@@ -132,7 +132,7 @@ jobs:
           else
             PROJECTS="autofit autogalaxy autolens autofit_test autogalaxy_test autolens_test howtogalaxy howtolens howtofit"
           fi
-          matrix="$(python3 PyAutoHands/autobuild/script_matrix.py $PROJECTS)"
+          matrix="$(python3 PyAutoHands/autohands/script_matrix.py $PROJECTS)"
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
   generate_notebooks:
@@ -176,7 +176,7 @@ jobs:
         run: |
           export PYTHONPATH="$PYTHONPATH:$(pwd)/PyAutoHands"
           pushd workspace
-          python3 "$(pwd)/../PyAutoHands/autobuild/generate.py" "${{ matrix.project.name }}"
+          python3 "$(pwd)/../PyAutoHands/autohands/generate.py" "${{ matrix.project.name }}"
       - name: Upload generated notebooks
         if: always()
         uses: actions/upload-artifact@v4
@@ -292,7 +292,7 @@ jobs:
           LIBS="$(pwd)/libs"
           export PYTHONPATH="$LIBS/PyAutoNerves:$LIBS/PyAutoArray:$LIBS/PyAutoFit:$LIBS/PyAutoGalaxy:$LIBS/PyAutoLens:$(pwd)/PyAutoHands:$PYTHONPATH"
           pushd workspace
-          python3 "$(pwd)/../PyAutoHands/autobuild/run_python.py" \
+          python3 "$(pwd)/../PyAutoHands/autohands/run_python.py" \
             "${{ matrix.project.name }}" "scripts/${{ matrix.project.directory }}" \
             --report-dir test-results
       - name: "Run Python scripts [mode=release, wheels, release profile, no source on PYTHONPATH]"
@@ -319,7 +319,7 @@ jobs:
             echo "::error::$ENV_CONFIG missing — no release profile defined for this workspace"
             exit 1
           fi
-          python3 "$(pwd)/../PyAutoHands/autobuild/run_python.py" \
+          python3 "$(pwd)/../PyAutoHands/autohands/run_python.py" \
             "${{ matrix.project.name }}" "scripts/${{ matrix.project.directory }}" \
             --report-dir test-results \
             --env-config "$ENV_CONFIG"
@@ -408,7 +408,7 @@ jobs:
           LIBS="$(pwd)/libs"
           export PYTHONPATH="$LIBS/PyAutoNerves:$LIBS/PyAutoArray:$LIBS/PyAutoFit:$LIBS/PyAutoGalaxy:$LIBS/PyAutoLens:$(pwd)/PyAutoHands:$PYTHONPATH"
           pushd workspace
-          python3 "$(pwd)/../PyAutoHands/autobuild/run.py" \
+          python3 "$(pwd)/../PyAutoHands/autohands/run.py" \
             "${{ matrix.project.name }}" "notebooks/${{ matrix.project.directory }}" \
             --report-dir test-results
       - name: Upload notebook results
@@ -442,7 +442,7 @@ jobs:
       - name: Aggregate into report.json
         run: |
           export PYTHONPATH="$PYTHONPATH:$(pwd)/PyAutoHands"
-          python3 PyAutoHands/autobuild/aggregate_results.py all-results/ \
+          python3 PyAutoHands/autohands/aggregate_results.py all-results/ \
             --output report.json --markdown report.md
       - name: Post summary
         if: always()

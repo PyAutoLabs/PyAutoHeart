@@ -87,7 +87,7 @@ jobs:
           JAX_ENABLE_X64: "True"
           NUMBA_CACHE_DIR: /tmp/numba_cache
           MPLCONFIGDIR: /tmp/matplotlib
-          PYTHONPATH: ${{ github.workspace }}/PyAutoHands/autobuild
+          PYTHONPATH: ${{ github.workspace }}/PyAutoHands/autohands
         run: |
           cd workspace
           python .github/scripts/run_smoke.py

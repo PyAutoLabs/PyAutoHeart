@@ -40,9 +40,9 @@
 #                             ~/.cache/pyauto/smoke/*.json (written by the
 #                             /smoke-test skill). Green when failed=0, red
 #                             otherwise. Suppressed when no JSONs exist.
-#   - "Last autobuild run:" — aggregate from
+#   - "Last autohands run:" — aggregate from
 #                             ~/Code/PyAutoLabs/PyAutoHands/test_results/*.json
-#                             (committed by the autobuild release pipeline).
+#                             (committed by the autohands release pipeline).
 #                             Suppressed when no JSONs exist.
 #   - "Hygiene:"            — nudge when the last /repo_cleanup audit stamp
 #                             (~/.cache/pyauto/repo_cleanup_last_audit.json)
@@ -365,8 +365,8 @@ for f in sorted(glob.glob(os.path.expanduser("~/.cache/pyauto/smoke/*.json"))):
 ' 2>/dev/null)
   fi
 
-  # Last autobuild run. Reads aggregate from PyAutoHands/test_results/*.json
-  # (committed by the autobuild release pipeline). Counts only — failure
+  # Last autohands run. Reads aggregate from PyAutoHands/test_results/*.json
+  # (committed by the autohands release pipeline). Counts only — failure
   # detail lives in the per-job JSON / the GitHub Actions run.
   local pab_dir="$HOME/Code/PyAutoLabs/PyAutoHands/test_results"
   if [[ -d "$pab_dir" ]] && compgen -G "$pab_dir/*.json" > /dev/null; then
@@ -397,7 +397,7 @@ print(f"{latest[:10]}|{num}|{len(projects)}|{total_p}|{total_f}|{total_s}")
       IFS='|' read -r pab_date njobs nproj pab_p pab_f pab_s <<< "$pab_summary"
       sha=$(git -C "$HOME/Code/PyAutoLabs/PyAutoHands" rev-parse --short HEAD 2>/dev/null)
       echo ""
-      printf "Last autobuild run: %s (PyAutoHands commit %s)\n" "$pab_date" "${sha:-?}"
+      printf "Last autohands run: %s (PyAutoHands commit %s)\n" "$pab_date" "${sha:-?}"
       local color='\033[32m'
       [[ "$pab_f" != "0" ]] && color='\033[31m'
       printf "  ${color}%s jobs across %s workspaces: %s passed, %s failed, %s skipped\033[0m\n" \

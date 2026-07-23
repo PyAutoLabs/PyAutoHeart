@@ -25,7 +25,7 @@ url_check`.
 
 ### One nuance the agent must understand: `aggregate_results.py`
 
-`autobuild/aggregate_results.py` builds a report titled **"Release Readiness
+`autohands/aggregate_results.py` builds a report titled **"Release Readiness
 Report"** with a top-level `ready` boolean, and `create_analysis_issue.py` posts
 it. This *looks* like a readiness gate but is **not**:
 
@@ -54,7 +54,7 @@ vocabulary with Heart's authoritative verdict and could mislead a future reader.
   documentation/naming change, not a logic move, so it does not block the Health
   Agent.
 - A follow-up task capturing this is filed in PyAutoMind:
-  `maintenance/autobuild/rename_release_readiness_report.md`.
+  `maintenance/autohands/rename_release_readiness_report.md`.
 
 ## Boundary the agent enforces
 

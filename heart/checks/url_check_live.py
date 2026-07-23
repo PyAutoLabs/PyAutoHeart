@@ -101,7 +101,7 @@ KNOWN_PATTERN_REWRITES: list[tuple[re.Pattern[str], str, str]] = _load_pattern_r
 
 
 
-_TOOL_DIR_ABS = Path(__file__).resolve().parent  # PyAutoHands/autobuild
+_TOOL_DIR_ABS = Path(__file__).resolve().parent  # PyAutoHands/autohands
 
 
 def _should_scan(path: Path) -> bool:
