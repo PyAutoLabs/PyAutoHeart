@@ -6,8 +6,8 @@ name: Workspace Validation
 #   mode=smoke (default — schedule / bare workflow_dispatch / workflow_call)
 #     Runs every workspace's scripts AND generated notebooks against the
 #     CURRENT source `main` of the 5 libraries (source-shadowed via PYTHONPATH,
-#     under the `smoke` env profile — config/build/profile_smoke.yaml, legacy
-#     env_vars.yaml accepted during migration). Unchanged by
+#     under the `smoke` env profile — config/build/profile_smoke.yaml).
+#     Unchanged by
 #     M3 — this remains the continuous readiness signal / weekly sweep, and
 #     `test_run`/`readiness` keep reading its conclusion the same way.
 #
@@ -20,8 +20,7 @@ name: Workspace Validation
 #     still run FROM WITHIN each workspace checkout so autonerves resolves the
 #     workspace's own config/ + dataset/, not the wheel's packaged defaults
 #     (closes Gap 4). Uses the `release` env profile — each workspace/
-#     workspace_test repo's config/build/profile_release.yaml (legacy
-#     env_vars_release.yaml accepted during migration) — which is
+#     workspace_test repo's config/build/profile_release.yaml — which is
 #     PYAUTO_TEST_MODE=1 (reduced, real sampler) + SMALL_DATASETS=1 +
 #     FAST_PLOTS=1 for user workspaces, PYAUTO_TEST_MODE=0 (real searches,
 #     each script's own n_like_max caps) + full-res + real plots for
@@ -82,8 +81,7 @@ env:
   # Workspace pins lag the libraries' source __version__ between releases;
   # without this every script fails fast with WorkspaceVersionMismatchError.
   # Same bypass run_scripts uses in release.yml. mode=release also carries this
-  # in profile_release.yaml (legacy env_vars_release.yaml accepted during
-  # migration; the TestPyPI dev version never matches the
+  # in profile_release.yaml (the TestPyPI dev version never matches the
   # workspace pin either) — belt and braces.
   PYAUTO_SKIP_WORKSPACE_VERSION_CHECK: "1"
 
@@ -317,15 +315,12 @@ jobs:
           # the wheel's packaged defaults (closes Gap 4).
           set -e
           pushd workspace
-          # Prefer the canonical profile_release.yaml (PyAutoHands#161/#181 step
-          # 6 rename); fall back to the legacy env_vars_release.yaml so this
-          # workflow accepts both names during the migration window.
+          # Use the canonical profile_release.yaml (PyAutoHands#161/#181 step
+          # 6 rename).
           if [ -f "config/build/profile_release.yaml" ]; then
             ENV_CONFIG="config/build/profile_release.yaml"
-          elif [ -f "config/build/env_vars_release.yaml" ]; then
-            ENV_CONFIG="config/build/env_vars_release.yaml"
           else
-            echo "::error::config/build/profile_release.yaml missing (legacy env_vars_release.yaml also accepted) — no release profile defined for this workspace"
+            echo "::error::config/build/profile_release.yaml missing — no release profile defined for this workspace"
             exit 1
           fi
           python3 "$(pwd)/../PyAutoHands/autohands/run_python.py" \
