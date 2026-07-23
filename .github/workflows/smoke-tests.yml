@@ -82,6 +82,22 @@ jobs:
       - name: Prepare cache dirs
         run: mkdir -p /tmp/numba_cache /tmp/matplotlib
 
+      - name: Validate env profiles (strict — PyAutoHands#161 step 5)
+        # Binding PR-time config gate for workspaces that carry a release
+        # profile (the *_workspace_test repos): both profiles must parse, no
+        # dead patterns, no PYAUTO_DISABLE_JAX enumeration creeping back
+        # (strict-derivation), and every script's resolved backend must match
+        # its JAX name marker (strict-markers). Config-only errors fail here
+        # in seconds instead of in the next nightly. Workspaces without a
+        # release profile (user workspaces, HowTo*) are skipped.
+        run: |
+          if [ -f workspace/config/build/env_vars_release.yaml ]; then
+            python PyAutoHands/autohands/validate_env_profiles.py workspace \
+              --strict-derivation --strict-markers
+          else
+            echo "No config/build/env_vars_release.yaml — profile validation skipped."
+          fi
+
       - name: Run smoke tests
         env:
           JAX_ENABLE_X64: "True"
