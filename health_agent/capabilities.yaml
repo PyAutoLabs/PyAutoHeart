@@ -71,7 +71,7 @@ continuous_checks:
   - id: test_run
     impl: heart/checks/test_run.py
     measures: "latest PyAutoHands report.json verdict (ready / counts / stale parked)"
-    consumes: "PyAutoHands test_results/latest/report.json (Build executor primitive)"
+    consumes: "PyAutoHands run_logs/latest/report.json (Build executor primitive)"
     gate_role: "YELLOW if workspace validation not passing / stale / unknown (standing debt, advisory)"
   - id: version_skew
     impl: heart/checks/version_skew.py

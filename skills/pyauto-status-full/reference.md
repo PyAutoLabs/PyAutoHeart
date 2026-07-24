@@ -26,10 +26,10 @@ This is the deeper sibling of `$health status` (the active-work dashboard):
 
 ### 1. Locate the latest run
 
-PyAutoHands stores every full run under `~/Code/PyAutoLabs/PyAutoHands/test_results/runs/<UTC-timestamp>/` and updates a `latest` symlink on success.
+PyAutoHands stores every full run under `~/Code/PyAutoLabs/PyAutoHands/run_logs/runs/<run-type>/<YYYY>/<MM>/<UTC-timestamp>/` and updates a `latest` symlink on success.
 
 ```bash
-LATEST=~/Code/PyAutoLabs/PyAutoHands/test_results/latest
+LATEST=~/Code/PyAutoLabs/PyAutoHands/run_logs/latest
 ```
 
 If the symlink does not exist, no full run has completed yet. Print:
@@ -119,6 +119,6 @@ This skill renders **local artefacts** produced by an autohands full run. It is
 therefore meaningful only in a `local-dev` environment where those artefacts
 exist (see PyAutoBrain `skills/WORKFLOW.md` for the environment model). In a
 `web-github` / `analysis-only` / `ci-only` session there is no local run to
-render — if `~/Code/PyAutoLabs/PyAutoHands/test_results/latest` does not exist,
+render — if `~/Code/PyAutoLabs/PyAutoHands/run_logs/latest` does not exist,
 print the "no run on disk" message from step 1 and exit. (For the live
 release-readiness verdict from anywhere, use `pyauto-heart readiness` instead.)
