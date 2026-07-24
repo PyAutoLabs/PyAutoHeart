@@ -55,7 +55,7 @@ repos:
 
   workspaces_developer:
     - name: autofit_workspace_developer
-      owner: Jammy2211
+      owner: PyAutoLabs
     - name: autolens_workspace_developer
       owner: PyAutoLabs
 
