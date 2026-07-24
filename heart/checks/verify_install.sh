@@ -583,23 +583,23 @@ WS_DIR = os.environ["COLAB_SIM_WORKSPACE_DIR"]
 # --- the injected setup cell, verbatim ---
 try:
     import google.colab
-
+except ImportError:
+    from autolens import setup_colab as _setup_colab
+else:
+    import importlib
     subprocess.check_call(
         [sys.executable, "-m", "pip", "install", "autonerves", "--no-deps"]
     )
-except ImportError:
-    pass
+    _setup_colab = importlib.import_module("autonerves.setup_colab")
 
-from autonerves import setup_colab
-
-if not hasattr(setup_colab, "setup"):
+if not hasattr(_setup_colab, "setup"):
     print(
         "SKIP: installed autonerves predates the setup_colab registry "
         "(ships with the next release)"
     )
     sys.exit(3)
 
-setup_colab.setup("autolens", raise_error_if_not_gpu=False, workspace_dir=WS_DIR)
+_setup_colab.setup("autolens", raise_error_if_not_gpu=False, workspace_dir=WS_DIR)
 
 # --- assertions: clone happened, cwd moved into the workspace ---
 assert os.getcwd() == WS_DIR, f"cwd is {os.getcwd()}, expected {WS_DIR}"
