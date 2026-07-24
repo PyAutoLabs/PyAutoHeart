@@ -40,10 +40,10 @@
 #                             ~/.cache/pyauto/smoke/*.json (written by the
 #                             /smoke-test skill). Green when failed=0, red
 #                             otherwise. Suppressed when no JSONs exist.
-#   - "Last autohands run:" — aggregate from
-#                             ~/Code/PyAutoLabs/PyAutoHands/test_results/*.json
-#                             (committed by the autohands release pipeline).
-#                             Suppressed when no JSONs exist.
+#   - "Last autohands run:" — the aggregated verdict from
+#                             ~/Code/PyAutoLabs/PyAutoHands/run_logs/latest/report.json
+#                             (written by the autohands mega-run).
+#                             Suppressed when the run log is absent.
 #   - "Hygiene:"            — nudge when the last /repo_cleanup audit stamp
 #                             (~/.cache/pyauto/repo_cleanup_last_audit.json)
 #                             is missing or older than PYAUTO_CLEANUP_NUDGE_DAYS
@@ -365,32 +365,28 @@ for f in sorted(glob.glob(os.path.expanduser("~/.cache/pyauto/smoke/*.json"))):
 ' 2>/dev/null)
   fi
 
-  # Last autohands run. Reads aggregate from PyAutoHands/test_results/*.json
-  # (committed by the autohands release pipeline). Counts only — failure
-  # detail lives in the per-job JSON / the GitHub Actions run.
-  local pab_dir="$HOME/Code/PyAutoLabs/PyAutoHands/test_results"
-  if [[ -d "$pab_dir" ]] && compgen -G "$pab_dir/*.json" > /dev/null; then
+  # Last autohands run. Reads the aggregated report.json from the newest run,
+  # reachable via PyAutoHands/run_logs/latest (written by the autohands
+  # mega-run). Counts only — failure detail lives in the per-shard JSON / the
+  # GitHub Actions run.
+  local pab_report="$HOME/Code/PyAutoLabs/PyAutoHands/run_logs/latest/report.json"
+  if [[ -f "$pab_report" ]]; then
     local pab_summary
     pab_summary=$(python3 -c '
-import json, os, glob
-total_p = total_f = total_s = num = 0
-projects = set()
-latest = ""
-for f in sorted(glob.glob(os.path.expanduser("~/Code/PyAutoLabs/PyAutoHands/test_results/*.json"))):
-    try:
-        d = json.load(open(f))
-        s = d.get("summary", {})
-        total_p += s.get("passed", 0)
-        total_f += s.get("failed", 0)
-        total_s += s.get("skipped", 0)
-        num += 1
-        projects.add(d.get("project", "?"))
-        ct = d.get("completed_at", "")
-        if ct > latest:
-            latest = ct
-    except Exception:
-        pass
-print(f"{latest[:10]}|{num}|{len(projects)}|{total_p}|{total_f}|{total_s}")
+import json, os
+p = os.path.expanduser("~/Code/PyAutoLabs/PyAutoHands/run_logs/latest/report.json")
+try:
+    d = json.load(open(p))
+    s = d.get("summary", {}) or {}
+    n_proj = len(d.get("per_project", {}) or {})
+    njobs = len(d.get("runs", []) or [])
+    label = str(d.get("run_label", ""))[:10]
+    passed = s.get("passed", 0)
+    failed = s.get("failed", 0)
+    skipped = s.get("skipped", 0)
+    print("|".join(str(x) for x in [label, njobs, n_proj, passed, failed, skipped]))
+except Exception:
+    pass
 ' 2>/dev/null)
     if [[ -n "$pab_summary" ]]; then
       local pab_date njobs nproj pab_p pab_f pab_s sha

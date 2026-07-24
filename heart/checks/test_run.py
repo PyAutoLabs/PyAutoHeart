@@ -1,7 +1,7 @@
 """heart/checks/test_run.py — surface the latest PyAutoHands test-run verdict.
 
 PyAutoHands's release pipeline writes an aggregated ``report.json`` into each
-run directory (reachable via the ``test_results/latest`` symlink). It carries
+run directory (reachable via the ``run_logs/latest`` symlink). It carries
 the single most important release signal — a top-level ``ready`` boolean —
 plus per-status counts, per-project breakdown, and the ``slow_skips`` /
 ``needs_fix_skips`` lists (each entry already carrying an ``is_stale`` flag
@@ -32,7 +32,7 @@ from typing import Any
 HEART_HOME = Path(__file__).resolve().parents[2]
 _p3 = Path(__file__).resolve().parents[3]
 PYAUTO_ROOT = _p3 if _p3.name == "PyAutoLabs" else Path.home() / "Code" / "PyAutoLabs"
-TEST_RESULTS_LATEST = PYAUTO_ROOT / "PyAutoHands" / "test_results" / "latest"
+TEST_RESULTS_LATEST = PYAUTO_ROOT / "PyAutoHands" / "run_logs" / "latest"
 HEART_STATE_DIR = Path(
     os.environ.get("HEART_STATE_DIR")
     or Path.home() / ".pyauto-heart"
@@ -266,7 +266,7 @@ def main(argv: list[str]) -> int:
     from heart.heart_color import c_ok, c_warn, c_fail, c_info, c_meta, glyph_ok, glyph_warn, glyph_fail
 
     if not summary:
-        print(f"{c_meta('·')} {c_info('test_run')} {c_meta('(no test_results yet)')}")
+        print(f"{c_meta('·')} {c_info('test_run')} {c_meta('(no run_logs yet)')}")
         return 0
 
     ready = summary.get("ready")

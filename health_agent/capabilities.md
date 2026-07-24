@@ -37,7 +37,7 @@ Audited at commit `a2543d0` (Rename PyAutoPulse to PyAutoHeart).
 - **script_timing** (`checks/script_timing.py`) — per-script duration vs rolling
   baseline (`>1.5x` slow, `>3x` regression). YELLOW.
 - **test_run** (`checks/test_run.py`) — reads PyAutoHands's
-  `test_results/latest/report.json` (the workspace-validation verdict). YELLOW
+  `run_logs/latest/report.json` (the workspace-validation verdict). YELLOW
   when not passing / stale / unknown (workspace debt is advisory, never a hard
   block).
 - **version_skew** (`checks/version_skew.py`) — each workspace's pinned version

@@ -3,7 +3,7 @@
 #
 # Defines `_health_release` (run via `health release`) that reads the latest
 # PyAutoHands full release-prep run (the one symlinked from
-# PyAutoHands/test_results/latest/) and prints a dashboard:
+# PyAutoHands/run_logs/latest/) and prints a dashboard:
 #
 #   - Run timestamp + path + ready/not-ready verdict + total duration
 #   - Per-workspace pass / fail / skipped / timeout / duration table
@@ -19,7 +19,7 @@
 #
 # Override the run path (e.g. to inspect a specific historical run) by passing
 # it as the first argument:
-#   health release ~/Code/PyAutoLabs/PyAutoHands/test_results/runs/2026-04-29T14-48-47Z
+#   health release ~/Code/PyAutoLabs/PyAutoHands/run_logs/runs/smoke/2026/04/2026-04-29T14-48-47Z
 #
 # Sibling helpers: health-report / health-json / health-triage open the last
 # run's report.md / report.json / triage.md.
@@ -28,7 +28,7 @@
 # layer over the same run artefacts). This function prints straight to stdout,
 # no Claude needed.
 
-PYAUTO_STATUS_FULL_DEFAULT="${PYAUTO_STATUS_FULL_DEFAULT:-$HOME/Code/PyAutoLabs/PyAutoHands/test_results/latest}"
+PYAUTO_STATUS_FULL_DEFAULT="${PYAUTO_STATUS_FULL_DEFAULT:-$HOME/Code/PyAutoLabs/PyAutoHands/run_logs/latest}"
 
 _health_release() {
   local run_dir="${1:-$PYAUTO_STATUS_FULL_DEFAULT}"
