@@ -246,6 +246,12 @@ jobs:
           # simulator (and its downstream scripts) fails fast. Matches the pin
           # PyAutoArray declares (jax 0.10.x + nufftax 0.4.x is the tested combo).
           pip install "nufftax>=0.4.0,<0.5.0"
+          # blackjax backs autofit_test's searches/BlackJAXNUTS and is NOT pulled
+          # transitively either: the `optional` extras chain each library's own
+          # [jax], never a sibling's [optional], so autolens[optional] never
+          # reaches autofit[optional]. mode=release below already installs
+          # autofit[optional] explicitly — this gives the smoke leg parity.
+          pip install "autofit[optional]"
       - name: "Install TestPyPI wheels — NO source on PYTHONPATH [mode=release]"
         if: needs.find_scripts.outputs.mode == 'release'
         env:
