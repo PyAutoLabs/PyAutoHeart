@@ -20,7 +20,7 @@ untouched, default `mode: smoke` per-PR path):
   wheels at the rehearsed version and puts **no** library source on
   `PYTHONPATH`, still executing from inside the workspace checkout.
 - `verify_install_release` runs `heart/checks/verify_install.sh --testpypi
-  --version <version>` A–E against the same wheels.
+  --version <version>` A–F against the same wheels.
 - `emit_release_report` reshapes Build's `aggregate_results.py` report.json
   (via the new `heart/validate.py::to_stage_report` / `pyauto-heart validate
   --emit-stage-report`) into the `{"stage": "integrate", ...}` contract
@@ -112,11 +112,24 @@ carries `profile` and `commit_shas`, so the gate can enforce them):
    `pip install` the wheels **but still execute scripts from within the workspace
    checkout** (for `config/` + `dataset/`), with no source on `PYTHONPATH`.
 
-The integration run also performs `verify_install` A–E against the same wheels.
-That result feeds the install-verification readiness leg (see "How the gate
-enforces these"), tagged `index: testpypi` — it proves the wheels **about to
-ship** install, which is the right evidence for a release gate, and is reported
-as such rather than as proof that installing from PyPI works today.
+The integration run also performs `verify_install` A–F against the same wheels.
+Check B reuses that exact TestPyPI version: it must install and import on Python
+3.12 and 3.13, while Python 3.11 must reject it specifically because its
+`Requires-Python` metadata is `>=3.12`. An unpinned install is not sufficient
+evidence because pip may select an older compatible release.
+
+That TestPyPI A–F result feeds the install-verification readiness leg (see
+"How the gate enforces these"), tagged `index: testpypi`. It proves the wheels
+**about to ship** install, which is the right evidence for a release gate, and
+is reported as such rather than as proof that installing from PyPI works today.
+
+For pre-publication development, `verify_install B --version <version>
+--find-links <wheel-dir>` exercises the same exact-version logic against local
+wheels while retaining PyPI for third-party dependencies. Its sidecar is
+labelled `index: find-links`, so it cannot be mistaken for PyPI or TestPyPI
+release evidence. Heart retains a fresh passing local result as development
+evidence but reports STALE until a PyPI or TestPyPI verification replaces it;
+a failing local artifact remains RED.
 
 ## How the gate enforces these
 
@@ -130,10 +143,12 @@ as such rather than as proof that installing from PyPI works today.
 
 The install-verification leg is separate and reads
 `~/.pyauto-heart/verify_install.json`, written either by a local `pyauto-heart
-verify_install --report-json` run (`index: pypi`) or by `--ingest` folding the
-block out of a Stage 3 artifact (`index: testpypi`). Both satisfy the leg; the
-index is named in every reason line so the verdict states which install path it
-actually verified.
+verify_install --report-json` invocation (`index: pypi`, `testpypi`, or
+`find-links`, according to its flags) or by `--ingest` folding the block out of
+a Stage 3 artifact (`index: testpypi`). Both release indexes satisfy the leg;
+the index is named in every reason line so the verdict states which install path
+it actually verified. Development-only `index: find-links` evidence does not
+satisfy this release gate.
 
 Before M3 (or if the Release Agent only runs the M1 rehearsal and skips
 dispatching `workspace-validation.yml` in `mode: release`), an ingested

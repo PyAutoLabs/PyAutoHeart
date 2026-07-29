@@ -25,7 +25,7 @@ name: Workspace Validation
 #     FAST_PLOTS=1 for user workspaces, PYAUTO_TEST_MODE=0 (real searches,
 #     each script's own n_like_max caps) + full-res + real plots for
 #     *_workspace_test (closes Gap B; see PyAutoHeart/docs/release_validation.md
-#     for the full table). Also runs `verify_install` A-E against the same
+#     for the full table). Also runs `verify_install` A-F against the same
 #     wheels, and emits a `{"stage": "integrate", ...}` report
 #     `pyauto-heart validate --ingest` understands. Skips notebook execution —
 #     out of scope for M3, scripts are the release-validation surface.
@@ -472,7 +472,8 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # mode=release only, from here down. verify_install_release closes item 5
-  # (verify_install A-E against the same wheels); emit_release_report closes
+  # (verify_install A-F against the same exact wheels, including the Python
+  # 3.11 Requires-Python rejection); emit_release_report closes
   # item 4 (the {"stage": "integrate", ...} report `pyauto-heart validate
   # --ingest` understands). Both are pure CI-side steps run with Heart's own
   # code, checked out from THIS repo — no dispatch, no other-repo mutation.
@@ -485,7 +486,21 @@ jobs:
     steps:
       - name: Checkout PyAutoHeart
         uses: actions/checkout@v4
-      - name: Run verify_install A-E against the TestPyPI wheels
+      # Check B invokes each explicit pythonX.Y binary in one job. setup-python
+      # prepends each toolcache interpreter without removing the earlier paths.
+      - name: Expose Python 3.11 for the below-floor rejection
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Expose supported Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Expose supported Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Run verify_install A-F against the TestPyPI wheels
         env:
           TESTPYPI_VERSION: ${{ inputs.testpypi_version }}
         run: |

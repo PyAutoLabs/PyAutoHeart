@@ -11,7 +11,7 @@
 # Runs a suite of independent install-path checks:
 #
 #   A  pip install autolens (default Python) + start_here.py + welcome.py
-#   B  pip install autolens succeeds + imports on python3.9 / 3.10 / 3.11 / 3.13
+#   B  one exact autolens release installs on 3.12/3.13 and rejects on 3.11
 #   C  conda install flow (python=3.12) + start_here.py + welcome.py
 #   D  pip install "autolens[optional]" resolves
 #   E  pip install autolens==2026.2.26.4 still installs by explicit pin
@@ -25,12 +25,17 @@
 #   verify_install                       # run all checks
 #   verify_install A                     # run a single check
 #   verify_install A C E                 # run a subset
-#   verify_install --version 2026.4.5.2  # pin a specific PyPI version (A/C/D)
+#   verify_install --version 2026.4.5.2  # pin a specific PyPI version (A/B/C/D)
 #   verify_install --testpypi            # install from test.pypi.org (pre-release rehearsal)
+#   verify_install --find-links dist/    # prefer exact locally-built wheels
 #   verify_install --keep                # don't clean up at the end
 #   verify_install -h | --help
 
 set -uo pipefail   # NB: no -e — checks must continue past expected failures.
+
+VERIFY_INSTALL_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=verify_install_helpers.sh
+source "$VERIFY_INSTALL_DIR/verify_install_helpers.sh"
 
 # Unset PYTHONPATH so checks aren't shadowed by user-side editable installs.
 # When the calling shell exports PYTHONPATH=/path/to/PyAutoNerves:/path/to/...
@@ -48,11 +53,13 @@ usage() {
 verify_install — release-readiness gate for PyAutoLens.
 
 Usage:
-  verify_install [CHECKS...] [--version VERSION] [--testpypi] [--keep] [-h]
+  verify_install [CHECKS...] [--version VERSION] [--testpypi]
+                 [--find-links DIR] [--keep] [-h]
 
 Checks:
   A   pip install autolens (default python3) + start_here.py + welcome.py
-  B   pip install autolens succeeds + imports on python3.9, 3.10, 3.11, 3.13
+  B   one exact autolens release installs on python3.12 and python3.13,
+      while python3.11 rejects it because Requires-Python is >=3.12
   C   conda install flow (python=3.12) + start_here.py + welcome.py
   D   pip install "autolens[optional]" resolves and imports
   E   pip install autolens==2026.2.26.4 (yanked) installs by explicit pin
@@ -62,14 +69,18 @@ Checks:
 Default: run all checks.
 
 Options:
-  --version VERSION   Pin a specific PyPI version (applies to A, C, D).
+  --version VERSION   Pin a specific PyPI version (applies to A, B, C, D).
   --testpypi          Install from test.pypi.org with PyPI as a fallback for
-                      non-PyAuto deps (applies to A, C, D, E). Use this for a
+                      non-PyAuto deps (applies to A, B, C, D, E). Use this for a
                       pre-release rehearsal against a TestPyPI dry-run upload.
+  --find-links DIR    Prefer wheel artifacts in DIR while retaining the selected
+                      index for third-party dependencies. Evidence is labelled
+                      find-links, never PyPI/TestPyPI. Useful before publication.
   --keep              Don't clean up venvs / conda envs / clones at the end.
-  --report-json PATH  Also write a machine-readable {ts,ready,version,index,
-                      checks} JSON sidecar to PATH (consumed by pyauto-heart
-                      readiness; `index` is testpypi or pypi).
+  --report-json PATH  Also write a machine-readable {ts,ready,version,
+                      check_b_version,index,checks} JSON sidecar to PATH
+                      (consumed by pyauto-heart readiness; `index` is pypi,
+                      testpypi, or find-links).
   -h, --help          Show this help.
 USAGE
 }
@@ -79,6 +90,7 @@ USAGE
 TARGET_VERSION=""
 KEEP=0
 USE_TESTPYPI=0
+FIND_LINKS=""
 REPORT_JSON=""
 REQUESTED_CHECKS=()
 
@@ -99,6 +111,14 @@ while [ $# -gt 0 ]; do
         --testpypi)
             USE_TESTPYPI=1
             shift
+            ;;
+        --find-links)
+            if [ $# -lt 2 ]; then
+                echo "verify_install: --find-links requires a directory" >&2
+                exit 2
+            fi
+            FIND_LINKS="$2"
+            shift 2
             ;;
         --keep)
             KEEP=1
@@ -124,6 +144,14 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+if [ -n "$FIND_LINKS" ]; then
+    if [ ! -d "$FIND_LINKS" ]; then
+        echo "verify_install: --find-links is not a directory: $FIND_LINKS" >&2
+        exit 2
+    fi
+    FIND_LINKS=$(cd "$FIND_LINKS" && pwd)
+fi
+
 # When --testpypi is set, route every PyAuto-package pip install through
 # TestPyPI as the primary index and fall back to PyPI for transitive deps not
 # mirrored there (matplotlib, scipy, nufftax, jax, etc.). Cleared otherwise —
@@ -134,6 +162,9 @@ done
 PIP_INDEX_ARGS=()
 if [ "$USE_TESTPYPI" -eq 1 ]; then
     PIP_INDEX_ARGS=(--index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/)
+fi
+if [ -n "$FIND_LINKS" ]; then
+    PIP_INDEX_ARGS+=(--find-links "$FIND_LINKS")
 fi
 
 if [ ${#REQUESTED_CHECKS[@]} -eq 0 ]; then
@@ -261,21 +292,24 @@ print(f'autonerves: {autonerves.__version__}')
     fi
 }
 
-# ----- check B: install + import on every supported python version -----
+# ----- check B: exact-release support floor -----
 #
-# requires-python = ">=3.9", classifiers cover 3.9–3.13. 3.12 / 3.13 are the
-# recommended versions; 3.9 / 3.10 / 3.11 print a loud (bypassable) banner on
-# autonerves import. Check B confirms install + import works on each of
-# 3.9 / 3.10 / 3.11 / 3.13. Check A covers the recommended-default-python
-# path with full workspace script execution (typically python3 = 3.12).
+# The 3.12 run resolves the current release when --version is absent; every
+# later cell reuses that exact version. This is essential on 3.11: an unpinned
+# `pip install autolens` may legitimately select an older compatible wheel,
+# which is migration fallback rather than evidence that the new release accepts
+# 3.11. A rejected install passes only when pip explicitly reports the
+# Requires-Python constraint — index/network/resolver failures stay failures.
 
-check_b_one() {
+CHECK_B_VERSION="$TARGET_VERSION"
+
+check_b_supported() {
     local pybin="$1"
     local label="${pybin#python}"
 
     if ! command -v "$pybin" > /dev/null 2>&1; then
-        step "$pybin not installed — SKIP"
-        RESULTS+=("B|SKIP|$pybin not installed")
+        step "$pybin not installed — FAIL (required Check B interpreter)"
+        RESULTS+=("B|FAIL|$pybin not installed")
         return
     fi
 
@@ -292,23 +326,37 @@ check_b_one() {
     source "$venv/bin/activate"
     pip install --upgrade pip > /dev/null 2>&1 || true
 
-    step "$pybin: pip install $PIP_INSTALL_TARGET"
+    local install_target="autolens"
+    if [ -n "$CHECK_B_VERSION" ]; then
+        install_target="autolens==$CHECK_B_VERSION"
+    fi
+
+    step "$pybin: pip install $install_target"
     local pip_out pip_rc=0
-    pip_out=$(pip install "${PIP_INDEX_ARGS[@]}" "$PIP_INSTALL_TARGET" 2>&1) || pip_rc=$?
+    pip_out=$(pip install "${PIP_INDEX_ARGS[@]}" "$install_target" 2>&1) || pip_rc=$?
 
     if [ "$pip_rc" -ne 0 ]; then
-        RESULTS+=("B|FAIL|$pybin pip install failed (rc=$pip_rc)")
+        RESULTS+=("B|FAIL|$pybin pip install $install_target failed (rc=$pip_rc)")
         tail_log "Check B ($pybin) pip output" "$pip_out"
         deactivate
         return
     fi
 
     step "$pybin: importing autolens, autogalaxy, autoarray, autofit, autonerves"
-    local import_out import_rc=0
+    local import_out import_rc=0 installed_version="" versions_equivalent=1
     import_out=$(python -c "
 import autolens, autogalaxy, autoarray, autofit, autonerves
 print(f'autolens={autolens.__version__}')
 " 2>&1) || import_rc=$?
+    if [ "$import_rc" -eq 0 ]; then
+        installed_version=$(python -c \
+            'from importlib.metadata import version; print(version("autolens"))')
+        if [ -n "$installed_version" ] && [ -n "$CHECK_B_VERSION" ] \
+                && ! verify_install_versions_equivalent \
+                    python "$installed_version" "$CHECK_B_VERSION"; then
+            versions_equivalent=0
+        fi
+    fi
     deactivate
 
     printf '%s\n' "$import_out" | sed 's/^/      /'
@@ -318,30 +366,72 @@ print(f'autolens={autolens.__version__}')
         tail_log "Check B ($pybin) import output" "$import_out"
         return
     fi
+    if [ -z "$installed_version" ]; then
+        RESULTS+=("B|FAIL|$pybin could not read installed autolens metadata version")
+        return
+    fi
 
-    # Soft banner check on non-recommended versions (3.9 / 3.10 / 3.11).
-    # The banner copy may evolve, so banner-missing is reported in the detail
-    # line but does not flip PASS to FAIL.
-    local detail="$pybin install + import OK"
-    case "$label" in
-        3.9|3.10|3.11)
-            if printf '%s' "$import_out" | grep -qiE "recommended.*python|python.*version.*recommend"; then
-                detail="$detail (banner present)"
-            else
-                detail="$detail (no banner detected)"
-            fi
-            ;;
-    esac
-    RESULTS+=("B|PASS|$detail")
+    if [ "$versions_equivalent" -ne 1 ]; then
+        RESULTS+=("B|FAIL|$pybin installed $installed_version, expected $CHECK_B_VERSION")
+        return
+    fi
+    # pip accepted the exact specifier above. Retain its canonical metadata
+    # spelling so every later interpreter reuses one byte-identical pin even
+    # when the user supplied a PEP 440-equivalent spelling such as 2026.07.
+    CHECK_B_VERSION="$installed_version"
+    RESULTS+=("B|PASS|$pybin installed + imported autolens==$installed_version")
+}
+
+check_b_rejected() {
+    local pybin="python3.11"
+
+    if ! command -v "$pybin" > /dev/null 2>&1; then
+        step "$pybin not installed — FAIL (required floor-rejection interpreter)"
+        RESULTS+=("B|FAIL|$pybin not installed")
+        return
+    fi
+    if [ -z "$CHECK_B_VERSION" ]; then
+        RESULTS+=("B|FAIL|no exact autolens version resolved for $pybin rejection")
+        return
+    fi
+
+    local venv="/tmp/autolens_verify_B_reject_3.11_$TS"
+    local install_target="autolens==$CHECK_B_VERSION"
+    ARTEFACTS+=("$venv")
+
+    step "$pybin: creating rejection venv at $venv"
+    if ! make_venv "$venv" "$pybin"; then
+        RESULTS+=("B|FAIL|$pybin could not create venv")
+        return
+    fi
+
+    # shellcheck source=/dev/null
+    source "$venv/bin/activate"
+    pip install --upgrade pip > /dev/null 2>&1 || true
+
+    step "$pybin: expecting Requires-Python rejection for $install_target"
+    local pip_out pip_rc=0
+    pip_out=$(pip install "${PIP_INDEX_ARGS[@]}" "$install_target" 2>&1) || pip_rc=$?
+    deactivate
+
+    if [ "$pip_rc" -eq 0 ]; then
+        RESULTS+=("B|FAIL|$pybin unexpectedly installed $install_target")
+        return
+    fi
+    if verify_install_requires_python_rejection "$pip_out" "$CHECK_B_VERSION"; then
+        RESULTS+=("B|PASS|$pybin rejected $install_target (Requires-Python >=3.12)")
+    else
+        RESULTS+=("B|FAIL|$pybin install failed without a Requires-Python rejection (rc=$pip_rc)")
+        tail_log "Check B ($pybin) unexpected pip output" "$pip_out"
+    fi
 }
 
 check_b() {
     echo
-    echo "=== Check B: install + import on python3.9 / 3.10 / 3.11 / 3.13 ==="
-    check_b_one python3.9
-    check_b_one python3.10
-    check_b_one python3.11
-    check_b_one python3.13
+    echo "=== Check B: exact release on 3.12/3.13; rejected on 3.11 ==="
+    check_b_supported python3.12
+    check_b_supported python3.13
+    check_b_rejected
 }
 
 # ----- check C: conda flow -----
@@ -696,9 +786,16 @@ if [ -n "$REPORT_JSON" ]; then
     # proves the about-to-ship wheels install; it says nothing about the current
     # PyPI release. Readiness reports the index rather than flattening the two,
     # so the verdict never claims more than was verified.
-    if [ "$USE_TESTPYPI" -eq 1 ]; then vi_index=testpypi; else vi_index=pypi; fi
+    if [ -n "$FIND_LINKS" ]; then
+        vi_index=find-links
+    elif [ "$USE_TESTPYPI" -eq 1 ]; then
+        vi_index=testpypi
+    else
+        vi_index=pypi
+    fi
     printf '%s\n' "${RESULTS[@]}" | \
-      VI_READY="$ready_bool" VI_VERSION="$TARGET_VERSION" VI_REPORT_JSON="$REPORT_JSON" \
+      VI_READY="$ready_bool" VI_VERSION="$TARGET_VERSION" VI_CHECK_B_VERSION="$CHECK_B_VERSION" \
+      VI_REPORT_JSON="$REPORT_JSON" \
       VI_INDEX="$vi_index" \
       python3 -c '
 import datetime, json, os, sys
@@ -713,6 +810,7 @@ out = {
     "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     "ready": os.environ["VI_READY"] == "true",
     "version": os.environ.get("VI_VERSION") or None,
+    "check_b_version": os.environ.get("VI_CHECK_B_VERSION") or None,
     "index": os.environ.get("VI_INDEX") or "pypi",
     "checks": checks,
 }

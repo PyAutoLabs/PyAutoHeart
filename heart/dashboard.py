@@ -518,14 +518,26 @@ def build_board(
     # Install verification ---------------------------------------------------
     vi = snapshot.get("verify_install") or {}
     if isinstance(vi, dict) and "ready" in vi:
+        index = str(vi.get("index") or "index unknown")
         if vi.get("ready") is False:
             fails = [c.get("check") for c in (vi.get("checks") or [])
                      if str(c.get("status")).upper() == "FAIL"]
-            summary = f"FAILED ({', '.join(map(str, fails)) or '?'})  ({vi.get('ts', '?')})"
+            summary = (
+                f"FAILED ({index}; {', '.join(map(str, fails)) or '?'})  "
+                f"({vi.get('ts', '?')})"
+            )
             sections.append(Section("verify_install", "Install verify", FAIL, summary, []))
+        elif index == "find-links":
+            sections.append(Section(
+                "verify_install",
+                "Install verify",
+                WARN,
+                f"development-only (find-links; last run {vi.get('ts', '?')})",
+                [],
+            ))
         else:
             sections.append(Section("verify_install", "Install verify", OK,
-                                    f"passed (last run {vi.get('ts', '?')})", []))
+                                    f"passed ({index}; last run {vi.get('ts', '?')})", []))
 
     # Release validation -----------------------------------------------------
     vr = validation if isinstance(validation, dict) and validation else (snapshot.get("validation_report") or {})

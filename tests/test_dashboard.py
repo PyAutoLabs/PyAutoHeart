@@ -149,6 +149,36 @@ def test_fresh_board_not_stale():
     assert board.stale is False
 
 
+def test_find_links_install_pass_is_warned_as_development_only():
+    snap = make_snapshot(verify_install={
+        "ready": True,
+        "index": "find-links",
+        "ts": TS,
+        "checks": [{"check": "B", "status": "PASS"}],
+    })
+
+    board = dashboard.build_board(snap, make_verdict("stale", 90), now=FRESH_NOW)
+    section = next(s for s in board.sections if s.key == "verify_install")
+
+    assert section.state == dashboard.WARN
+    assert "development-only (find-links" in section.summary
+
+
+def test_release_install_pass_names_the_index():
+    snap = make_snapshot(verify_install={
+        "ready": True,
+        "index": "testpypi",
+        "ts": TS,
+        "checks": [{"check": "B", "status": "PASS"}],
+    })
+
+    board = dashboard.build_board(snap, make_verdict(), now=FRESH_NOW)
+    section = next(s for s in board.sections if s.key == "verify_install")
+
+    assert section.state == dashboard.OK
+    assert "passed (testpypi" in section.summary
+
+
 # --- cloud-only-honest / unobserved path ------------------------------------
 def test_cloud_marks_local_only_checks_unobserved():
     snap = make_snapshot()

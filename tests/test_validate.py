@@ -429,7 +429,7 @@ def test_run_out_override(tmp_path, monkeypatch):
 
 # --- verify_install: carried as evidence, not only as a veto ----------------
 #
-# Stage 3 has always run verify_install A-E against the wheels, but the sidecar
+# Stage 3 has always run verify_install A-F against the wheels, but the sidecar
 # was consulted only in the failure direction, so a PASS contributed nothing and
 # the readiness leg reported "install verification not run" forever. These cover
 # the carry + persist path that closes that gap.
@@ -438,6 +438,7 @@ VERIFY_INSTALL_PASS = {
     "ts": "2026-07-15T10:00:00+00:00",
     "ready": True,
     "version": "2026.7.15.1.dev66201",
+    "check_b_version": "2026.7.15.1.dev66201",
     "index": "testpypi",
     "checks": [
         {"check": "A", "status": "PASS", "detail": "pip install + start_here.py"},
@@ -459,6 +460,7 @@ def test_normalize_verify_install_keeps_index_and_coerces_ready():
     vi = validate.normalize_verify_install(VERIFY_INSTALL_PASS)
     assert vi["ready"] is True
     assert vi["index"] == "testpypi"
+    assert vi["check_b_version"] == "2026.7.15.1.dev66201"
     assert vi["version"] == "2026.7.15.1.dev66201"
     assert [c["check"] for c in vi["checks"]] == ["A", "C"]
     # Strict: only a real True is a pass (a stray truthy string is not).

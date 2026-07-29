@@ -92,8 +92,8 @@ deep_checks:
   - id: verify_install
     impl: heart/checks/verify_install.sh
     cli: "pyauto-heart verify_install"
-    measures: "pip & conda install-path checks A-E in throwaway envs across Python versions"
-    gate_role: "RED if last run ready==false; YELLOW if stale (>14d) or never run"
+    measures: "pip, conda, and Colab install-path checks A-F; exact release succeeds on Python 3.12/3.13 and rejects on 3.11"
+    gate_role: "RED if last run ready==false; STALE if find-links-only, older than 14d, or never run"
   - id: url_check
     impl: heart/checks/url_check.sh
     cli: "pyauto-heart url_check [dir]"
@@ -192,7 +192,7 @@ workflows:
       vs current library main, source-shadowed via PYTHONPATH; writes the report.json
       the test_run check + readiness consume. mode=release (Brain Release Agent
       dispatch only, M3): pip-installs the rehearsed TestPyPI wheels (no source on
-      PYTHONPATH) under the `release` env profile, runs verify_install A-E against
+      PYTHONPATH) under the `release` env profile, runs verify_install A-F against
       the same wheels, and emits the `release-stage-report` artifact
       `pyauto-heart validate --ingest` consumes. Reuses Build's executor primitives
       (script_matrix/run_python/aggregate_results) unmodified in both modes.

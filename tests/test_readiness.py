@@ -176,6 +176,24 @@ def test_install_verification_fresh_pass_is_green():
     assert not any("install" in r for r in v["reasons"])
 
 
+def test_find_links_install_evidence_cannot_satisfy_release_gate():
+    snap = make_snapshot(verify_install={
+        "ready": True,
+        "ts": "2026-06-01T00:00:00+00:00",
+        "index": "find-links",
+        "checks": [{"check": "B", "status": "PASS"}],
+    })
+
+    v = compute(snap)
+
+    assert v["verdict"] == "stale"
+    assert v["score"] == 90
+    assert any(
+        "development-only (find-links" in reason
+        for reason in v["stale_reasons"]
+    )
+
+
 def test_install_verification_reasons_name_the_index():
     """A testpypi pass must never read as proof that installing from PyPI works.
 
