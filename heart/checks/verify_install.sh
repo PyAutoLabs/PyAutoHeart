@@ -543,13 +543,14 @@ check_e() {
     echo "=== Check E: pip install autolens==2026.2.26.4 (yanked) ==="
 
     local venv="/tmp/autolens_verify_E_$TS"
-    ARTEFACTS+=("$venv")
 
     if ! command -v python3.12 > /dev/null 2>&1; then
         step "python3.12 not installed — FAIL (required Check E interpreter)"
         RESULTS+=("E|FAIL|python3.12 not installed")
         return
     fi
+
+    ARTEFACTS+=("$venv")
 
     # This pinned 2026.2.26.4 stack predates Python 3.13 dependency wheels
     # (notably SciPy 1.14.0). Check E verifies yanked-wheel reachability, not

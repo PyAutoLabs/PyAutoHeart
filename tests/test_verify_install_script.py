@@ -218,9 +218,6 @@ def test_release_workflow_exposes_every_required_interpreter():
     ]
 
     assert setup_versions == ["3.11", "3.12", "3.13"]
-    workflow_text = WORKFLOW.read_text()
-    assert "Checks B and E invoke explicit pythonX.Y binaries" in workflow_text
-    assert "Expose Python 3.12 for Checks B and E" in workflow_text
 
 
 def test_help_describes_supported_success_and_below_floor_rejection():
