@@ -545,9 +545,12 @@ check_e() {
     local venv="/tmp/autolens_verify_E_$TS"
     ARTEFACTS+=("$venv")
 
-    step "creating venv with python3 at $venv"
-    if ! make_venv "$venv" python3; then
-        RESULTS+=("E|FAIL|could not create venv with python3")
+    # This pinned 2026.2.26.4 stack predates Python 3.13 dependency wheels
+    # (notably SciPy 1.14.0). Check E verifies yanked-wheel reachability, not
+    # forward interpreter support, so keep its historical environment on 3.12.
+    step "creating venv with python3.12 at $venv"
+    if ! make_venv "$venv" python3.12; then
+        RESULTS+=("E|FAIL|could not create venv with python3.12")
         return
     fi
 

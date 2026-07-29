@@ -129,6 +129,14 @@ def test_check_b_reuses_one_exact_version_and_classifies_rejection():
     assert "failed without a Requires-Python rejection" in text
 
 
+def test_check_e_uses_python_312_for_the_historical_stack():
+    text = SCRIPT.read_text()
+    body = text[text.index("check_e()") : text.index("# ----- check F:")]
+
+    assert 'if ! make_venv "$venv" python3.12; then' in body
+    assert 'if ! make_venv "$venv" python3; then' not in body
+
+
 def test_version_comparison_runs_before_supported_venv_deactivation():
     text = SCRIPT.read_text()
     body = text[
