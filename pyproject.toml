@@ -6,9 +6,13 @@ build-backend = "setuptools.build_meta"
 name = "pyautoheart"
 version = "0.1.0"
 description = "Continuous-monitoring daemon for the PyAuto ecosystem"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 authors = [{name = "James Nightingale"}]
 license = {text = "MIT"}
+classifiers = [
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
 dependencies = [
     "PyYAML>=6.0",
 ]
