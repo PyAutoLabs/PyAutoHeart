@@ -486,13 +486,13 @@ jobs:
     steps:
       - name: Checkout PyAutoHeart
         uses: actions/checkout@v4
-      # Check B invokes each explicit pythonX.Y binary in one job. setup-python
+      # Checks B and E invoke explicit pythonX.Y binaries in one job. setup-python
       # prepends each toolcache interpreter without removing the earlier paths.
       - name: Expose Python 3.11 for the below-floor rejection
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Expose supported Python 3.12
+      - name: Expose Python 3.12 for Checks B and E
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'

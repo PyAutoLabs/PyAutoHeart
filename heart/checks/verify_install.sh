@@ -14,7 +14,7 @@
 #   B  one exact autolens release installs on 3.12/3.13 and rejects on 3.11
 #   C  conda install flow (python=3.12) + start_here.py + welcome.py
 #   D  pip install "autolens[optional]" resolves
-#   E  pip install autolens==2026.2.26.4 still installs by explicit pin
+#   E  pip install autolens==2026.2.26.4 on Python 3.12 by explicit pin
 #   F  Colab simulation: fake google.colab + the injected setup cell + run a cell
 #
 # Each check creates its own throwaway venv / conda env and reports
@@ -62,7 +62,7 @@ Checks:
       while python3.11 rejects it because Requires-Python is >=3.12
   C   conda install flow (python=3.12) + start_here.py + welcome.py
   D   pip install "autolens[optional]" resolves and imports
-  E   pip install autolens==2026.2.26.4 (yanked) installs by explicit pin
+  E   pip install autolens==2026.2.26.4 (yanked) installs on python3.12 by explicit pin
   F   Colab simulation: fake google.colab, run the injected setup cell
       (pip bootstrap + setup_colab + workspace clone), then a notebook cell
 
@@ -545,6 +545,12 @@ check_e() {
     local venv="/tmp/autolens_verify_E_$TS"
     ARTEFACTS+=("$venv")
 
+    if ! command -v python3.12 > /dev/null 2>&1; then
+        step "python3.12 not installed — FAIL (required Check E interpreter)"
+        RESULTS+=("E|FAIL|python3.12 not installed")
+        return
+    fi
+
     # This pinned 2026.2.26.4 stack predates Python 3.13 dependency wheels
     # (notably SciPy 1.14.0). Check E verifies yanked-wheel reachability, not
     # forward interpreter support, so keep its historical environment on 3.12.
@@ -592,7 +598,7 @@ check_e() {
     local actual_count
     actual_count=$(printf '%s' "$installed_pkgs" | grep -oE "==2026.2.26.4" | wc -l)
     if [ "$pip_rc" -eq 0 ] && [ "$actual_count" -eq "$expected_count" ]; then
-        RESULTS+=("E|PASS|all 5 libs installed at 2026.2.26.4 via explicit pin")
+        RESULTS+=("E|PASS|all 5 libs installed at 2026.2.26.4 via explicit pin (python3.12)")
     else
         RESULTS+=("E|FAIL|pip rc=$pip_rc, $actual_count/$expected_count libs at 2026.2.26.4")
         tail_log "Check E output" "$(cat /tmp/E_pip.log 2>/dev/null)"

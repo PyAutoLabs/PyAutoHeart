@@ -10,14 +10,10 @@ from pathlib import Path
 
 import yaml
 
-SCRIPT = Path(__file__).resolve().parent.parent / "heart" / "checks" / "verify_install.sh"
+ROOT = Path(__file__).resolve().parent.parent
+SCRIPT = ROOT / "heart" / "checks" / "verify_install.sh"
 HELPERS = SCRIPT.with_name("verify_install_helpers.sh")
-WORKFLOW = (
-    Path(__file__).resolve().parent.parent
-    / ".github"
-    / "workflows"
-    / "workspace-validation.yml"
-)
+WORKFLOW = ROOT / ".github" / "workflows" / "workspace-validation.yml"
 
 
 def run(*args):
@@ -133,8 +129,16 @@ def test_check_e_uses_python_312_for_the_historical_stack():
     text = SCRIPT.read_text()
     body = text[text.index("check_e()") : text.index("# ----- check F:")]
 
+    assert 'command -v python3.12 > /dev/null 2>&1' in body
+    assert 'RESULTS+=("E|FAIL|python3.12 not installed")' in body
     assert 'if ! make_venv "$venv" python3.12; then' in body
     assert 'if ! make_venv "$venv" python3; then' not in body
+    assert '(python3.12)' in body
+    assert "installs on python3.12 by explicit pin" in text
+    assert "Check E requires python3.12" in (ROOT / "bin/pyauto-heart").read_text()
+    assert "still installs on `python3.12` by explicit pin" in (
+        ROOT / "skills/verify_install/verify_install.md"
+    ).read_text()
 
 
 def test_version_comparison_runs_before_supported_venv_deactivation():
@@ -200,7 +204,7 @@ def test_pep440_equivalent_versions_compare_equal():
     assert result.returncode == 0, result.stderr
 
 
-def test_release_workflow_exposes_every_required_check_b_interpreter():
+def test_release_workflow_exposes_every_required_interpreter():
     jobs = yaml.safe_load(WORKFLOW.read_text())["jobs"]
     steps = jobs["verify_install_release"]["steps"]
     run_index = next(
@@ -214,6 +218,9 @@ def test_release_workflow_exposes_every_required_check_b_interpreter():
     ]
 
     assert setup_versions == ["3.11", "3.12", "3.13"]
+    workflow_text = WORKFLOW.read_text()
+    assert "Checks B and E invoke explicit pythonX.Y binaries" in workflow_text
+    assert "Expose Python 3.12 for Checks B and E" in workflow_text
 
 
 def test_help_describes_supported_success_and_below_floor_rejection():
