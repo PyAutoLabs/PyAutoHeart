@@ -122,6 +122,7 @@ _WEIGHTS: dict[str, tuple[int, int]] = {
     "skew_bad": (25, 50),
     "skew_unknown": (10, 30),
     "install_not_ready": (40, 40),
+    "install_non_release": (10, 10),
     "install_stale": (10, 10),
     "install_unknown": (10, 10),
     "test_stale": (10, 10),
@@ -388,6 +389,10 @@ def compute(
     # (human decision, 2026-07-15). The index is named in every reason line so
     # the verdict states which install path it actually verified — a TestPyPI
     # pass must never silently read as proof that installing from PyPI works.
+    # Development-only `find-links` evidence is useful before publication but
+    # cannot satisfy a release gate: a pass stays STALE until PyPI/TestPyPI is
+    # exercised. A failure remains RED because an exact local artifact failing
+    # its install contract is still actionable evidence.
     vi = snapshot.get("verify_install")
     if isinstance(vi, dict) and "ready" in vi:
         index = str(vi.get("index") or "index unknown")
@@ -401,6 +406,12 @@ def compute(
                 f"install verification FAILED ({index}; checks {', '.join(failed) or '?'})"
             )
             hit("install_not_ready")
+        elif index == "find-links":
+            stale.append(
+                "install verification development-only (find-links; "
+                "PyPI/TestPyPI evidence required)"
+            )
+            hit("install_non_release")
         else:
             age = _age_days(vi.get("ts"), ref)
             if age is None or age > INSTALL_STALE_DAYS:

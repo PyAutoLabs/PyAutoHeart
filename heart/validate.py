@@ -447,7 +447,9 @@ def normalize_verify_install(sidecar: Any) -> dict[str, Any] | None:
     ``index`` records which package index the wheels came from. A ``--testpypi``
     run proves the about-to-ship wheels install; it is not evidence about the
     current PyPI release. Sidecars written before this field existed carry no
-    index, which stays ``None`` (unknown) rather than being guessed at.
+    index, which stays ``None`` (unknown) rather than being guessed at. A
+    ``find-links`` run is development-only evidence; preserving that provenance
+    lets readiness keep a pass STALE instead of laundering it into release proof.
     """
     if not isinstance(sidecar, dict) or "ready" not in sidecar:
         return None
@@ -466,6 +468,7 @@ def normalize_verify_install(sidecar: Any) -> dict[str, Any] | None:
         "ts": sidecar.get("ts"),
         "ready": sidecar.get("ready") is True,
         "version": sidecar.get("version"),
+        "check_b_version": sidecar.get("check_b_version"),
         "index": str(index) if index else None,
         "checks": checks,
     }
@@ -495,7 +498,7 @@ def to_stage_report(
     it can be ingested by ``run``/``ingest`` unmodified. Pure — no I/O.
 
     ``force_fail`` lets the caller fold a result Build's aggregate step knows
-    nothing about (e.g. ``verify_install`` A-E against the same wheels) into the
+    nothing about (e.g. ``verify_install`` A-F against the same wheels) into the
     stage's pass/fail axis without inventing a second stage.
 
     ``verify_install`` carries that same sidecar through as *evidence* rather

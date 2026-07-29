@@ -332,10 +332,11 @@ cmd_fix() {
 }
 
 help_verify_install() { cat <<EOF
-pyauto-heart verify_install [CHECKS...] [--version V] [--testpypi] [--keep]
+pyauto-heart verify_install [CHECKS...] [--version V] [--testpypi]
+                            [--find-links DIR] [--keep]
 
 Deep release-readiness check for PyAutoLens: runs independent pip & conda
-install-path checks (A–E) in throwaway venvs/conda envs and reports a
+install-path checks (A–F) in throwaway venvs/conda envs and reports a
 PASS/FAIL/SKIP table.
 
 This is SLOW (it installs from PyPI across several Python versions) — it is an
@@ -346,10 +347,15 @@ YELLOW.
 
 Checks:
   A  pip install autolens (default python3) + start_here.py + welcome.py
-  B  pip install autolens + import on python3.9 / 3.10 / 3.11 / 3.13
+  B  one exact release installs/imports on 3.12/3.13 and rejects on 3.11
   C  conda install flow (python=3.12) + start_here.py + welcome.py
   D  pip install "autolens[optional]" resolves and imports
   E  pip install autolens==<pinned> installs by explicit pin
+  F  Colab bootstrap simulation + one real notebook cell
+
+Check B requires python3.11, python3.12, and python3.13 on PATH. A passing
+--find-links run is development-only evidence and leaves readiness STALE;
+PyPI/TestPyPI evidence is required for the release gate.
 
 Arguments are forwarded to the underlying check; see \`-h\` on the script.
 EOF

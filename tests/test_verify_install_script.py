@@ -8,7 +8,16 @@ never from the unit suite.
 import subprocess
 from pathlib import Path
 
+import yaml
+
 SCRIPT = Path(__file__).resolve().parent.parent / "heart" / "checks" / "verify_install.sh"
+HELPERS = SCRIPT.with_name("verify_install_helpers.sh")
+WORKFLOW = (
+    Path(__file__).resolve().parent.parent
+    / ".github"
+    / "workflows"
+    / "workspace-validation.yml"
+)
 
 
 def run(*args):
@@ -17,11 +26,29 @@ def run(*args):
     )
 
 
-def test_bash_syntax():
-    result = subprocess.run(
-        ["bash", "-n", str(SCRIPT)], capture_output=True, text=True
+def classify_rejection(output, version="2026.7.29.1"):
+    return subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; pip_output=$(cat); '
+            'verify_install_requires_python_rejection "$pip_output" "$2"',
+            "classifier",
+            str(HELPERS),
+            version,
+        ],
+        input=output,
+        capture_output=True,
+        text=True,
     )
-    assert result.returncode == 0, result.stderr
+
+
+def test_bash_syntax():
+    for path in (SCRIPT, HELPERS):
+        result = subprocess.run(
+            ["bash", "-n", str(path)], capture_output=True, text=True
+        )
+        assert result.returncode == 0, result.stderr
 
 
 def test_help_lists_all_checks_including_colab_simulation():
@@ -55,12 +82,136 @@ def test_sidecar_records_the_package_index():
     # installing from PyPI works. Static check: running the writer for real means
     # a venv + a PyPI install, which this file deliberately never does.
     text = SCRIPT.read_text()
-    assert 'vi_index=testpypi; else vi_index=pypi' in text
+    assert "vi_index=find-links" in text
+    assert "vi_index=testpypi" in text
+    assert "vi_index=pypi" in text
     assert 'VI_INDEX="$vi_index"' in text
+    assert 'VI_CHECK_B_VERSION="$CHECK_B_VERSION"' in text
     assert '"index": os.environ.get("VI_INDEX") or "pypi",' in text
+    assert '"check_b_version": os.environ.get("VI_CHECK_B_VERSION") or None,' in text
 
 
 def test_help_documents_the_sidecar_index():
     result = run("--help")
     assert result.returncode == 0
     assert "index" in result.stdout
+
+
+def test_find_links_is_documented_and_missing_directory_is_rejected():
+    help_result = run("--help")
+    missing_result = run("B", "--find-links", "/definitely/missing/wheels")
+
+    assert "--find-links DIR" in help_result.stdout
+    assert "Evidence is labelled" in help_result.stdout
+    assert missing_result.returncode == 2
+    assert "is not a directory" in missing_result.stderr
+
+
+def test_check_b_uses_the_new_floor_contract():
+    text = SCRIPT.read_text()
+
+    assert "check_b_supported python3.12" in text
+    assert "check_b_supported python3.13" in text
+    assert "check_b_rejected" in text
+    assert "python3.9" not in text
+    assert "python3.10" not in text
+    assert "banner present" not in text
+    assert "no banner detected" not in text
+
+
+def test_check_b_reuses_one_exact_version_and_classifies_rejection():
+    text = SCRIPT.read_text()
+
+    assert 'CHECK_B_VERSION="$TARGET_VERSION"' in text
+    assert 'install_target="autolens==$CHECK_B_VERSION"' in text
+    assert "verify_install_requires_python_rejection" in text
+    assert "verify_install_versions_equivalent" in text
+    assert "failed without a Requires-Python rejection" in text
+
+
+def test_version_comparison_runs_before_supported_venv_deactivation():
+    text = SCRIPT.read_text()
+    body = text[
+        text.index("check_b_supported()") : text.index("check_b_rejected()")
+    ]
+    comparison = body.index("&& ! verify_install_versions_equivalent")
+    deactivate_after_comparison = body.index("\n    deactivate\n", comparison)
+
+    assert comparison < deactivate_after_comparison
+
+
+def test_rejection_classifier_accepts_candidate_and_index_pip_forms():
+    candidate_output = (
+        "ERROR: Package 'autolens' requires a different Python: "
+        "3.11.9 not in '>=3.12'\n"
+    )
+    index_output = (
+        "ERROR: Ignored the following versions that require a different "
+        "python version: 2026.7.29.1 Requires-Python >=3.12\n"
+        "ERROR: Could not find a version that satisfies the requirement "
+        "autolens==2026.7.29.1 (from versions: none)\n"
+    )
+
+    assert classify_rejection(candidate_output).returncode == 0
+    assert classify_rejection(index_output).returncode == 0
+
+
+def test_rejection_classifier_rejects_unrelated_pip_failures():
+    network_failure = (
+        "WARNING: Retrying after connection broken by NewConnectionError\n"
+        "ERROR: No matching distribution found for autolens==2026.7.29.1\n"
+    )
+    dependency_conflict = (
+        "ERROR: Cannot install autolens==2026.7.29.1 because these package "
+        "versions have conflicting dependencies.\n"
+    )
+    wrong_floor = (
+        "ERROR: Package 'autolens' requires a different Python: "
+        "3.11.9 not in '>=3.13'\n"
+    )
+
+    for output in (network_failure, dependency_conflict, wrong_floor):
+        assert classify_rejection(output).returncode != 0
+
+
+def test_pep440_equivalent_versions_compare_equal():
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; verify_install_versions_equivalent python3 "$2" "$3"',
+            "versions",
+            str(HELPERS),
+            "2026.07.028.1",
+            "2026.7.28.1",
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_release_workflow_exposes_every_required_check_b_interpreter():
+    jobs = yaml.safe_load(WORKFLOW.read_text())["jobs"]
+    steps = jobs["verify_install_release"]["steps"]
+    run_index = next(
+        index for index, step in enumerate(steps)
+        if step.get("name") == "Run verify_install A-F against the TestPyPI wheels"
+    )
+    setup_versions = [
+        str(step.get("with", {}).get("python-version"))
+        for index, step in enumerate(steps)
+        if index < run_index and step.get("uses") == "actions/setup-python@v5"
+    ]
+
+    assert setup_versions == ["3.11", "3.12", "3.13"]
+
+
+def test_help_describes_supported_success_and_below_floor_rejection():
+    result = run("--help")
+
+    assert result.returncode == 0
+    assert "installs on python3.12 and python3.13" in result.stdout
+    assert "python3.11 rejects it because Requires-Python is >=3.12" in result.stdout
+    assert "applies to A, B, C, D" in result.stdout

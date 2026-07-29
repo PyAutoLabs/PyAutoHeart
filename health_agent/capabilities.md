@@ -48,9 +48,10 @@ Audited at commit `a2543d0` (Rename PyAutoPulse to PyAutoHeart).
 
 **Deep** (slow, on-demand / cloud cron, never in the tick):
 
-- **verify_install** (`checks/verify_install.sh`) — pip & conda install-path
-  checks A–E in throwaway envs across Python versions. RED if last run
-  `ready==false`; YELLOW if stale (`>14d`) or never run. Moved here from
+- **verify_install** (`checks/verify_install.sh`) — pip, conda, and Colab
+  install-path checks A–F. Check B proves one exact release succeeds on Python
+  3.12/3.13 and rejects on 3.11. RED if the last run has `ready==false`; STALE
+  if it is find-links-only, older than 14 days, or never run. Moved here from
   PyAutoHands — install verification is Heart's job.
 - **url_check / url_sweep / url_check_live** — offline regex guard, ecosystem
   sweep, and live HTTP reachability audit. **Monitoring only — never gates
