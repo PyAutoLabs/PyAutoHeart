@@ -17,12 +17,13 @@ about cleanup if they ran with `--keep`.
 | B | One exact `autolens` version installs and imports cleanly on `python3.12` and `python3.13`, then the same exact version is rejected by `python3.11` specifically because `Requires-Python` is `>=3.12`. An unpinned 3.11 install is not evidence because pip may select an older compatible release. |
 | C | The conda flow from `installation/conda.rst` works end-to-end (`conda create … python=3.12` → `pip install autolens` → clone workspace → run `welcome.py` + `start_here.py`). |
 | D | `pip install "autolens[optional]"` resolves cleanly and imports. |
-| E | `pip install autolens==2026.2.26.4` (a yanked release the docs reference) still installs by explicit pin. |
+| E | `pip install autolens==2026.2.26.4` (a yanked release the docs reference) still installs on `python3.12` by explicit pin. |
 | F | The Colab bootstrap path end-to-end: a venv emulating Colab's preinstalled env (`autolens` + `jax` from PyPI), a fake `google.colab` package so the on-Colab branch activates, then the injected setup cell verbatim (`pip install autoconf --no-deps` → `setup_colab.setup("autolens")` → workspace clone at the release tag) and one real notebook cell (`al.Imaging.from_fits` on `dataset/imaging/simple`). SKIPs while the installed autoconf predates the `setup_colab` registry (self-activates at the next release). |
 
-The three Check B interpreters are required evidence: a missing `python3.11`,
-`python3.12`, or `python3.13` is **FAIL**. Optional host capabilities such as
-conda remain **SKIP** when unavailable and do not count toward overall failure.
+Check B requires `python3.11`, `python3.12`, and `python3.13`; Check E requires
+`python3.12`. A missing required interpreter is **FAIL**. Optional host
+capabilities such as conda remain **SKIP** when unavailable and do not count
+toward overall failure.
 
 ## Running without a skill harness
 

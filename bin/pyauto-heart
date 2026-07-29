@@ -350,11 +350,13 @@ Checks:
   B  one exact release installs/imports on 3.12/3.13 and rejects on 3.11
   C  conda install flow (python=3.12) + start_here.py + welcome.py
   D  pip install "autolens[optional]" resolves and imports
-  E  pip install autolens==<pinned> installs by explicit pin
+  E  pip install autolens==<pinned> installs on Python 3.12 by explicit pin
   F  Colab bootstrap simulation + one real notebook cell
 
-Check B requires python3.11, python3.12, and python3.13 on PATH. A passing
---find-links run is development-only evidence and leaves readiness STALE;
+Checks B and E require explicit interpreters on PATH. Check B requires
+python3.11, python3.12, and python3.13; Check E requires python3.12. Missing
+required interpreters are FAIL. A passing --find-links run is development-only
+evidence and leaves readiness STALE;
 PyPI/TestPyPI evidence is required for the release gate.
 
 Arguments are forwarded to the underlying check; see \`-h\` on the script.
