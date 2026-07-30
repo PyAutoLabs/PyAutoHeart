@@ -16,6 +16,13 @@ Older runs predate ``report.json``; for those we fall back to summing the
 per-job ``*__script.json`` ``summary`` blocks, set ``ready`` to ``None`` (the
 verdict treats that as "unknown", a yellow — never a silent green), and mark
 the parked-script counts unknown.
+
+When the verdict comes from a cloud run and no local report exists, the run's
+own ``workspace-validation-report`` artifact supplies the real counts and
+failing-script names (fetched once per run id by the tick entrypoint). A
+summary must never carry counts nobody measured: ``counts_measured`` says
+whether the passed/failed/skipped/timeout keys are real, and every consumer
+(readiness, dashboard, this module's own CLI line) checks it before printing.
 """
 
 from __future__ import annotations
@@ -25,8 +32,9 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 # Reuse the same root/latest resolution as script_timing.py.
 HEART_HOME = Path(__file__).resolve().parents[2]
@@ -45,6 +53,10 @@ HEART_STATE_DIR = Path(
 # comes from a local `autohands run_all` when one is present.
 VALIDATION_REPO = os.environ.get("GITHUB_REPOSITORY", "PyAutoLabs/PyAutoHeart")
 VALIDATION_WORKFLOW = "workspace-validation.yml"
+# The aggregated per-run report the workflow's `analyze` job uploads; it holds
+# the real counts and per-script failures for a cloud run — the only place they
+# exist when there is no local run_logs/.
+REPORT_ARTIFACT = "workspace-validation-report"
 
 # Agent/MCP-supplied conclusion drop point. On a mobile/cloud session there is no
 # `gh` (and no local report.json); Brain queries the run conclusion via its MCP
@@ -143,6 +155,24 @@ def _from_report(report: dict[str, Any]) -> dict[str, Any]:
                         "age_days": entry.get("age_days"),
                     }
                 )
+    # Compact failing-script names (the report's `failures` entries also carry
+    # full tracebacks — those stay in the report, never in the sidecar).
+    failing = []
+    for entry in report.get("failures", []) or []:
+        if not isinstance(entry, dict):
+            continue
+        path = str(entry.get("file") or "")
+        directory = str(entry.get("directory") or "").strip("/")
+        name = path.rsplit("/", 1)[-1]
+        failing.append(
+            {
+                "project": entry.get("project"),
+                "script": f"{directory}/{name}" if directory else path.lstrip("/"),
+                "status": entry.get("status"),
+            }
+        )
+        if len(failing) >= 10:
+            break
     return {
         "ready": report.get("ready"),
         "passed": summary.get("passed", 0),
@@ -153,6 +183,8 @@ def _from_report(report: dict[str, Any]) -> dict[str, Any]:
         "run_label": report.get("run_label", ""),
         "parked_stale_count": len(parked),
         "parked_stale": parked,
+        "failing_scripts": failing,
+        "counts_measured": True,
         # The surface this report measured (projects/shards/run_types/env
         # profile). Carried through so the leg's history is comparable at all:
         # a count is only a trend against the same denominator (#83 §5.3).
@@ -189,11 +221,57 @@ def _from_per_job(results_dir: Path) -> dict[str, Any]:
         "run_label": results_dir.resolve().name,
         "parked_stale_count": 0,
         "parked_stale": [],
+        "failing_scripts": [],
+        "counts_measured": True,
         "source": "per-job",
     }
 
 
-def run(results_dir: Path | None = None, fetch_cloud: bool | None = None) -> dict[str, Any]:
+def _cloud_report(run_id: Any) -> dict[str, Any] | None:
+    """Download run_id's aggregated report artifact and parse its report.json.
+
+    Never raises; None if gh is unavailable, the artifact expired, or the JSON
+    is malformed. The artifact is a few kB — cheap, but still network: callers
+    cache per run_id (see main()) so the <30s tick pays at most one download
+    per new validation run."""
+    if not run_id:
+        return None
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            res = subprocess.run(
+                ["gh", "run", "download", str(run_id), "--repo", VALIDATION_REPO,
+                 "-n", REPORT_ARTIFACT, "-D", td],
+                capture_output=True, text=True, timeout=60,
+            )
+            if res.returncode != 0:
+                return None
+            report = _read_json(Path(td) / "report.json")
+    except Exception:
+        return None
+    return report if isinstance(report, dict) else None
+
+
+def counts_measured(summary: dict[str, Any]) -> bool:
+    """True if the summary's counts came from an actual report.
+
+    Legacy sidecars predate the explicit flag: the cloud-only shape (source
+    "cloud" with a synthesised ``cloud#<id>`` run_label and no local report)
+    is exactly the shape whose zeros were fabricated — everything else parsed
+    a real report. Consumers (readiness, dashboard) must never print counts
+    for which this is False."""
+    if "counts_measured" in summary:
+        return bool(summary["counts_measured"])
+    return not (
+        summary.get("source") == "cloud"
+        and str(summary.get("run_label", "")).startswith("cloud#")
+    )
+
+
+def run(
+    results_dir: Path | None = None,
+    fetch_cloud: bool | None = None,
+    cloud_report_fetcher: Callable[[Any], dict[str, Any] | None] | None = None,
+) -> dict[str, Any]:
     # fetch_cloud is decided by the CALLER, never inferred: the old
     # `results_dir is None` inference meant main() — the tick and the mobile
     # path — always disabled the cloud fetch, leaving the leg on stale local
@@ -226,11 +304,32 @@ def run(results_dir: Path | None = None, fetch_cloud: bool | None = None) -> dic
     cloud = _server_verdict() if fetch_cloud else None
     if cloud is not None:
         local_ready = summary.get("ready") if summary else None
+        had_local = bool(summary)
         if not summary:
+            # No local report: these zeros are placeholders, not measurements —
+            # counts_measured stays False unless the run's own artifact report
+            # supplies real counts below.
             summary = {
                 "passed": 0, "failed": 0, "skipped": 0, "timeout": 0,
                 "per_project": {}, "parked_stale_count": 0, "parked_stale": [],
+                "failing_scripts": [], "counts_measured": False,
             }
+        # Enrich from the run's own aggregated report artifact (counts + the
+        # failing script names). The fetcher is injected by the tick/CLI
+        # entrypoint only — run() itself stays no-network by default.
+        if cloud_report_fetcher is not None and cloud["ready"] is not None:
+            cs = cloud_report_fetcher(cloud["run_id"])
+            if isinstance(cs, dict):
+                counts = {
+                    k: int(cs.get(k, 0) or 0)
+                    for k in ("passed", "failed", "skipped", "timeout")
+                }
+                summary["cloud_counts"] = counts
+                summary["failing_scripts"] = list(cs.get("failing_scripts") or [])[:10]
+                summary["cloud_report_run_id"] = cloud["run_id"]
+                if not had_local:
+                    summary.update(counts)
+                    summary["counts_measured"] = True
         summary["cloud_ready"] = cloud["ready"]
         if local_ready is None:
             summary["ready"] = cloud["ready"]
@@ -252,9 +351,28 @@ def run(results_dir: Path | None = None, fetch_cloud: bool | None = None) -> dic
 
 def main(argv: list[str]) -> int:
     results_dir = Path(argv[1]) if len(argv) > 1 else TEST_RESULTS_LATEST
+
+    # Per-run-id cache over the previously persisted sidecar: the tick fires
+    # every <30s but a new validation run appears ~twice a day, so the artifact
+    # is downloaded once per run and replayed from state thereafter.
+    prev = _read_json(HEART_STATE_DIR / "test_run.json")
+
+    def _cached_cloud_counts(run_id: Any) -> dict[str, Any] | None:
+        if (
+            isinstance(prev, dict)
+            and prev.get("cloud_report_run_id") == run_id
+            and isinstance(prev.get("cloud_counts"), dict)
+        ):
+            return {
+                **prev["cloud_counts"],
+                "failing_scripts": prev.get("failing_scripts") or [],
+            }
+        report = _cloud_report(run_id)
+        return _from_report(report) if isinstance(report, dict) else None
+
     # The tick/CLI is the real path: always consult the server verdict here,
     # explicitly — this is the entrypoint the old inference silently disabled.
-    summary = run(results_dir, fetch_cloud=True)
+    summary = run(results_dir, fetch_cloud=True, cloud_report_fetcher=_cached_cloud_counts)
 
     sys.path.insert(0, str(HEART_HOME))
     from heart import state
@@ -271,19 +389,27 @@ def main(argv: list[str]) -> int:
 
     ready = summary.get("ready")
     failed = summary.get("failed", 0)
-    if ready is False or failed:
+    measured = counts_measured(summary)
+    if ready is False or (failed and measured):
         glyph = glyph_fail()
-        label = c_fail(f"NOT ready ({failed} failed)")
+        label = c_fail(
+            f"NOT ready ({failed} failed)"
+            if measured
+            else "NOT ready (counts not ingested — see run)"
+        )
     elif ready is True:
         glyph = glyph_ok()
         label = c_ok("ready")
     else:
         glyph = glyph_warn()
         label = c_warn("ready unknown")
-    extra = c_meta(
-        f" {summary.get('passed', 0)}p/{failed}f/{summary.get('skipped', 0)}s"
-        f" @ {summary.get('run_label', '?')}"
-    )
+    if measured:
+        extra = c_meta(
+            f" {summary.get('passed', 0)}p/{failed}f/{summary.get('skipped', 0)}s"
+            f" @ {summary.get('run_label', '?')}"
+        )
+    else:
+        extra = c_meta(f" @ {summary.get('run_label', '?')}")
     print(f"{glyph} {c_info('test_run')} {label}{extra}")
     return 0
 

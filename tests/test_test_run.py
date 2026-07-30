@@ -189,6 +189,7 @@ def test_main_consults_the_server_verdict(monkeypatch, tmp_path):
     from pathlib import Path
     monkeypatch.setattr(tr, "_server_verdict", lambda: {
         "ready": False, "ts": "2026-07-16T00:00:00Z", "run_id": 3, "url": "U"})
+    monkeypatch.setattr(tr, "_cloud_report", lambda rid: None)  # hermetic
     (tmp_path / "report.json").write_text(json.dumps({
         "ready": True, "run_label": "local", "summary": {"passed": 5}}))
     assert tr.main(["test_run", str(tmp_path)]) == 0
@@ -253,3 +254,136 @@ def test_surface_absent_from_old_report_is_none_not_a_crash(tmp_path):
         "ready": True, "run_label": "old", "summary": {"passed": 1}}))
     out = tr.run(results_dir=tmp_path)
     assert out["surface"] is None
+
+
+# --- honest counts + artifact ingest (PyAutoHeart#119) --------------------------
+# A summary may only carry counts somebody measured; when the verdict is a bare
+# cloud conclusion, the run's own report artifact supplies the real counts and
+# failing-script names (fetched by the tick entrypoint, cached per run id).
+
+
+def test_cloud_red_no_local_report_counts_from_artifact(monkeypatch, tmp_path):
+    monkeypatch.setattr(tr, "_server_verdict", lambda: {
+        "ready": False, "ts": "t", "run_id": 7, "url": "U"})
+    fetched = []
+
+    def fetcher(run_id):
+        fetched.append(run_id)
+        return {"passed": 585, "failed": 2, "skipped": 91, "timeout": 1,
+                "failing_scripts": [{"project": "autogalaxy",
+                                     "script": "scripts/interferometer/start_here.py",
+                                     "status": "failed"}]}
+
+    out = tr.run(results_dir=tmp_path, fetch_cloud=True, cloud_report_fetcher=fetcher)
+    assert fetched == [7]
+    assert out["ready"] is False
+    assert out["passed"] == 585 and out["failed"] == 2 and out["timeout"] == 1
+    assert out["counts_measured"] is True
+    assert out["cloud_counts"]["failed"] == 2
+    assert out["cloud_report_run_id"] == 7
+    assert out["failing_scripts"][0]["script"].endswith("start_here.py")
+
+
+def test_cloud_red_fetcher_fails_counts_not_measured(monkeypatch, tmp_path):
+    monkeypatch.setattr(tr, "_server_verdict", lambda: {
+        "ready": False, "ts": "t", "run_id": 7, "url": "U"})
+    out = tr.run(results_dir=tmp_path, fetch_cloud=True,
+                 cloud_report_fetcher=lambda rid: None)
+    assert out["ready"] is False
+    assert out["counts_measured"] is False
+    assert "cloud_counts" not in out
+
+
+def test_local_report_counts_stay_authoritative_artifact_enriches(monkeypatch, tmp_path):
+    (tmp_path / "report.json").write_text(json.dumps({
+        "ready": False, "run_label": "local", "summary": {"passed": 5, "failed": 3}}))
+    monkeypatch.setattr(tr, "_server_verdict", lambda: {
+        "ready": False, "ts": "t", "run_id": 8, "url": "U"})
+    out = tr.run(results_dir=tmp_path, fetch_cloud=True,
+                 cloud_report_fetcher=lambda rid: {
+                     "passed": 1, "failed": 1, "skipped": 0, "timeout": 0,
+                     "failing_scripts": []})
+    assert out["failed"] == 3                 # the local surface keeps its counts
+    assert out["cloud_counts"]["failed"] == 1  # the cloud surface is carried alongside
+    assert out["counts_measured"] is True
+
+
+def test_run_without_fetcher_marks_counts_unmeasured(monkeypatch, tmp_path):
+    monkeypatch.setattr(tr, "_server_verdict", lambda: {
+        "ready": False, "ts": "t", "run_id": 9, "url": "U"})
+    out = tr.run(results_dir=tmp_path, fetch_cloud=True)
+    assert out["counts_measured"] is False
+
+
+def test_fetcher_skipped_while_cloud_run_in_progress(monkeypatch, tmp_path):
+    monkeypatch.setattr(tr, "_server_verdict", lambda: {
+        "ready": None, "ts": "t", "run_id": 10, "url": "U"})
+    calls = []
+    tr.run(results_dir=tmp_path, fetch_cloud=True,
+           cloud_report_fetcher=lambda rid: calls.append(rid))
+    assert calls == []
+
+
+def test_from_report_extracts_failing_scripts_without_tracebacks():
+    report = {"ready": False, "summary": {"failed": 1},
+              "failures": [{"file": "/abs/workspace/scripts/interferometer/start_here.py",
+                            "directory": "scripts/interferometer",
+                            "project": "autolens", "status": "failed",
+                            "traceback": "thousands of characters"}]}
+    out = tr._from_report(report)
+    assert out["failing_scripts"] == [{"project": "autolens",
+                                       "script": "scripts/interferometer/start_here.py",
+                                       "status": "failed"}]
+    assert out["counts_measured"] is True
+
+
+def test_counts_measured_legacy_shapes():
+    # legacy cloud-only sidecar (the fabricated-zero shape) → not measured
+    assert tr.counts_measured({"source": "cloud", "run_label": "cloud#1"}) is False
+    # legacy local-report sidecar → measured
+    assert tr.counts_measured({"source": "report", "run_label": "2026-05-29"}) is True
+    # cloud source but a local run_label (local report present) → measured
+    assert tr.counts_measured({"source": "cloud", "run_label": "local"}) is True
+    # the explicit flag always wins
+    assert tr.counts_measured(
+        {"source": "cloud", "run_label": "cloud#1", "counts_measured": True}) is True
+
+
+def test_main_caches_artifact_per_run_id(monkeypatch, tmp_path):
+    """A sidecar already holding this run id's counts → no re-download."""
+    import os
+    from pathlib import Path
+    state_dir = Path(os.environ["HEART_STATE_DIR"])
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "test_run.json").write_text(json.dumps({
+        "cloud_report_run_id": 21,
+        "cloud_counts": {"passed": 7, "failed": 2, "skipped": 0, "timeout": 0},
+        "failing_scripts": [{"project": "p", "script": "s.py", "status": "failed"}],
+    }))
+    monkeypatch.setattr(tr, "_server_verdict", lambda: {
+        "ready": False, "ts": "t", "run_id": 21, "url": "U"})
+    monkeypatch.setattr(tr, "_cloud_report",
+                        lambda rid: (_ for _ in ()).throw(AssertionError("downloaded")))
+    assert tr.main(["test_run", str(tmp_path)]) == 0
+    written = json.loads((state_dir / "test_run.json").read_text())
+    assert written["failed"] == 2 and written["counts_measured"] is True
+    assert written["failing_scripts"][0]["script"] == "s.py"
+
+
+def test_main_downloads_artifact_for_new_run_id(monkeypatch, tmp_path):
+    import os
+    from pathlib import Path
+    state_dir = Path(os.environ["HEART_STATE_DIR"])
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "test_run.json").unlink(missing_ok=True)
+    monkeypatch.setattr(tr, "_server_verdict", lambda: {
+        "ready": False, "ts": "t", "run_id": 22, "url": "U"})
+    monkeypatch.setattr(tr, "_cloud_report", lambda rid: {
+        "ready": False, "summary": {"passed": 3, "failed": 1},
+        "failures": [{"file": "x/scripts/a/b.py", "directory": "scripts/a",
+                      "project": "autolens", "status": "failed"}]})
+    assert tr.main(["test_run", str(tmp_path)]) == 0
+    written = json.loads((state_dir / "test_run.json").read_text())
+    assert written["failed"] == 1 and written["counts_measured"] is True
+    assert written["cloud_report_run_id"] == 22
+    assert written["failing_scripts"][0]["script"] == "scripts/a/b.py"

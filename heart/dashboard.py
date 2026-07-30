@@ -37,6 +37,7 @@ import sys
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Sequence
 
+from heart.checks.test_run import counts_measured as tr_counts_measured
 from heart.heart_color import (
     c_bold, c_dim, c_fail, c_info, c_meta, c_ok, c_warn,
     glyph_fail, glyph_info, glyph_ok, glyph_warn,
@@ -480,17 +481,27 @@ def build_board(
         tr = snapshot.get("test_run") or {}
         if tr:
             ready = tr.get("ready")
-            counts = (
-                f"{_as_int(tr.get('passed'))}p / {_as_int(tr.get('failed'))}f / "
-                f"{_as_int(tr.get('skipped'))}s @ {tr.get('run_label', '?')}"
-            )
-            if ready is False or _as_int(tr.get("failed")):
+            measured = tr_counts_measured(tr)
+            if measured:
+                counts = (
+                    f"{_as_int(tr.get('passed'))}p / {_as_int(tr.get('failed'))}f / "
+                    f"{_as_int(tr.get('skipped'))}s @ {tr.get('run_label', '?')}"
+                )
+            else:
+                # Conclusion-only verdict: never render fabricated zeros.
+                counts = f"counts not ingested @ {tr.get('run_label', '?')}"
+            if ready is False or (measured and _as_int(tr.get("failed"))):
                 st, summary = FAIL, f"NOT ready — {counts}"
             elif ready is True:
                 st, summary = OK, f"ready — {counts}"
             else:
                 st, summary = WARN, f"ready unknown — {counts}"
             details = []
+            for s in (tr.get("failing_scripts") or [])[:3]:
+                if isinstance(s, dict):
+                    details.append(
+                        f"✗ {s.get('project')} {s.get('script')} ({s.get('status')})"
+                    )
             stale_n = _as_int(tr.get("parked_stale_count"))
             if stale_n:
                 details.append(f"{stale_n} stale parked script(s)")

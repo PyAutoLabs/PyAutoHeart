@@ -164,6 +164,38 @@ def test_find_links_install_pass_is_warned_as_development_only():
     assert "development-only (find-links" in section.summary
 
 
+def test_test_run_cloud_conclusion_only_hides_fabricated_zeros():
+    # The legacy cloud-only sidecar shape: red conclusion, no count evidence.
+    snap = make_snapshot(test_run={
+        "ready": False, "passed": 0, "failed": 0, "skipped": 0,
+        "source": "cloud", "run_label": "cloud#30516167217"})
+
+    board = dashboard.build_board(snap, make_verdict("yellow", 70), now=FRESH_NOW)
+    section = next(s for s in board.sections if s.key == "test_run")
+
+    assert section.state == dashboard.FAIL
+    assert "0p" not in section.summary
+    assert "counts not ingested" in section.summary
+    assert "cloud#30516167217" in section.summary
+
+
+def test_test_run_failing_scripts_listed_in_details():
+    snap = make_snapshot(test_run={
+        "ready": False, "passed": 585, "failed": 2, "skipped": 91,
+        "counts_measured": True, "run_label": "cloud#1",
+        "failing_scripts": [
+            {"project": "autogalaxy", "script": "scripts/interferometer/start_here.py",
+             "status": "failed"},
+        ]})
+
+    board = dashboard.build_board(snap, make_verdict("yellow", 70), now=FRESH_NOW)
+    section = next(s for s in board.sections if s.key == "test_run")
+
+    assert "585p" in section.summary and "2f" in section.summary
+    assert any("autogalaxy scripts/interferometer/start_here.py" in d
+               for d in section.details)
+
+
 def test_release_install_pass_names_the_index():
     snap = make_snapshot(verify_install={
         "ready": True,

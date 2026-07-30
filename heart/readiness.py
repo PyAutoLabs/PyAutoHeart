@@ -85,6 +85,7 @@ import yaml
 
 from heart import state
 from heart.checks.ci_status import FAILURE_CONCLUSIONS, load_required_workflows
+from heart.checks.test_run import counts_measured as tr_counts_measured
 from heart.heart_color import (
     c_bold, c_fail, c_info, c_meta, c_ok, c_warn,
     glyph_fail, glyph_ok, glyph_warn,
@@ -323,11 +324,33 @@ def compute(
         if ready is False:
             # Workspace scripts/notebooks carry standing debt; failing validation
             # is advisory (YELLOW), not a release blocker. Real blockers are the
-            # library CI / install / version-skew gates above.
-            yellow.append(
-                f"workspace validation not passing "
-                f"({_as_int(test_run.get('failed', 0))} failed, {test_run.get('run_label', '?')})"
-            )
+            # library CI / install / version-skew gates above. The reason may
+            # only state counts somebody measured (a local report or the run's
+            # ingested artifact) — a conclusion-only verdict says so instead of
+            # asserting "0 failed".
+            label = test_run.get("run_label", "?")
+            if tr_counts_measured(test_run):
+                failed = _as_int(test_run.get("failed", 0))
+                timeout = _as_int(test_run.get("timeout", 0))
+                msg = f"workspace validation not passing ({failed} failed"
+                if timeout:
+                    msg += f", {timeout} timeout"
+                msg += f", {label}"
+                scripts = [
+                    s for s in (test_run.get("failing_scripts") or [])
+                    if isinstance(s, dict)
+                ]
+                if scripts:
+                    msg += ": " + ", ".join(
+                        f"{s.get('project')} {s.get('script')}" for s in scripts[:3]
+                    )
+                    if len(scripts) > 3:
+                        msg += f", +{len(scripts) - 3} more"
+                yellow.append(msg + ")")
+            else:
+                yellow.append(
+                    f"workspace validation failing ({label}; counts not ingested — see run)"
+                )
             hit("test_failing")
         elif ready is True:
             # Passing-but-expired evidence is a freshness gap, not a warning —
