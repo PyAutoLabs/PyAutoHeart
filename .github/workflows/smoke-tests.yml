@@ -39,7 +39,53 @@ on:
         default: "C03S98FEDK2"
 
 jobs:
+  # Docs-only gate: skip the matrix when the diff touches nothing but prose.
+  # FAIL CLOSED — any doubt (no base sha, unfetchable base, empty diff, a
+  # single non-allowlisted file) runs the matrix; only an explicit
+  # every-file-matches verdict skips. The allowlist is deliberately tiny:
+  # dotfiles and path-keyed sidecars count as code. The two-dot diff against
+  # the base TIP (not the merge-base) means upstream drift on the base branch
+  # shows up as extra files and conservatively runs the matrix. A skipped
+  # matrix job reports "skipped", which satisfies required-check semantics.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.diff.outputs.docs_only }}
+    steps:
+      - name: Checkout workspace (shallow)
+        uses: actions/checkout@v4
+      - name: Classify the diff
+        id: diff
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          docs_only=false
+          files=""
+          if [ -n "$BASE" ] \
+             && [ "$BASE" != "0000000000000000000000000000000000000000" ] \
+             && git fetch --quiet --depth=1 origin "$BASE" 2>/dev/null; then
+            files="$(git diff --name-only "$BASE" HEAD 2>/dev/null || true)"
+            if [ -n "$files" ]; then
+              docs_only=true
+              while IFS= read -r f; do
+                case "$f" in
+                  *.md|docs/*|LICENSE|runtime.txt) ;;
+                  *) docs_only=false; break ;;
+                esac
+              done <<< "$files"
+            fi
+          fi
+          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
+          if [ "$docs_only" = true ]; then
+            {
+              echo "### Smoke matrix skipped — docs/metadata-only change"
+              printf -- '- `%s`\n' $files
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   smoke:
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

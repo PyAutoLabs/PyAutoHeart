@@ -60,3 +60,14 @@ def test_test_run_reads_an_existing_entry_workflow():
     assert (WORKFLOWS / VALIDATION_WORKFLOW).is_file()
     # ...and specifically the smoke channel, never the body or release entry.
     assert VALIDATION_WORKFLOW == "workspace-smoke.yml"
+
+
+def test_smoke_reusable_docs_only_gate_is_wired_fail_closed():
+    """The docs-only gate must stay fail-closed: the matrix job runs unless
+    the changes job explicitly said docs_only == 'true' (PyAutoHeart#126)."""
+    data = _load("smoke-tests.yml")
+    jobs = data["jobs"]
+    assert "changes" in jobs
+    smoke = jobs["smoke"]
+    assert smoke["needs"] == "changes"
+    assert smoke["if"] == "needs.changes.outputs.docs_only != 'true'"
