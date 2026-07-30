@@ -60,6 +60,10 @@ continuous_checks:
     impl: heart/checks/open_prs.sh
     measures: "open PR count + max age per repo"
     gate_role: "YELLOW if an open PR is >= 7 days old"
+  - id: release_run
+    impl: heart/checks/release_run.py
+    measures: "latest release-integrate.yml run vs the ingested validation_report (per-run-id cached artifact refresh)"
+    gate_role: "keeps the release-validation leg fresh; verdict impact flows through validation_report"
   - id: worktree_drift
     impl: heart/checks/worktree_drift.py
     measures: "worktree dirs (wt root + claimed paths) vs PyAutoMind active.md/parked.md (orphan/parked/missing/dirty/canonical-dirty)"
