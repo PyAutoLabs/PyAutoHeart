@@ -244,8 +244,10 @@ jobs:
           # nufftax backs the interferometer TransformerNUFFT and is NOT pulled
           # transitively by autolens[optional]; without it every interferometer
           # simulator (and its downstream scripts) fails fast. Matches the pin
-          # PyAutoArray declares (jax 0.10.x + nufftax 0.4.x is the tested combo).
-          pip install "nufftax>=0.4.0,<0.5.0"
+          # PyAutoArray declares (0.6.1 floor: earlier nufftax cannot
+          # differentiate a batched nufft2d2, which the gradient searches'
+          # transform_mapping_matrix path relies on).
+          pip install "nufftax>=0.6.1,<0.7.0"
           # blackjax backs autofit_test's searches/BlackJAXNUTS and is NOT pulled
           # transitively either: the `optional` extras chain each library's own
           # [jax], never a sibling's [optional], so autolens[optional] never
@@ -292,7 +294,7 @@ jobs:
           # Belt-and-braces JAX install — the [optional] -> [jax] chain
           # occasionally silently drops jax from test.pypi resolution.
           pip install "jax>=0.7,<0.11" "jaxlib>=0.7,<0.11"
-          pip install "nufftax>=0.4.0,<0.5.0"
+          pip install "nufftax>=0.6.1,<0.7.0"
       - name: "Run Python scripts [mode=smoke, source-shadowed, smoke profile]"
         if: needs.find_scripts.outputs.mode == 'smoke'
         run: |
@@ -410,7 +412,7 @@ jobs:
         run: |
           pip install "autolens[optional]"
           pip install "jax>=0.7,<0.11" "jaxlib>=0.7,<0.11"
-          pip install "nufftax>=0.4.0,<0.5.0"
+          pip install "nufftax>=0.6.1,<0.7.0"
           pip install jupyter ipynb-py-convert
       - name: Run notebooks
         if: steps.gate.outputs.run == 'true'
