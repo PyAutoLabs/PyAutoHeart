@@ -15,9 +15,10 @@ nothing else:
    ``validation_report.json``, computes ``release_ready``, persists it in Heart
    state, and archives a history copy.
 3. ``to_stage_report`` / ``pyauto-heart validate --emit-stage-report`` — the M3
-   bridge run **inside** ``workspace-validation.yml`` itself (still Heart's own
-   code, in Heart's own CI, writing only to the job workspace — not a foreign
-   repo, not a build dispatch). It reshapes Build's ``aggregate_results.py``
+   bridge run **inside** the ``workspace-validation.yml`` body (the
+   ``release-integrate.yml`` channel; still Heart's own code, in Heart's own
+   CI, writing only to the job workspace — not a foreign repo, not a build
+   dispatch). It reshapes Build's ``aggregate_results.py``
    report.json (Build's own vocabulary: ``ready``, ``file``, no ``stage``) into
    the ``{"stage": ..., "status": "pass"|"fail", ...}`` contract ``--ingest``
    expects, optionally folding in a ``verify_install`` sidecar. The Release
@@ -76,7 +77,7 @@ Recognised input artifacts (files, or directories scanned for them):
 - ``commit_shas.json`` — ``{repo: sha}`` (or ``{"commit_shas": {...}}``), the
   HEADs the Release Agent built from (it has the GitHub access to read them).
 - a **stage report** — any JSON carrying a ``stage`` key (``unit`` /
-  ``integrate`` from M3's ``workspace-validation.yml``): ``status``, ``profile``,
+  ``integrate`` from the ``release-integrate.yml`` channel): ``status``, ``profile``,
   ``summary``, ``per_project``, ``failures``, ``run_url``, ``commit_shas``.
 - a full ``validation_report.json`` — merged as a base (idempotent re-ingest).
 """
@@ -488,7 +489,7 @@ def to_stage_report(
 ) -> dict[str, Any]:
     """Translate a Build ``aggregate_results.py`` report.json into a stage report.
 
-    This is the M3 bridge: ``workspace-validation.yml`` runs Build's
+    This is the M3 bridge: the ``workspace-validation.yml`` body runs Build's
     ``aggregate_results.py`` (unmodified — Heart reuses the executor primitive,
     it does not reimplement it) to get a ``{ready, summary, per_project,
     failures, ...}`` blob keyed by Build's own vocabulary (``file`` not

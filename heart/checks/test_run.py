@@ -46,13 +46,16 @@ HEART_STATE_DIR = Path(
     or Path.home() / ".pyauto-heart"
 )
 
-# The cloud workspace-validation workflow (Heart-owned, lives in PyAutoHeart's
-# own .github/workflows/workspace-validation.yml) is the continuous source of
-# the workspace-integration verdict. The tick reads only its conclusion +
-# timestamp (cheap, same budget as ci_status); the full report.json detail still
-# comes from a local `autohands run_all` when one is present.
+# The cloud SMOKE channel (Heart-owned entry workflow workspace-smoke.yml,
+# calling the shared workspace-validation.yml body) is the continuous source of
+# the workspace-integration verdict. The continuous verdict may only come from
+# this channel — release rehearsals run on their own entry
+# (release-integrate.yml) and reach readiness via `validate --ingest`, so a
+# failed rehearsal can never overwrite the smoke verdict here. The tick reads
+# only the conclusion + timestamp (cheap, same budget as ci_status); count
+# detail comes from a local `autohands run_all` or the run's report artifact.
 VALIDATION_REPO = os.environ.get("GITHUB_REPOSITORY", "PyAutoLabs/PyAutoHeart")
-VALIDATION_WORKFLOW = "workspace-validation.yml"
+VALIDATION_WORKFLOW = "workspace-smoke.yml"
 # The aggregated per-run report the workflow's `analyze` job uploads; it holds
 # the real counts and per-script failures for a cloud run — the only place they
 # exist when there is no local run_logs/.

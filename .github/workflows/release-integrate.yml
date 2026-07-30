@@ -1,0 +1,43 @@
+name: Release Integrate
+
+# The RELEASE-REHEARSAL channel (Stage 3): the workspace script matrix against
+# the rehearsed TestPyPI wheels at release fidelity, plus verify_install A-F
+# and the `{"stage": "integrate", ...}` report `pyauto-heart validate --ingest`
+# understands. Thin entry over the shared body (workspace-validation.yml,
+# workflow_call-only); there is deliberately NO mode input — this channel IS
+# mode=release, so its run history never mixes with the continuous smoke
+# channel (workspace-smoke.yml) that Heart's test_run leg reads.
+#
+# Dispatched by the Brain Release Agent (validate.sh Stage 3 plan / the
+# nightly driver) after an M1 TestPyPI rehearsal on PyAutoHands release.yml.
+
+on:
+  workflow_dispatch:
+    inputs:
+      testpypi_version:
+        description: "Rehearsed TestPyPI version to pip install (from the M1 rehearsal artifact)"
+        type: string
+        default: ""
+      commit_shas:
+        description: 'JSON {repo: sha} of the library main HEADs the wheels were built from'
+        type: string
+        default: "{}"
+  workflow_call:
+    inputs:
+      testpypi_version:
+        type: string
+        default: ""
+      commit_shas:
+        type: string
+        default: "{}"
+
+permissions:
+  contents: read
+
+jobs:
+  integrate:
+    uses: ./.github/workflows/workspace-validation.yml
+    with:
+      mode: release
+      testpypi_version: ${{ inputs.testpypi_version }}
+      commit_shas: ${{ inputs.commit_shas }}
