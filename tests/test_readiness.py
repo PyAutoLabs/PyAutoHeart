@@ -109,6 +109,44 @@ def test_test_run_failing_is_yellow_not_red():
     assert v["score"] == 85
 
 
+def test_test_run_cloud_conclusion_only_never_fabricates_zero_failed():
+    # The 2026-07-30 live bug: cloud red, no local report → the old reason
+    # asserted "0 failed". A conclusion-only verdict must say so instead.
+    v = compute(make_snapshot(test_run={
+        "ready": False, "failed": 0, "source": "cloud",
+        "run_label": "cloud#30516167217"}))
+    assert v["verdict"] == "yellow"
+    assert not any("0 failed" in r for r in v["yellow_reasons"])
+    assert any("counts not ingested" in r and "cloud#30516167217" in r
+               for r in v["yellow_reasons"])
+
+
+def test_test_run_explicit_unmeasured_flag_respected():
+    v = compute(make_snapshot(test_run={
+        "ready": False, "failed": 0, "counts_measured": False,
+        "run_label": "cloud#5"}))
+    assert any("counts not ingested" in r for r in v["yellow_reasons"])
+
+
+def test_test_run_failing_reason_names_scripts():
+    v = compute(make_snapshot(test_run={
+        "ready": False, "failed": 2, "timeout": 1, "run_label": "cloud#1",
+        "counts_measured": True,
+        "failing_scripts": [
+            {"project": "autogalaxy", "script": "scripts/interferometer/start_here.py",
+             "status": "failed"},
+            {"project": "autolens", "script": "scripts/interferometer/start_here.py",
+             "status": "failed"},
+            {"project": "autolens", "script": "scripts/group/start_here.py",
+             "status": "timeout"},
+            {"project": "autofit", "script": "scripts/x.py", "status": "failed"},
+        ]}))
+    r = next(r for r in v["yellow_reasons"] if "workspace validation" in r)
+    assert "2 failed" in r and "1 timeout" in r
+    assert "autogalaxy scripts/interferometer/start_here.py" in r
+    assert "+1 more" in r
+
+
 def test_version_skew_unsatisfiable_floor_is_red():
     snap = make_snapshot(version_skew={"workspaces": [
         {"workspace": "autolens_workspace", "library": "PyAutoLens",
