@@ -47,7 +47,7 @@ def test_nonexistent_claim_is_missing(tmp_path):
 
 
 def test_symlinked_canonical_dirt_counted_once_and_not_task_dirt(tmp_path):
-    canonical = _git_repo(tmp_path / "PyAutoLabs" / "PyAutoMind", dirty=True)
+    canonical = _git_repo(tmp_path / "canonical" / "PyAutoMind", dirty=True)
     wt_root = tmp_path / "wt-root"
     for task in ("task-a", "task-b"):
         d = wt_root / task
@@ -98,9 +98,9 @@ def test_prose_worktree_values_are_ignored(tmp_path):
 
 def test_tilde_claims_are_expanded(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
-    wt = tmp_path / "Code" / "PyAutoLabs-wt" / "task-a"
+    wt = tmp_path / "Code" / "wt-root" / "task-a"
     _git_repo(wt / "RepoA")
-    active = _registry(tmp_path / "active.md", {"task-a": "~/Code/PyAutoLabs-wt/task-a"})
-    out = wd.scan(tmp_path / "Code" / "PyAutoLabs-wt", active, tmp_path / "parked.md")
+    active = _registry(tmp_path / "active.md", {"task-a": "~/Code/wt-root/task-a"})
+    out = wd.scan(tmp_path / "Code" / "wt-root", active, tmp_path / "parked.md")
     assert out["missing"] == []
     assert out["orphans"] == []
