@@ -342,16 +342,29 @@ def build_board(
             orphans = wt.get("orphans", []) or []
             missing = wt.get("missing", []) or []
             dirty = wt.get("dirty", []) or []
+            canonical = wt.get("canonical_dirty", []) or []
+            parked = wt.get("parked", []) or []
             if dirty or missing:
                 st = FAIL
                 summary = f"{len(orphans)} orphan / {len(missing)} missing / {len(dirty)} dirty"
-            elif orphans:
-                st, summary = WARN, f"{len(orphans)} orphan dir(s) (clean)"
+            elif orphans or canonical:
+                # Canonical-checkout dirt is the user's own working state, not
+                # task drift — a caution with its own label, never a red.
+                bits = []
+                if orphans:
+                    bits.append(f"{len(orphans)} orphan dir(s) (clean)")
+                if canonical:
+                    bits.append(f"{len(canonical)} canonical checkout(s) dirty")
+                st, summary = WARN, " / ".join(bits)
             else:
-                st, summary = OK, "no drift"
+                st = OK
+                summary = "no drift" + (f" ({len(parked)} parked)" if parked else "")
             details = [
                 f"{d.get('worktree')}/{d.get('repo')}: {d.get('dirty_files')} dirty"
                 for d in dirty[:5]
+            ] + [
+                f"canonical {d.get('repo')}: {d.get('dirty_files')} dirty"
+                for d in canonical[:5]
             ]
             sections.append(Section("worktree_drift", "Worktree drift", st, summary, details))
 

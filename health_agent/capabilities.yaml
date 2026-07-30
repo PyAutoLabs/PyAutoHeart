@@ -61,8 +61,8 @@ continuous_checks:
     measures: "open PR count + max age per repo"
     gate_role: "YELLOW if an open PR is >= 7 days old"
   - id: worktree_drift
-    impl: heart/checks/worktree_drift.sh
-    measures: "PyAutoLabs-wt/ dirs vs PyAutoMind active.md (orphan/missing/dirty)"
+    impl: heart/checks/worktree_drift.py
+    measures: "worktree dirs (wt root + claimed paths) vs PyAutoMind active.md/parked.md (orphan/parked/missing/dirty/canonical-dirty)"
     gate_role: "monitoring (surfaced in status; not a readiness reason)"
   - id: script_timing
     impl: heart/checks/script_timing.py
