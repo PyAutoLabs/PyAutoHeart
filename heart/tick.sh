@@ -39,6 +39,12 @@ fi
 # when there is no local report.json (the mobile case the old guard broke).
 PYTHONPATH="$HEART_HOME" python3 -m heart.checks.test_run || heart_log WARN "$(c_warn 'test_run failed')"
 
+# Python: release-channel freshness — refreshes validation_report from the
+# latest release-integrate.yml run's stage report (cached per run id), so the
+# rehearsal verdict self-heals nightly instead of going stale until a manual
+# local ingest.
+PYTHONPATH="$HEART_HOME" python3 -m heart.checks.release_run || heart_log WARN "$(c_warn 'release_run failed')"
+
 # Python: workspace-vs-library version skew (cheap file reads; no heavy imports).
 PYTHONPATH="$HEART_HOME" python3 -m heart.checks.version_skew || heart_log WARN "$(c_warn 'version_skew failed')"
 
