@@ -82,10 +82,12 @@ only — the colour is the gate. Persisted to `~/.pyauto-heart/release_ready.jso
   `open_prs` sweep; opens/updates one `[heart-health]` issue, closes when clean.
 - **url-check.yml** ("URL Check (central)") — weekly ecosystem URL sweep into one
   `[url-check]` issue. Monitoring only.
-- **workspace-validation.yml** — heavy scripts + notebooks validation against the
-  libraries' current `main`; writes the `report.json` the `test_run` check +
-  `readiness` consume. Reuses Build's executor primitives — does not duplicate
-  them.
+- **workspace-smoke.yml** → **workspace-validation.yml** (workflow_call-only
+  body) — heavy scripts + notebooks validation against the libraries' current
+  `main`; the run history the `test_run` check + `readiness` consume. The
+  release rehearsal runs on its own entry, **release-integrate.yml**, so a
+  failed rehearsal never overwrites the smoke verdict. Reuses Build's executor
+  primitives — does not duplicate them.
 
 ## State (`~/.pyauto-heart/`)
 

@@ -3,12 +3,14 @@
 This document is the **spec** half of Heart's release-validation tier. Heart
 owns the *definition* of what a release-grade validation run must do; it does not
 execute the build or the integration run (that is the Brain Release Agent
-dispatching Build's `release.yml` and the evolved `workspace-validation.yml`).
+dispatching Build's `release.yml` and Heart's `release-integrate.yml` channel).
 
 M2 shipped the report schema, `pyauto-heart validate --ingest`, and the
-readiness hard gate. **M3 wires the acceptance criteria below into
-`workspace-validation.yml` itself** via a `mode: release` input (alongside the
-untouched, default `mode: smoke` per-PR path):
+readiness hard gate. **M3 wires the acceptance criteria below into the shared
+`workspace-validation.yml` body** via a `mode: release` input. The two modes
+now have separate entry workflows (one run history per meaning):
+`workspace-smoke.yml` (the continuous smoke channel) and
+`release-integrate.yml` (this release-fidelity channel):
 
 - The `release` env profile lives in each workspace/`*_workspace_test` repo as
   `config/build/profile_release.yaml` — a self-contained sibling of
@@ -151,7 +153,7 @@ it actually verified. Development-only `index: find-links` evidence does not
 satisfy this release gate.
 
 Before M3 (or if the Release Agent only runs the M1 rehearsal and skips
-dispatching `workspace-validation.yml` in `mode: release`), an ingested
+dispatching the `release-integrate.yml` channel), an ingested
 rehearsal-only report still (correctly) gates YELLOW: the source was built and
 TestPyPI-installed, but not yet exercised at release fidelity. `mode: release`
 is what supplies the `integrate` stage that flips this to GREEN-eligible.

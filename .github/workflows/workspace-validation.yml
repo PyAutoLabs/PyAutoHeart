@@ -3,16 +3,15 @@ name: Workspace Validation
 # Heart-owned workspace-integration validation (Stage 4 Phase B). M3 of the
 # Brain->Health->Heart release-validation redesign gives it two modes:
 #
-#   mode=smoke (default — schedule / bare workflow_dispatch / workflow_call)
+#   mode=smoke (entry: workspace-smoke.yml)
 #     Runs every workspace's scripts AND generated notebooks against the
 #     CURRENT source `main` of the 5 libraries (source-shadowed via PYTHONPATH,
 #     under the `smoke` env profile — config/build/profile_smoke.yaml).
-#     Unchanged by
-#     M3 — this remains the continuous readiness signal / weekly sweep, and
-#     `test_run`/`readiness` keep reading its conclusion the same way.
+#     This is the continuous readiness signal / weekly sweep;
+#     `test_run`/`readiness` read the smoke channel's conclusion.
 #
-#   mode=release (Brain Release Agent dispatch only, after an M1 TestPyPI
-#     rehearsal on release.yml)
+#   mode=release (entry: release-integrate.yml — Brain Release Agent dispatch
+#     only, after an M1 TestPyPI rehearsal on release.yml)
 #     Re-points the SAME script matrix at the rehearsed TestPyPI wheels:
 #     `pip install` the 5 libraries pinned at `testpypi_version` — NO library
 #     source on PYTHONPATH (closes assessment Gap A: the smoke path shadows the
@@ -35,9 +34,18 @@ name: Workspace Validation
 # in EITHER mode. Heart's own code (heart/checks/verify_install.sh,
 # heart/validate.py) is checked out from THIS repo (default actions/checkout).
 #
-# Triggers: weekly schedule (mode=smoke, the continuous readiness signal),
-# manual dispatch (either mode), and workflow_call (so the Brain Release Agent
-# can invoke mode=release on demand). Heavy, so never in the <30s heart tick.
+# Triggers: workflow_call ONLY — this file is the shared body behind two thin
+# entry workflows, one per meaning:
+#
+#   workspace-smoke.yml     schedule + bare dispatch → mode=smoke
+#   release-integrate.yml   dispatch + workflow_call → mode=release
+#
+# The split exists because `gh run list --workflow <file>` cannot filter on
+# dispatch inputs: when both meanings shared one file, a failed nightly
+# release rehearsal became the "latest run" and overwrote the continuous
+# smoke verdict Heart's test_run leg reads. Runs are attributed to the CALLER
+# workflow, so each channel's history is unambiguous. Heavy, so never in the
+# <30s heart tick.
 #
 # Boundary: this workflow only executes what it's told (mode/version/shas come
 # in as inputs). Dispatching it, polling it, and feeding its artifacts to
@@ -45,23 +53,6 @@ name: Workspace Validation
 # itself never dispatches a workflow or talks to GitHub's API.
 
 on:
-  schedule:
-    - cron: "0 3 * * 1"   # Mondays 03:00 UTC (always mode=smoke — no inputs on schedule)
-  workflow_dispatch:
-    inputs:
-      mode:
-        description: "smoke (source-shadowed current main) or release (wheel-based release-fidelity)"
-        type: choice
-        options: [smoke, release]
-        default: smoke
-      testpypi_version:
-        description: "Rehearsed TestPyPI version to pip install (required for mode=release; from the M1 rehearsal artifact)"
-        type: string
-        default: ""
-      commit_shas:
-        description: 'JSON {repo: sha} of the library main HEADs the wheels were built from (mode=release)'
-        type: string
-        default: "{}"
   workflow_call:
     inputs:
       mode:
@@ -93,10 +84,9 @@ jobs:
       mode: ${{ steps.mode.outputs.mode }}
     steps:
       # Resolved once here (rather than read from `inputs.mode` directly in
-      # every downstream `if:`) because `inputs` is only meaningfully populated
-      # for workflow_dispatch/workflow_call — routing every mode check through
-      # this job output means the weekly `schedule` trigger can never be
-      # affected by that ambiguity; it always resolves to plain "smoke".
+      # every downstream `if:`) so every mode check routes through one job
+      # output; the entry workflows always pass mode explicitly, and a bare
+      # input still resolves to plain "smoke", never an empty string.
       - name: Resolve mode
         id: mode
         env:

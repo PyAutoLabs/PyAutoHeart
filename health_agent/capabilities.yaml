@@ -121,8 +121,8 @@ release_validation:
     consumes: >-
       the M1 TestPyPI rehearsal artifact (rehearsal.json / testpypi_version.txt),
       a {repo: sha} commit_shas.json, and (M3, wired) the wheel-based
-      `release-stage-report` artifact emitted by workspace-validation.yml's
-      mode=release path — collected and handed over by the Brain Release Agent.
+      `release-stage-report` artifact emitted by the release-integrate.yml
+      channel — collected and handed over by the Brain Release Agent.
     produces: >-
       validation_report.json (schema_version 1): release_ready, testpypi_version,
       profile, per-repo commit_shas, per-stage status, per-project counts,
@@ -186,16 +186,26 @@ workflows:
     name: "URL Check (central)"
     role: "weekly central URL-hygiene sweep; one consolidated [url-check] issue (monitoring only)"
   - file: .github/workflows/workspace-validation.yml
-    name: "Workspace Validation"
+    name: "Workspace Validation (body)"
     role: >-
-      two modes. mode=smoke (default; schedule/bare dispatch): scripts + notebooks
-      vs current library main, source-shadowed via PYTHONPATH; writes the report.json
-      the test_run check + readiness consume. mode=release (Brain Release Agent
-      dispatch only, M3): pip-installs the rehearsed TestPyPI wheels (no source on
-      PYTHONPATH) under the `release` env profile, runs verify_install A-F against
-      the same wheels, and emits the `release-stage-report` artifact
-      `pyauto-heart validate --ingest` consumes. Reuses Build's executor primitives
-      (script_matrix/run_python/aggregate_results) unmodified in both modes.
+      workflow_call-only shared body behind the two channel entries below;
+      reuses Build's executor primitives (script_matrix/run_python/
+      aggregate_results) unmodified in both modes.
+  - file: .github/workflows/workspace-smoke.yml
+    name: "Workspace Smoke"
+    role: >-
+      the CONTINUOUS channel (weekly schedule + bare dispatch → body mode=smoke):
+      scripts + notebooks vs current library main, source-shadowed via
+      PYTHONPATH; the run history the test_run check + readiness consume.
+  - file: .github/workflows/release-integrate.yml
+    name: "Release Integrate"
+    role: >-
+      the REHEARSAL channel (Brain Release Agent dispatch only → body
+      mode=release): pip-installs the rehearsed TestPyPI wheels (no source on
+      PYTHONPATH) under the `release` env profile, runs verify_install A-F
+      against the same wheels, and emits the `release-stage-report` artifact
+      `pyauto-heart validate --ingest` consumes. Separate entry so a failed
+      rehearsal never overwrites the smoke verdict.
 
 # Operational surface (reporting / triage) the agent can cite in recommendations.
 operations:
@@ -210,7 +220,8 @@ boundary:
   heart: >-
     owns all health/readiness checks, the release-validation report spec + ingest,
     and the authoritative readiness verdict. Ingest-and-judge only: it NEVER
-    dispatches release.yml / workspace-validation.yml or mutates a repo.
+    dispatches release.yml / workspace-smoke.yml / release-integrate.yml or
+    mutates a repo.
   brain_health: "reasons over Heart's outputs (the Health Agent, read-only); owns no checks; never dispatches"
   brain_release: >-
     the Release Agent ORCHESTRATES release validation: dispatches the M1 TestPyPI

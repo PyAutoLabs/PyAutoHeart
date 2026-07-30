@@ -1,0 +1,23 @@
+name: Workspace Smoke
+
+# The CONTINUOUS workspace-readiness channel: every workspace's scripts and
+# generated notebooks against the current source `main` of the 5 libraries,
+# weekly and on demand. Thin entry over the shared body
+# (workspace-validation.yml, workflow_call-only) — the split gives each
+# meaning its own run history, so Heart's test_run leg
+# (`gh run list --workflow workspace-smoke.yml`) can never confuse a failed
+# release rehearsal (release-integrate.yml) with the smoke verdict.
+
+on:
+  schedule:
+    - cron: "0 3 * * 1"   # Mondays 03:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    uses: ./.github/workflows/workspace-validation.yml
+    with:
+      mode: smoke
