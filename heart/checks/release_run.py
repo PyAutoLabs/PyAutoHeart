@@ -30,6 +30,7 @@ from __future__ import annotations
 import datetime
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -39,7 +40,27 @@ from typing import Any, Callable
 HEART_HOME = Path(__file__).resolve().parents[2]
 HEART_STATE_DIR = Path(os.environ.get("HEART_STATE_DIR") or Path.home() / ".pyauto-heart")
 
-RELEASE_REPO = os.environ.get("GITHUB_REPOSITORY", "PyAutoLabs/PyAutoHeart")
+def _own_repo_slug() -> str:
+    """owner/repo of this checkout's origin — the release channel lives here.
+
+    Derived rather than hard-coded so the tenant firewall
+    (PyAutoMind/scripts/repos_sync.py) holds: organ code carries no
+    instance facts. Empty when there is no origin; the gh-backed callables
+    then fail and the check reports unavailable instead of guessing.
+    """
+    try:
+        url = subprocess.run(
+            ["git", "-C", str(HEART_HOME), "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    except OSError:
+        url = ""
+    m = re.search(r"[:/]([^/:]+/[^/:]+?)(?:\.git)?$", url)
+    return m.group(1) if m else ""
+
+
+RELEASE_REPO = os.environ.get("GITHUB_REPOSITORY") or _own_repo_slug()
 RELEASE_WORKFLOW = "release-integrate.yml"
 STAGE_ARTIFACT = "release-stage-report"
 SIDECAR = HEART_STATE_DIR / "release_run.json"
