@@ -14,16 +14,16 @@
 <!-- between the heart:begin/heart:end markers is replaced with the rendered board). -->
 <!-- Live board: https://pyautolabs.github.io/PyAutoHeart/ -->
 <!-- heart:begin -->
-## 🔴 PyAuto health — **RED** (score 45)
+## 🔵 PyAuto health — **STALE** (score 65)
 
-_snapshot `2026-08-01T07:26:02.323084+00:00` · just now_
+_snapshot `2026-08-02T07:30:38.829806+00:00` · just now_
 
-**Blockers:** autolens_workspace_test: Smoke Tests failure on main
+**Evidence gaps (re-run, don't fix):** test run status unknown (no report.json); install verification not run; no release validation for current source
 
 | | Check | Status |
 |--|--|--|
-| 🟢 | Libraries | 6 repos nominal |
-| 🔴 | Workspaces | 11 repos, 2 need attention |
+| 🔵 | Libraries | 6 repos nominal |
+| 🟡 | Workspaces | 11 repos, 1 need attention |
 | ⚪ | Worktree drift | not observed here (dev-box only) |
 | ⚪ | Script timing | not observed here (dev-box only) |
 | ⚪ | Import timing | not observed here (dev-box only) |
