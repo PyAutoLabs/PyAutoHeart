@@ -38,7 +38,7 @@ pyauto-heart verify_install A                     # run a single check
 pyauto-heart verify_install A C E                 # run a subset
 pyauto-heart verify_install --version 2026.4.5.2  # pin a specific version (applies to A/B/C/D)
 pyauto-heart verify_install --testpypi            # TestPyPI rehearsal; PyPI fallback for third-party deps
-pyauto-heart verify_install B --version 1.0.dev0 --find-links dist/
+pyauto-heart verify_install B --version 9999.0.0.dev0 --find-links dist/
                                                     # local-wheel development evidence
 pyauto-heart verify_install --keep                # don't clean up at the end
 pyauto-heart verify_install --help
