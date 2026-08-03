@@ -244,6 +244,17 @@ jobs:
           # reaches autofit[optional]. mode=release below already installs
           # autofit[optional] explicitly — this gives the smoke leg parity.
           pip install "autofit[optional]"
+          # Same gap, same rationale, for autoarray's own [optional]: it carries
+          # tfp-nightly, which supplies the modified-Bessel `bessel_kve` behind
+          # the JAX Matern-kernel regularization path
+          # (autoarray/inversion/regularization/matern_kernel.py). Without it
+          # autogalaxy_workspace_test's misc/jax_assertions/matern_regularization.py
+          # and autolens_workspace_test's imaging/jax_grad/regularization.py fail
+          # at import — red here while PASSING mode=release, which installs
+          # autoarray[optional] explicitly (below). Installing the whole extra
+          # rather than pinning tfp-nightly alone keeps a future addition to
+          # autoarray[optional] covered without another one-off line here.
+          pip install "autoarray[optional]"
       - name: "Install TestPyPI wheels — NO source on PYTHONPATH [mode=release]"
         if: needs.find_scripts.outputs.mode == 'release'
         env:
