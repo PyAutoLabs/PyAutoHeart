@@ -519,6 +519,14 @@ check_d() {
     source "$venv/bin/activate"
     pip install --upgrade pip > /dev/null 2>&1
 
+    # `python3` is whatever the host defaults to — 3.12 on a dev laptop, 3.13 in
+    # the release job (setup-python runs 3.11/3.12/3.13 and the last one wins).
+    # The resolution differs between them, so the evidence has to name the
+    # interpreter it actually exercised (PyAutoLens#687).
+    local pyver
+    pyver=$(python -c 'import sys; print(".".join(map(str, sys.version_info[:3])))')
+    step "venv interpreter is python $pyver"
+
     step "pip install $PIP_INSTALL_OPTIONAL"
     pip install "${PIP_INDEX_ARGS[@]}" "$PIP_INSTALL_OPTIONAL" |& tee /tmp/D_pip.log
     local pip_rc=${PIPESTATUS[0]}
@@ -529,9 +537,9 @@ check_d() {
     deactivate
 
     if [ "$pip_rc" -eq 0 ] && [ "$import_rc" -eq 0 ]; then
-        RESULTS+=("D|PASS|$PIP_INSTALL_OPTIONAL resolved + imports")
+        RESULTS+=("D|PASS|$PIP_INSTALL_OPTIONAL resolved + imports (python $pyver)")
     else
-        RESULTS+=("D|FAIL|pip rc=$pip_rc import rc=$import_rc")
+        RESULTS+=("D|FAIL|pip rc=$pip_rc import rc=$import_rc (python $pyver)")
         tail_log "Check D output" "$(cat /tmp/D_pip.log 2>/dev/null)"
     fi
 }
