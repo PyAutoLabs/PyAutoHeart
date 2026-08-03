@@ -251,10 +251,18 @@ jobs:
           # autogalaxy_workspace_test's misc/jax_assertions/matern_regularization.py
           # and autolens_workspace_test's imaging/jax_grad/regularization.py fail
           # at import — red here while PASSING mode=release, which installs
-          # autoarray[optional] explicitly (below). Installing the whole extra
-          # rather than pinning tfp-nightly alone keeps a future addition to
-          # autoarray[optional] covered without another one-off line here.
-          pip install "autoarray[optional]"
+          # autoarray[optional] explicitly (below).
+          #
+          # Pin the single package rather than installing autoarray[optional]:
+          # this leg installs PUBLISHED wheels (source only shadows the PyAuto
+          # packages, via PYTHONPATH), so a library extra resolves the RELEASED
+          # metadata, which lags source main. autoarray 2026.7.29.2[optional]
+          # still declares `nufftax<0.5.0,>=0.4.0`, so pulling the whole extra
+          # here uninstalled the 0.6.1 pinned above and left nufftax 0.4.0 —
+          # silently below the floor the gradient searches need. A future
+          # addition to autoarray[optional] is caught by the Brain's
+          # `hygiene extras` scan instead, which reads the SOURCE pyproject.
+          pip install "tfp-nightly==0.26.0.dev20260713"
       - name: "Install TestPyPI wheels — NO source on PYTHONPATH [mode=release]"
         if: needs.find_scripts.outputs.mode == 'release'
         env:
