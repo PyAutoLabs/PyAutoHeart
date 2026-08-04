@@ -159,9 +159,32 @@ fi
 #
 # Stored as an array so the two flags are passed cleanly without word-split
 # surprises at every `pip install` site.
+#
+# `--pre` is required, not cosmetic. A rehearsal build is a pre-release
+# (2026.8.3.1.devNNNNN). pip accepts a pre-release for a package that is pinned
+# to one explicitly — which `autolens[optional]==$TARGET_VERSION` is — but
+# refuses to consider pre-releases for its *dependencies* unless --pre is set.
+# So without it, only `autolens` came from the candidate build and every
+# intra-family dependency resolved to the last STABLE PyPI release instead.
+#
+# That is not a weaker test, it is a test of the wrong artifact: the resolution
+# then runs against already-published metadata, which is frozen and cannot
+# contain any dependency floor the candidate adds. Check D failed for exactly
+# this reason on 2026-08-03 — autolens 2026.8.3.1.dev70001 pulled the stable
+# autogalaxy 2026.8.2.1, whose bare `autofit` requirement let pip backtrack to
+# autofit 2026.4.30.582 (April) and `import autolens` died on
+# `module 'autofit' has no attribute 'Latent'`. The floors added in
+# PyAutoLens#687 were present and correct in source, but no rehearsal could
+# ever exercise them — a fix that only takes effect once published, gated on a
+# check that can only pass once it has taken effect.
+#
+# With --pre the whole family is eligible at the candidate version, so the
+# intra-family chain resolves against the metadata about to ship. Scoped to the
+# TestPyPI path only: the default release-gate path against PyPI stays
+# stable-only, which is what a user actually gets.
 PIP_INDEX_ARGS=()
 if [ "$USE_TESTPYPI" -eq 1 ]; then
-    PIP_INDEX_ARGS=(--index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/)
+    PIP_INDEX_ARGS=(--index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ --pre)
 fi
 if [ -n "$FIND_LINKS" ]; then
     PIP_INDEX_ARGS+=(--find-links "$FIND_LINKS")
