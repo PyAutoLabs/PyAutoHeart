@@ -321,8 +321,22 @@ jobs:
           # (build_util.py BUILD_SCRIPT_TIMEOUT default). Raise it here so a slow-but-
           # correct script isn't a false release blocker. This is a stopgap while the
           # Profiling Agent drives the JAX compile/eval-time speedups (PyAutoMind
-          # draft/feature/profiling/profiling_agent_jax_compile_time_scope.md); smoke
-          # mode is unchanged (still 300s).
+          # draft/feature/profiling/profiling_agent_jax_compile_time_scope.md).
+          #
+          # This is a RUN-WIDE value: it applies to every script in the release leg.
+          # A workspace env profile may now also set BUILD_SCRIPT_TIMEOUT on an
+          # `overrides` pattern, which build_util.timeout_for resolves per script and
+          # which WINS over this global (PyAutoHands#227) — profile_release.yaml
+          # currently sets no such override, so the release leg is unaffected.
+          #
+          # This comment previously read "smoke mode is unchanged (still 300s)". That
+          # was true of the workflow but wrong as a premise: it assumed smoke work is
+          # reduced, and the jax_grad scripts declare `ENV: jax full_datasets` and run
+          # NO search, so smoke reduces nothing for them — they do the same FD work
+          # under both profiles. Three of them TIMEOUT at 300s in smoke (run
+          # 30858578587). The smoke budget for that class now lives where it belongs,
+          # per-script in the workspace's own config/build/profile_smoke.yaml, rather
+          # than as a second run-wide number here (PyAutoHands#226).
           BUILD_SCRIPT_TIMEOUT: "1800"
         run: |
           # Deliberately NOT adding library source dirs to PYTHONPATH (closes
