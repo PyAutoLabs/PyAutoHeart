@@ -16,13 +16,13 @@
 <!-- heart:begin -->
 ## 🔵 PyAuto health — **STALE** (score 65)
 
-_snapshot `2026-08-04T07:37:07.900552+00:00` · just now_
+_snapshot `2026-08-05T07:36:33.585672+00:00` · just now_
 
 **Evidence gaps (re-run, don't fix):** test run status unknown (no report.json); install verification not run; no release validation for current source
 
 | | Check | Status |
 |--|--|--|
-| 🟢 | Libraries | 6 repos nominal |
+| 🔵 | Libraries | 6 repos nominal |
 | 🟡 | Workspaces | 11 repos, 1 need attention |
 | ⚪ | Worktree drift | not observed here (dev-box only) |
 | ⚪ | Script timing | not observed here (dev-box only) |
