@@ -14,16 +14,16 @@
 <!-- between the heart:begin/heart:end markers is replaced with the rendered board). -->
 <!-- Live board: https://pyautolabs.github.io/PyAutoHeart/ -->
 <!-- heart:begin -->
-## 🔵 PyAuto health — **STALE** (score 65)
+## 🔴 PyAuto health — **RED** (score 35)
 
-_snapshot `2026-08-06T07:36:54.072305+00:00` · just now_
+_snapshot `2026-08-07T06:07:58.562865+00:00` · just now_
 
-**Evidence gaps (re-run, don't fix):** test run status unknown (no report.json); install verification not run; no release validation for current source
+**Blockers:** PyAutoGalaxy: CI failure
 
 | | Check | Status |
 |--|--|--|
-| 🟢 | Libraries | 6 repos nominal |
-| 🟡 | Workspaces | 11 repos, 1 need attention |
+| 🔴 | Libraries | 6 repos, 2 need attention |
+| 🟡 | Workspaces | 11 repos, 5 need attention |
 | ⚪ | Worktree drift | not observed here (dev-box only) |
 | ⚪ | Script timing | not observed here (dev-box only) |
 | ⚪ | Import timing | not observed here (dev-box only) |
