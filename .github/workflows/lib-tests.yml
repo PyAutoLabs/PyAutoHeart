@@ -1,8 +1,8 @@
 name: Library Tests (reusable)
 
-# Heart-owned reusable unit-test workflow for the 5 PyAuto libraries
-# (Stage 4 Phase A). Each library's own .github/workflows/main.yml is now a thin
-# caller:
+# Heart-owned reusable unit-test workflow for the PyAuto libraries
+# (Stage 4 Phase A; PyAutoReduce added as the standalone, no-chain member).
+# Each library's own .github/workflows/main.yml is now a thin caller:
 #
 #   jobs:
 #     unittest:
@@ -22,7 +22,7 @@ on:
   workflow_call:
     inputs:
       package:
-        description: "PyAuto package under test: autonerves|autofit|autoarray|autogalaxy|autolens|autocti"
+        description: "PyAuto package under test: autonerves|autofit|autoarray|autogalaxy|autolens|autocti|autoreduce"
         required: true
         type: string
 
@@ -44,10 +44,16 @@ jobs:
             autogalaxy) repo=PyAutoGalaxy; deps="PyAutoNerves PyAutoFit PyAutoArray" ;;
             autolens)   repo=PyAutoLens;   deps="PyAutoNerves PyAutoFit PyAutoArray PyAutoGalaxy" ;;
             autocti)    repo=PyAutoCTI;    deps="PyAutoNerves PyAutoFit PyAutoArray" ;;
+            autoreduce) repo=PyAutoReduce; deps="" ;;
             *) echo "::error::unknown package '${{ inputs.package }}'"; exit 1 ;;
           esac
+          # autoreduce is standalone (never imports the PyAuto* stack) and names
+          # its test extra [test]; the five stack libraries use [optional].
+          extras=optional
+          if [ "${{ inputs.package }}" = "autoreduce" ]; then extras=test; fi
           echo "repo=$repo" >> "$GITHUB_OUTPUT"
           echo "deps=$deps" >> "$GITHUB_OUTPUT"
+          echo "extras=$extras" >> "$GITHUB_OUTPUT"
 
       - name: Checkout ${{ steps.map.outputs.repo }} (repo under test, at the PR ref)
         uses: actions/checkout@v4
@@ -88,7 +94,7 @@ jobs:
           pip install --upgrade pip setuptools wheel
           pip install pytest coverage pytest-cov
           for r in ${{ steps.map.outputs.deps }} ${{ steps.map.outputs.repo }}; do
-            pip install "./$r[optional]"
+            pip install "./$r[${{ steps.map.outputs.extras }}]"
           done
 
       - name: Run tests
