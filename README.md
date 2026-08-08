@@ -16,14 +16,14 @@
 <!-- heart:begin -->
 ## 🔴 PyAuto health — **RED** (score 35)
 
-_snapshot `2026-08-07T06:07:58.562865+00:00` · just now_
+_snapshot `2026-08-08T05:41:00.935765+00:00` · just now_
 
-**Blockers:** PyAutoGalaxy: CI failure
+**Blockers:** PyAutoArray: CI failure
 
 | | Check | Status |
 |--|--|--|
-| 🔴 | Libraries | 6 repos, 2 need attention |
-| 🟡 | Workspaces | 11 repos, 5 need attention |
+| 🔴 | Libraries | 6 repos, 1 need attention |
+| 🟡 | Workspaces | 11 repos, 1 need attention |
 | ⚪ | Worktree drift | not observed here (dev-box only) |
 | ⚪ | Script timing | not observed here (dev-box only) |
 | ⚪ | Import timing | not observed here (dev-box only) |
