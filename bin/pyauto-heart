@@ -28,6 +28,7 @@ SUBCOMMAND_ORDER=(
   "# Release validation (ingest-and-judge only; never dispatches a build)"
   validate
   "# Deep checks (on-demand; too slow for the tick)"
+  smoke
   verify_install
   "# URL hygiene (monitoring only — does not gate releases)"
   url_check
@@ -45,6 +46,7 @@ declare -A SHORT_DESC=(
   [readiness]="Print the release-readiness verdict (green/yellow/red + score)"
   [dashboard]="The unified health board (--oneline/--md/--html/--json); reads cache, no tick"
   [validate]="Ingest release-validation artifacts into validation_report.json"
+  [smoke]="Prepare isolated local environments and run workspace smoke suites"
   [logs]="Tail the daemon log"
   [fix]="Bundle context for a specific topic and emit a Claude command"
   [verify_install]="Deep install-readiness: pip & conda install-path checks (slow)"
@@ -366,6 +368,52 @@ cmd_verify_install() {
   mkdir -p "$HEART_STATE_DIR"
   exec bash "$HEART_HOME/heart/checks/verify_install.sh" \
     --report-json "$HEART_STATE_DIR/verify_install.json" "$@"
+}
+
+help_smoke() { cat <<EOF
+pyauto-heart smoke [WORKSPACE ...] [--prepare-only] [--rebuild]
+                   [--python PATH] [--root DIR] [--state-dir DIR]
+
+Prepare a separate, cached Python environment for each selected workspace,
+then run its workspace-owned smoke runner. The default is all six workspaces;
+valid filters are: autofit, autogalaxy, autolens, autolens_test, euclid,
+howtolens.
+
+Environment dependencies come from each workspace's CI smoke_install.sh (or a
+metadata-derived fallback for a legacy workspace), not from the invoking shell.
+The cache rebuilds automatically when Python, that installer, or a dependency
+library's pyproject.toml changes. A preflight checks pip consistency, local
+source imports, and Jupyter kernel ownership before science scripts begin.
+
+  --prepare-only  Build/reuse and preflight; do not run workspace scripts
+  --rebuild       Force selected cached environments to rebuild
+  --python PATH   Base Python used to create environments (default: current)
+  --root DIR      PyAutoLabs root (default: \$PYAUTO_ROOT)
+  --state-dir DIR Environment/cache root (default: \$HEART_STATE_DIR)
+EOF
+}
+cmd_smoke() {
+  local runner_python="${PYAUTO_HEART_PYTHON:-}"
+  local next_is_python=0 arg
+  for arg in "$@"; do
+    if [[ "$next_is_python" -eq 1 ]]; then
+      runner_python="$arg"
+      break
+    fi
+    case "$arg" in
+      --python) next_is_python=1 ;;
+      --python=*) runner_python="${arg#--python=}"; break ;;
+    esac
+  done
+  if [[ -z "$runner_python" ]]; then
+    if command -v python3.12 >/dev/null 2>&1; then
+      runner_python="python3.12"
+    else
+      runner_python="python3"
+    fi
+  fi
+  mkdir -p "$HEART_STATE_DIR"
+  exec env PYTHONPATH="$HEART_HOME" "$runner_python" -m heart.smoke "$@"
 }
 
 help_url_check() { cat <<EOF
