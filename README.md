@@ -14,16 +14,16 @@
 <!-- between the heart:begin/heart:end markers is replaced with the rendered board). -->
 <!-- Live board: https://pyautolabs.github.io/PyAutoHeart/ -->
 <!-- heart:begin -->
-## 🔴 PyAuto health — **RED** (score 35)
+## 🔴 PyAuto health — **RED** (score 45)
 
-_snapshot `2026-08-09T05:44:39.897766+00:00` · just now_
+_snapshot `2026-08-10T06:09:25.956082+00:00` · just now_
 
-**Blockers:** PyAutoArray: CI failure
+**Blockers:** autogalaxy_workspace_test: Smoke Tests cancelled on main
 
 | | Check | Status |
 |--|--|--|
-| 🔴 | Libraries | 6 repos, 1 need attention |
-| 🟡 | Workspaces | 11 repos, 1 need attention |
+| 🟢 | Libraries | 6 repos nominal |
+| 🔴 | Workspaces | 11 repos, 2 need attention |
 | ⚪ | Worktree drift | not observed here (dev-box only) |
 | ⚪ | Script timing | not observed here (dev-box only) |
 | ⚪ | Import timing | not observed here (dev-box only) |
