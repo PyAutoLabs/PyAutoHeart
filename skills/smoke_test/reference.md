@@ -14,6 +14,38 @@ wasn't refreshed by `$pre-build` (`/pre_build` in Claude). Whole-workspace
 regeneration stays `generate.py`'s job — smoke only regenerates the one failing
 notebook.
 
+## Isolated smoke environments
+
+`pyauto-heart smoke` is the local environment and execution entry point. It
+does not trust the shell that launched it:
+
+- Every workspace has a separate virtual environment under
+  `$HEART_STATE_DIR/smoke-envs/<workspace>/py<major.minor>/`. This separation is
+  required because workspace contracts can carry different JAX bounds.
+- The workspace-owned `.github/scripts/smoke_install.sh` is executed with the
+  environment's `pip` first on `PATH`, exactly like Heart's reusable CI smoke
+  workflow. A legacy workspace without an epilogue gets its local chain and
+  conventional `optional` extras from the libraries' `pyproject.toml` files;
+  Heart never carries a duplicate list of third-party requirements.
+- The fingerprint includes Python identity, the install epilogue and every
+  chain library's `pyproject.toml`. Any change rebuilds at the environment's
+  fixed path under a per-environment lock (virtualenv entry-point shebangs make
+  finished environments non-relocatable). The previous complete environment is
+  retained as a rollback backup until preflight succeeds, so a failed rebuild
+  restores it intact.
+- Runtime `PYTHONPATH` is replaced with the selected local library roots plus
+  `PyAutoHands/autohands`; it is not extended from the ambient shell. Current
+  source edits therefore win over cached site-packages without allowing an
+  unrelated checkout to leak in.
+- Before scripts begin, the command runs `pip check`, imports each local library
+  and verifies its file lives under the expected checkout. Workspaces with
+  notebooks must also have `jupyter` inside the environment and a `python3`
+  kernelspec whose executable is that environment's Python.
+
+Use `--prepare-only` to diagnose the environment without touching workspace
+outputs or running scripts. Use `--rebuild` only when explicitly forcing a
+fresh resolution; ordinary metadata changes rebuild automatically.
+
 ## Environment config
 
 Each workspace's `config/build/profile_smoke.yaml` has:
@@ -40,22 +72,13 @@ model schema evolved since the cached run, the header no longer matches
 
 ## Running the scripts
 
-Read `smoke_tests.txt` (paths relative to the workspace root). Skip entries
-matching `config/build/no_run.yaml` (`SKIPPED`). Resolve each path:
-
-1. `<workspace_root>/<path>` exists → use it (root-level scripts, explicit
-   `scripts/<name>`).
-2. else `<workspace_root>/scripts/<path>` exists → use it (legacy bare names).
-3. else `MISSING`, continue.
-
-Run in parallel (scripts have no interdependencies — no `start_here.py` ordering):
-
-```bash
-cd <workspace_root>
-<env_var_prefix> python <resolved_script_path> <args_default> > /tmp/smoke_<workspace>_<script_slug>.log 2>&1 &
-```
-
-`wait` to collect exit codes after launching all.
+`pyauto-heart smoke` invokes the workspace-owned
+`.github/scripts/run_smoke.py`. Do not reproduce its discovery, ordering,
+timeouts, skip matching or notebook behavior in an agent shell: those details
+have changed before and the checked-in runner is the CI contract. The sole
+legacy fallback reads `smoke_tests.txt`, resolves root-relative then
+`scripts/`-relative entries, uses PyAutoHands's canonical environment resolver,
+and honours `config/build/no_run.yaml`.
 
 ## Issue comment
 
@@ -111,8 +134,8 @@ silently if `mkdir` fails.
 ## Execution environments
 
 In a web-github / ci-only session (no local tree), clone the workspace repos and
-the library repos for `PYTHONPATH` into the working directory, then run the same
-steps:
+the library repos into one working directory, then point Heart at that organism
+root:
 
 ```bash
 WORK_DIR="$(pwd)"
@@ -123,10 +146,10 @@ done
 for lib in PyAutoNerves PyAutoFit PyAutoArray PyAutoGalaxy PyAutoLens; do
   [ -d "$WORK_DIR/$lib" ] || git clone "https://github.com/PyAutoLabs/$lib.git" "$WORK_DIR/$lib"
 done
-export PYTHONPATH="$WORK_DIR/PyAutoNerves:$WORK_DIR/PyAutoFit:$WORK_DIR/PyAutoArray:$WORK_DIR/PyAutoGalaxy:$WORK_DIR/PyAutoLens:$PYTHONPATH"
-export NUMBA_CACHE_DIR=/tmp/numba_cache MPLCONFIGDIR=/tmp/matplotlib
+pyauto-heart smoke --root "$WORK_DIR"
 ```
 
-Use `$WORK_DIR/<workspace>` as each workspace root; post results to the issue as
-normal. This is the same validation with a different repo source — not a separate
-"mobile mode".
+The command constructs `PYTHONPATH`, writable caches and virtual environments;
+do not export ambient substitutes. Post results to the issue as normal. This is
+the same validation with a different repo source — not a separate "mobile
+mode".

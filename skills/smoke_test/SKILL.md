@@ -17,9 +17,9 @@ model: PyAutoBrain `skills/WORKFLOW.md`.
 ## Usage
 
 ```
-$smoke-test                     # run all six workspaces (default)
-$smoke-test autofit             # run only autofit_workspace (only when explicitly requested)
-$smoke-test autogalaxy autolens # run specific workspaces (only when explicitly requested)
+$smoke-test                     # pyauto-heart smoke (all six; default)
+$smoke-test autofit             # pyauto-heart smoke autofit
+$smoke-test autogalaxy autolens # pyauto-heart smoke autogalaxy autolens
 ```
 
 In Claude, invoke the same skill as `/smoke_test`.
@@ -47,21 +47,31 @@ lists `.ipynb` notebooks under `notebooks/`. Notebook + env-var semantics:
 dependency chain, so never assume only one is affected. Run a subset only when
 the user explicitly passes workspace names.
 
-### 2. Load env config + wipe stale output
+### 2. Prepare and preflight isolated environments
 
-For each workspace, read `config/build/profile_smoke.yaml` to build the per-script env
-prefix (`defaults` minus matching `overrides` `unset`s, plus optional
-`args_default`). Before launching, wipe `<workspace_root>/output/*` (glob — keep
-the tracked `output/` dir). Detail: [`reference.md`](reference.md) →
-"Environment config" and "Why wipe output".
+Run `pyauto-heart smoke` with the selected workspace keys. Do not invoke the
+workspace runners directly and do not repair the active shell by installing
+packages into it. The command creates one cached environment per workspace from
+its CI `smoke_install.sh`, invalidates it when Python/install metadata changes,
+and preflights interpreter, package and Jupyter-kernel ownership before any
+science script starts. Detail: [`reference.md`](reference.md) → "Isolated smoke
+environments".
 
-### 3. Run the scripts (parallel)
+Useful diagnostic forms:
 
-Read `smoke_tests.txt`; skip entries listed in `config/build/no_run.yaml`
-(`SKIPPED`). Resolve each path (workspace root, then `scripts/`, else `MISSING`)
-and run with its env prefix, **in parallel** via background processes + `wait`.
-Exact path-resolution + parallel-launch recipe: [`reference.md`](reference.md) →
-"Running the scripts".
+```bash
+pyauto-heart smoke autogalaxy --prepare-only  # environment proof only
+pyauto-heart smoke autogalaxy --rebuild       # discard/rebuild that cache
+```
+
+### 3. Run the workspace-owned suites
+
+The command wipes stale `output/*` immediately before execution, then invokes
+each workspace's `.github/scripts/run_smoke.py` with the prepared interpreter
+and live local source on an isolated `PYTHONPATH`. The workspace runner owns
+script/notebook discovery, profile resolution, skips, timeouts and reporting,
+so local and CI semantics stay aligned. Heart has a compatibility runner for a
+legacy workspace that has not acquired those two CI entry points yet.
 
 ### 4. Track + report
 
@@ -87,11 +97,14 @@ cache dir can't be created.
 - Env vars, their exceptions, and `args_default` live in each workspace's
   `config/build/profile_smoke.yaml`; the skip list in `config/build/no_run.yaml`. Edit
   those files — don't hardcode env vars here.
+- Dependencies live in library `pyproject.toml` metadata and workspace
+  `.github/scripts/smoke_install.sh` files. Never add a package-specific repair
+  list to this skill; the cache fingerprint automatically follows those files.
 - `smoke_tests.txt` files live in each workspace root.
 - Toggling `PYAUTO_SMALL_DATASETS` requires deleting `<workspace>/dataset/` (auto-
   simulation only re-creates missing datasets). `euclid_strong_lens_modeling_pipeline`
   does **not** use `PYAUTO_SMALL_DATASETS` — it tests against real Euclid VIS imaging.
-- **Execution environments** (see WORKFLOW.md): in a web-github / ci-only session
-  with no local tree, clone the workspace + library repos into the working
-  directory, export `PYTHONPATH`/`NUMBA_CACHE_DIR`/`MPLCONFIGDIR`, and run the same
-  steps. Detail: [`reference.md`](reference.md) → "Execution environments".
+- **Execution environments** (see WORKFLOW.md): in a web-github / ci-only
+  session with no local tree, clone the workspace + library repos into one
+  organism root and pass it with `pyauto-heart smoke --root <dir>`. Detail:
+  [`reference.md`](reference.md) → "Execution environments".
