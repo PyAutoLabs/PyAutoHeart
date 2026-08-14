@@ -351,12 +351,19 @@ class _Accumulator:
                     self.failures.append(f)
         for k, v in (data.get("run_urls") or {}).items():
             self.run_urls.setdefault(str(k), str(v))
+        # Adverse verdicts are STICKY across bases. `--ingest` accepts a whole
+        # directory and folds every report in it in filename order, so without
+        # this a later `z_pass.json` silently overwrites an earlier
+        # `a_failed.json` and the failure disappears. Nothing about the ordering
+        # of files on disk should be able to clear a recorded failure.
         if isinstance(data.get("release_ready"), bool):
-            self._explicit_ready = data["release_ready"]
+            if self._explicit_ready is not False:
+                self._explicit_ready = data["release_ready"]
         if "validation_outcome" in data:
             outcome = data.get("validation_outcome")
             if outcome in ("pass", "fail", "incomplete"):
-                self._explicit_outcome = str(outcome)
+                if self._explicit_outcome != "fail":
+                    self._explicit_outcome = str(outcome)
             else:
                 # Present but not a value we recognise: the report is malformed,
                 # and a malformed gate artifact must never read as a pass.
@@ -431,21 +438,21 @@ class _Accumulator:
         return "incomplete"
 
     def release_ready(self) -> bool:
-        """True iff no ran stage failed AND the rehearse stage passed.
+        """The legacy boolean, now DERIVED from :meth:`validation_outcome`.
 
-        The rehearse stage is mandatory: a report with nothing built is not
-        release-ready. An explicit ``release_ready`` from a merged base report is
-        honoured only when no stage contradicts it with a failure.
+        It used to be computed independently, and the two could then disagree
+        inside a single emitted report — an incomplete base upgraded by a fresh
+        rehearsal produced ``release_ready: false`` beside
+        ``validation_outcome: "pass"``, which every consumer then normalised
+        back to ``fail``, manufacturing a RED out of a passing ingest. One
+        source of truth removes that class of contradiction at the producer,
+        so the reconciliation in :func:`report_outcome` only ever has to cope
+        with hand-edited or foreign reports.
 
-        Unchanged and kept for compatibility. It cannot distinguish "failed"
-        from "incomplete" — read ``validation_outcome()`` for that.
+        It still cannot distinguish "failed" from "incomplete" — that is what
+        ``validation_outcome`` is for.
         """
-        if any(s.get("status") == "fail" for s in self.stages.values()):
-            return False
-        if self._explicit_ready is not None:
-            return bool(self._explicit_ready)
-        rehearse = self.stages.get("rehearse")
-        return bool(rehearse and rehearse.get("status") == "pass")
+        return self.validation_outcome() == "pass"
 
 
 def report_outcome(report: Any) -> str | None:

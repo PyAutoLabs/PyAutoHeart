@@ -166,6 +166,8 @@ def decide(
     # Note the test is neither `cached` nor `local-fresher`: every ingest happens
     # after the run it ingests, so "the report is fresher than the run" says
     # nothing about where the report came from.
+    from heart import validate
+
     report = current_report if isinstance(current_report, dict) else {}
     stages = report.get("stages")
     stages = stages if isinstance(stages, dict) else {}
@@ -179,7 +181,14 @@ def decide(
     per_project = report.get("per_project")
     per_project = per_project if isinstance(per_project, dict) else {}
     stored_adverse = (
-        any(isinstance(s, dict) and s.get("status") == "fail" for s in stages.values())
+        # Normalise exactly as the ingest does. A stored report can carry a
+        # synonym ("failure", "timed_out"), which the accumulator folds to
+        # `fail`; matching only the literal token here let such a report look
+        # benign and be overwritten by a green artifact.
+        any(
+            isinstance(s, dict) and validate._norm_status(s.get("status")) == "fail"
+            for s in stages.values()
+        )
         or _adverse_counts(report.get("totals"))
         or any(_adverse_counts(c) for c in per_project.values())
         or bool(report.get("failures"))

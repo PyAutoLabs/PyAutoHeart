@@ -340,3 +340,19 @@ def test_tick_does_not_force_fail_on_a_successful_run(monkeypatch, tmp_path):
 
     rr.main([])
     assert seen.get("force_fail") is False
+
+
+def test_migration_blocked_by_a_stage_status_synonym():
+    """The guard must normalise statuses the way the ingest does.
+
+    A stored `"failure"` folds to `fail` in the accumulator, so matching only
+    the literal token here made such a report look benign and let a green
+    artifact overwrite it.
+    """
+    for token in ("failure", "timed_out", "error"):
+        d = rr.decide(
+            {"ts": "2026-08-14T20:00:00+00:00", "release_ready": False,
+             "stages": {"integrate": {"status": token}}},
+            {"last_ingested_run_id": 7}, _run(run_id=7),
+        )
+        assert d["action"] == "cached", token

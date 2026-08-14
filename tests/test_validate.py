@@ -845,7 +845,14 @@ def test_stale_incomplete_base_is_upgraded_by_a_fresh_rehearsal(tmp_path):
         "failures": [], "ts": "2026-06-01T00:00:00+00:00",
     })
     _write(tmp_path / "rehearsal.json", REHEARSAL)
-    assert validate.ingest([tmp_path])["validation_outcome"] == "pass"
+    report = validate.ingest([tmp_path])
+    assert report["validation_outcome"] == "pass"
+    # ...and what a CONSUMER sees, which is the part that actually gated. The
+    # emitted report used to carry `release_ready: false` beside that `pass`,
+    # and every consumer normalised the contradiction back to `fail` — a RED
+    # manufactured out of a passing ingest.
+    assert report["release_ready"] is True
+    assert validate.report_outcome(report) == "pass"
 
 
 # --- report_outcome: the one normaliser every consumer shares --------------
@@ -892,3 +899,52 @@ def test_print_summary_reports_the_tri_state_not_the_legacy_boolean(capsys):
         "stages": {"integrate": {"status": "pass"}},
     })
     assert "no rehearsal evidence" in capsys.readouterr().out
+
+
+def test_emitted_reports_are_never_self_contradictory(tmp_path):
+    """`release_ready` is derived, so the producer cannot emit `false` + `pass`.
+
+    Anything self-contradictory is normalised to `fail` by every consumer, so a
+    producer able to emit it manufactures REDs.
+    """
+    cases = [
+        {"rehearsal.json": REHEARSAL},                                   # M2
+        {"rehearsal.json": REHEARSAL, "integrate.json": dict(INTEGRATE)},  # full pass
+        {"integrate.json": dict(INTEGRATE)},                             # incomplete
+        {"integrate.json": dict(INTEGRATE, status="fail")},              # fail
+        {"integrate.json": dict(                                          # adverse counts
+            INTEGRATE, summary={"passed": 1, "failed": 1, "skipped": 0, "timeout": 0})},
+    ]
+    for i, files in enumerate(cases):
+        d = tmp_path / f"case{i}"
+        d.mkdir()
+        for name, payload in files.items():
+            _write(d / name, payload)
+        report = validate.ingest([d])
+        assert validate.report_outcome(report) == report["validation_outcome"], report
+        assert report["release_ready"] is (report["validation_outcome"] == "pass")
+
+
+def test_explicit_fail_is_sticky_across_multiple_bases(tmp_path):
+    """`--ingest` folds a whole directory; file order must not clear a failure."""
+    common = {
+        "schema_version": 1, "release_ready": True,
+        "stages": {"rehearse": {"status": "pass"}, "integrate": {"status": "pass"}},
+        "totals": {"passed": 5, "failed": 0, "skipped": 0, "timeout": 0},
+        "failures": [], "ts": "2026-06-01T00:00:00+00:00",
+    }
+    _write(tmp_path / "a_failed.json", dict(common, validation_outcome="fail"))
+    _write(tmp_path / "z_pass.json", dict(common, validation_outcome="pass"))
+    assert validate.ingest([tmp_path])["validation_outcome"] == "fail"
+
+
+def test_explicit_not_ready_is_sticky_across_multiple_bases(tmp_path):
+    common = {
+        "schema_version": 1,
+        "stages": {"integrate": {"status": "pass"}},
+        "totals": {"passed": 5, "failed": 0, "skipped": 0, "timeout": 0},
+        "failures": [], "ts": "2026-06-01T00:00:00+00:00",
+    }
+    _write(tmp_path / "a_notready.json", dict(common, release_ready=False))
+    _write(tmp_path / "z_ready.json", dict(common, release_ready=True))
+    assert validate.ingest([tmp_path])["validation_outcome"] == "fail"
