@@ -142,6 +142,13 @@ def _read_json(path: Path) -> Any:
         return None
 
 
+def _counts_adverse(counts: Any) -> bool:
+    """True if a counts block records failures or timeouts."""
+    return bool(
+        isinstance(counts, dict) and (counts.get("failed", 0) or counts.get("timeout", 0))
+    )
+
+
 def _parse_iso(value: Any) -> datetime.datetime | None:
     """Parse an ISO timestamp, or None. Used to order merged base reports."""
     try:
@@ -337,15 +344,21 @@ class _Accumulator:
         ``--ingest`` at a directory containing both a prior
         ``validation_report.json`` AND the raw ``integrate.json`` that produced
         it — which would contradict the "idempotent re-ingest" claim below.
-        ``stages`` themselves stay merged unconditionally (deduped by name),
-        as do the scalar fields (version/profile/commit_shas/run_urls).
+        When a fresh stage artifact HAS contributed counts, the base is
+        subordinate in full — its stages and its verdict are skipped along with
+        its counts, and only the scalar fields (version/profile/commit_shas/
+        run_urls) seed through. Merging its stages anyway let a stale
+        ``rehearse: pass`` from a superseded attempt combine with a fresh
+        integrate-only artifact and read as complete evidence.
         """
         if data.get("testpypi_version") and not self.testpypi_version:
             self.testpypi_version = str(data["testpypi_version"])
         if data.get("profile") and not self.profile:
             self.profile = str(data["profile"])
         self.add_commit_shas(data.get("commit_shas"))
-        for name, entry in (data.get("stages") or {}).items():
+        base_stages = data.get("stages")
+        base_stages = base_stages if isinstance(base_stages, dict) else {}
+        for name, entry in ({} if self._stage_counts_seen else base_stages).items():
             if isinstance(entry, dict) and name not in self.stages:
                 merged = dict(entry)
                 # Normalise exactly as add_stage does. Without this a merged
@@ -379,23 +392,32 @@ class _Accumulator:
         # 3. On an equal or unparseable `ts` we cannot tell which came first, so
         #    a base may only ESCALATE to adverse, never soften. File order on
         #    disk must not be able to clear a recorded failure.
-        outcome = data.get("validation_outcome") if "validation_outcome" in data else None
+        has_outcome_key = "validation_outcome" in data
+        outcome = data.get("validation_outcome") if has_outcome_key else None
         valid_outcome = outcome if outcome in ("pass", "fail", "incomplete") else None
-        if outcome is not None and valid_outcome is None:
-            # Present but not a value we recognise: the report is malformed, and
-            # a malformed gate artifact must never read as a pass. Sticky.
+        if has_outcome_key and valid_outcome is None:
+            # Present but not a value we recognise — `null` included, which is
+            # why this tests key PRESENCE rather than the value being non-None.
+            # A malformed gate artifact must never read as a pass. Sticky.
             self._outcome_invalid = True
         ready = data["release_ready"] if isinstance(data.get("release_ready"), bool) else None
         # `false` alone is adverse only when we cannot see why; paired with an
         # explicit `incomplete` it just means "evidence missing", which is benign
         # and must not be sticky.
-        adverse = valid_outcome == "fail" or (ready is False and outcome is None)
+        adverse = valid_outcome == "fail" or (ready is False and not has_outcome_key)
 
         if self._stage_counts_seen:
             return
 
         ts = _parse_iso(data.get("ts"))
         strictly_newer = ts is not None and (self._base_ts is None or ts > self._base_ts)
+        strictly_older = (
+            ts is not None and self._base_ts is not None and ts < self._base_ts
+        )
+        if self._base_seen and strictly_older:
+            # Superseded outright. Escalation is for the case where we CANNOT
+            # order the two, not for one we can order and know to be older.
+            return
         if self._base_seen and not strictly_newer:
             if adverse:
                 self._base_adverse = True
@@ -412,12 +434,7 @@ class _Accumulator:
         self._explicit_ready = ready
         self._base_adverse = adverse
 
-    @staticmethod
-    def _counts_adverse(counts: Any) -> bool:
-        return bool(
-            isinstance(counts, dict)
-            and (counts.get("failed", 0) or counts.get("timeout", 0))
-        )
+    _counts_adverse = staticmethod(_counts_adverse)
 
     def _has_adverse_evidence(self) -> bool:
         """True if anything ingested is actually *bad* (not merely missing).
@@ -521,6 +538,24 @@ def report_outcome(report: Any) -> str | None:
         return None
     outcome = report.get("validation_outcome")
     ready = report.get("release_ready")
+    # A declaration never outranks the evidence beside it. Legacy reports carry
+    # only `release_ready`, so a stale `true` sitting next to a failed stage
+    # used to reach GREEN on the strength of the boolean alone.
+    stages = report.get("stages")
+    per_project = report.get("per_project")
+    if (
+        any(
+            isinstance(v, dict) and _norm_status(v.get("status")) == "fail"
+            for v in (stages if isinstance(stages, dict) else {}).values()
+        )
+        or _counts_adverse(report.get("totals"))
+        or any(
+            _counts_adverse(c)
+            for c in (per_project if isinstance(per_project, dict) else {}).values()
+        )
+        or bool(report.get("failures"))
+    ):
+        return "fail"
     if outcome in ("pass", "fail", "incomplete"):
         # The two fields contradict each other; believe the pessimistic one.
         if outcome == "pass" and ready is False:

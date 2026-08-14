@@ -1079,3 +1079,77 @@ def test_equal_timestamps_do_not_let_a_benign_gap_block(tmp_path, gap_name, pass
     _write(tmp_path / pass_name, _base(_OLD_TS, release_ready=True,
                                        validation_outcome="pass"))
     assert validate.ingest([tmp_path])["validation_outcome"] == "pass"
+
+
+# --- a declaration never outranks the evidence beside it -------------------
+
+
+@pytest.mark.parametrize("report", [
+    # legacy: only the boolean, contradicted by a failed stage
+    {"release_ready": True, "stages": {"integrate": {"status": "fail"}}},
+    # legacy: contradicted by failing counts
+    {"release_ready": True, "stages": {"integrate": {"status": "pass"}},
+     "totals": {"passed": 1, "failed": 1, "skipped": 0, "timeout": 0}},
+    # legacy: contradicted by per-project counts
+    {"release_ready": True, "stages": {"integrate": {"status": "pass"}},
+     "per_project": {"ws": {"passed": 1, "failed": 1, "skipped": 0, "timeout": 0}}},
+    # legacy: contradicted by a failures list
+    {"release_ready": True, "stages": {"integrate": {"status": "pass"}},
+     "failures": [{"project": "ws", "script": "x.py"}]},
+    # native: an explicit pass contradicted by a failed stage
+    {"release_ready": True, "validation_outcome": "pass",
+     "stages": {"integrate": {"status": "fail"}}},
+    # a status synonym still counts
+    {"release_ready": True, "stages": {"integrate": {"status": "failure"}}},
+])
+def test_report_outcome_never_lets_a_declaration_beat_the_evidence(report):
+    """A stale `release_ready: true` beside a failed stage reached GREEN.
+
+    The normaliser is what every consumer trusts, so it has to reconcile the
+    report's contents, not just its two verdict fields.
+    """
+    assert validate.report_outcome(report) == "fail"
+
+
+def test_a_superseded_base_cannot_lend_its_rehearsal_to_fresh_artifacts(tmp_path):
+    """The base is subordinate in FULL when fresh artifacts are present.
+
+    Merging its stages anyway let a stale `rehearse: pass` from a superseded
+    attempt combine with a fresh integrate-only artifact and read as complete
+    evidence — laundering a force-failed run into a pass.
+    """
+    _write(tmp_path / "validation_report.json", _base(
+        _OLD_TS, release_ready=False, validation_outcome="fail"))
+    _write(tmp_path / "stage_report.json", dict(INTEGRATE))
+    report = validate.ingest([tmp_path])
+    assert report["validation_outcome"] != "pass"
+    assert "rehearse" not in report["stages"]
+
+
+@pytest.mark.parametrize("first,second", [
+    ("a_old.json", "z_new.json"),
+    ("a_new.json", "z_old.json"),
+])
+def test_base_ordering_is_symmetric_for_adverse_reports(tmp_path, first, second):
+    """A strictly older adverse base is superseded, whichever order it is read.
+
+    Allowing every "not strictly newer" base to escalate meant an older failure
+    still pinned RED when it happened to be folded second.
+    """
+    older = _base(_OLD_TS, release_ready=False, validation_outcome="fail")
+    newer = _base(_NEW_TS, release_ready=True, validation_outcome="pass")
+    _write(tmp_path / first, older if "old" in first else newer)
+    _write(tmp_path / second, older if "old" in second else newer)
+    assert validate.ingest([tmp_path])["validation_outcome"] == "pass"
+
+
+def test_null_discriminator_is_malformed_not_absent(tmp_path):
+    """`validation_outcome: null` is present-but-unrecognised.
+
+    Testing the value for None rather than the KEY made the producer disagree
+    with `report_outcome`, which already called it malformed.
+    """
+    nul = _base(_OLD_TS, release_ready=True, validation_outcome=None)
+    assert validate.report_outcome(nul) == "fail"
+    _write(tmp_path / "validation_report.json", nul)
+    assert validate.ingest([tmp_path])["validation_outcome"] == "fail"

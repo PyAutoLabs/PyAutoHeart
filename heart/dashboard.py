@@ -586,7 +586,9 @@ def build_board(
             st, summary = OK, f"release_ready — {meta}"
         else:
             st, summary = WARN, f"release_ready unknown — {meta}"
-        details = [f"stages: " + ", ".join(f"{n}:{s.get('status', '?')}" for n, s in stages.items())] \
+        details = [f"stages: " + ", ".join(
+            f"{n}:{s.get('status', '?') if isinstance(s, dict) else '?'}"
+            for n, s in stages.items())] \
             if stages else []
         sections.append(Section("release_validation", "Release validation", st, summary, details))
 
