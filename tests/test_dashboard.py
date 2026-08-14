@@ -301,3 +301,60 @@ def test_main_no_cache_badge_emits_unknown_payload(monkeypatch, tmp_path, capsys
     assert payload["schemaVersion"] == 1
     assert payload["message"] == "unknown"
     assert payload["color"] == "lightgrey"
+
+
+# --- release-validation row + the stale axis on the machine surface ---------
+
+
+def _section(board, key):
+    return next(s for s in board.sections if s.key == key)
+
+
+def test_validation_incomplete_renders_warn_not_fail():
+    """`incomplete` is an evidence gap; a FAIL row would contradict the header.
+
+    The row is a projection of the same report the readiness gate reads, so it
+    has to make the same fail/incomplete distinction — otherwise a stale verdict
+    is rendered beside a red-looking validation row.
+    """
+    snap = make_snapshot(validation_report={
+        "release_ready": False, "validation_outcome": "incomplete",
+        "testpypi_version": "2026.6.1.1.dev100", "profile": "release",
+        "stages": {"integrate": {"status": "pass"}}, "ts": TS,
+    })
+    board = dashboard.build_board(snap, make_verdict("stale", 85), now=FRESH_NOW)
+    assert _section(board, "release_validation").state == dashboard.WARN
+
+
+def test_validation_fail_still_renders_fail():
+    snap = make_snapshot(validation_report={
+        "release_ready": False, "validation_outcome": "fail",
+        "testpypi_version": "2026.6.1.1.dev100", "profile": "release",
+        "stages": {"integrate": {"status": "fail"}}, "ts": TS,
+    })
+    board = dashboard.build_board(snap, make_verdict("red", 45), now=FRESH_NOW)
+    assert _section(board, "release_validation").state == dashboard.FAIL
+
+
+def test_validation_legacy_false_without_discriminator_renders_fail():
+    snap = make_snapshot(validation_report={
+        "release_ready": False,
+        "testpypi_version": "2026.6.1.1.dev100", "profile": "release",
+        "stages": {"integrate": {"status": "pass"}}, "ts": TS,
+    })
+    board = dashboard.build_board(snap, make_verdict("red", 45), now=FRESH_NOW)
+    assert _section(board, "release_validation").state == dashboard.FAIL
+
+
+def test_machine_surface_carries_stale_reasons():
+    """The Health Agent and mobile read `to_dict()`.
+
+    Without this key a reason re-classified from the red axis to the stale one
+    would vanish from those surfaces entirely rather than being re-reported.
+    """
+    verdict = make_verdict("stale", 85)
+    verdict["stale_reasons"] = ["release validation incomplete: no rehearsal for current source"]
+    board = dashboard.build_board(make_snapshot(), verdict, now=FRESH_NOW)
+    payload = dashboard.to_dict(board)
+    assert "stale_reasons" in payload
+    assert payload["stale_reasons"] == verdict["stale_reasons"]

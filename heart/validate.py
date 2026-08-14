@@ -35,7 +35,8 @@ Schema of ``validation_report.json`` (``schema_version`` 1)::
 
     {
       "schema_version": 1,
-      "release_ready": true,            # top-level pass/fail axis (no stage failed)
+      "release_ready": true,            # legacy boolean, kept for compatibility
+      "validation_outcome": "pass",     # pass | fail | incomplete — the real axis
       "testpypi_version": "2026.6.30.1.dev64501",
       "profile": "release",             # env profile the integration tier ran under
       "commit_shas": {                  # per-repo HEAD the rehearsal was built from
@@ -60,14 +61,32 @@ Schema of ``validation_report.json`` (``schema_version`` 1)::
       "ts": "2026-06-30T12:00:00+00:00"
     }
 
-``release_ready`` is the **pass/fail** axis only: it is ``false`` if any ran
-stage failed. Release *fidelity* and *freshness* (``profile == release``,
-``commit_shas`` matching the current ``main`` HEADs, age) are judged separately
-by the readiness gate (``heart/readiness.py``) — a passing-but-stale or
-passing-but-wrong-profile report is YELLOW there, not GREEN, while a failing one
-is RED. Keeping the axes separate is what lets an M2 rehearsal-only report be
-faithfully ``release_ready`` yet still gate YELLOW until M3 wires the
-release-fidelity integration.
+``validation_outcome`` is the **pass/fail/incomplete** axis, and it is the one to
+read:
+
+- ``fail`` — something adverse was ingested: a stage reported ``fail``, or
+  ``totals.failed``/``totals.timeout`` is positive, or ``failures`` is non-empty,
+  or a merged base report said so explicitly.
+- ``incomplete`` — nothing is wrong, but the ``rehearse`` evidence is absent, so
+  the report cannot attest that anything was built. This is an **evidence gap**,
+  which the readiness gate grades STALE — *not* a failure.
+- ``pass`` — no adverse evidence and the rehearsal passed.
+
+``release_ready`` is the older boolean, kept unchanged for compatibility. It
+collapses ``fail`` and ``incomplete`` into a single ``false``, which is exactly
+why it must not be used to decide RED: the tick's auto-ingest
+(``heart/checks/release_run.py``) folds an **integrate-only** stage report, which
+can never carry a ``rehearse`` stage, so it lands on ``false`` by construction
+however green the run was. Consumers deciding severity read
+``validation_outcome``; a report predating the field has no discriminator and is
+treated as a failure (fail closed).
+
+Release *fidelity* and *freshness* (``profile == release``, ``commit_shas``
+matching the current ``main`` HEADs, age) are judged separately by the readiness
+gate (``heart/readiness.py``) — a passing-but-stale or passing-but-wrong-profile
+report is YELLOW there, not GREEN. Keeping the axes separate is what lets an M2
+rehearsal-only report be faithfully ``pass`` yet still gate YELLOW until M3 wires
+the release-fidelity integration.
 
 Recognised input artifacts (files, or directories scanned for them):
 
@@ -198,6 +217,7 @@ class _Accumulator:
         # persists it to the separate sidecar path readiness reads.
         self.verify_install: dict[str, Any] | None = None
         self._explicit_ready: bool | None = None
+        self._explicit_outcome: str | None = None
         # True once a real stage artifact (add_stage) has contributed counts.
         # add_report() consults this so merging an old validation_report.json
         # as a "base" never double-counts totals/per_project/failures that a
@@ -307,7 +327,13 @@ class _Accumulator:
         self.add_commit_shas(data.get("commit_shas"))
         for name, entry in (data.get("stages") or {}).items():
             if isinstance(entry, dict) and name not in self.stages:
-                self.stages[name] = dict(entry)
+                merged = dict(entry)
+                # Normalise exactly as add_stage does. Without this a merged
+                # report carrying a synonym ("failure", "timed_out") would keep
+                # a status that is not literally "fail", and every downstream
+                # "did a stage fail?" test would read it as not-a-failure.
+                merged["status"] = _norm_status(entry.get("status"))
+                self.stages[name] = merged
         if not self._stage_counts_seen:
             if isinstance(data.get("totals"), dict):
                 self._add_counts(self.totals, data["totals"])
@@ -319,6 +345,50 @@ class _Accumulator:
             self.run_urls.setdefault(str(k), str(v))
         if isinstance(data.get("release_ready"), bool):
             self._explicit_ready = data["release_ready"]
+        outcome = data.get("validation_outcome")
+        if outcome in ("pass", "fail", "incomplete"):
+            self._explicit_outcome = str(outcome)
+
+    def _has_adverse_evidence(self) -> bool:
+        """True if anything ingested is actually *bad* (not merely missing).
+
+        Deliberately wider than "a stage said fail". ``release_ready`` never
+        consulted ``totals``/``failures``, so an artifact claiming
+        ``status: pass`` while carrying failing counts used to slip through the
+        stage test — and an unrecognised status token normalises to ``skip``,
+        never ``fail``. Anything adverse here forces ``fail``.
+        """
+        if any(s.get("status") == "fail" for s in self.stages.values()):
+            return True
+        if self.totals.get("failed", 0) or self.totals.get("timeout", 0):
+            return True
+        return bool(self.failures)
+
+    def validation_outcome(self) -> str:
+        """``pass`` | ``fail`` | ``incomplete`` — the two axes, separated.
+
+        ``release_ready`` is a single boolean that has to answer two different
+        questions ("did anything fail?" and "is the evidence complete?"), so a
+        report with nothing built is indistinguishable from a report where
+        something broke. This is the discriminator; ``release_ready`` is kept
+        beside it, unchanged, for compatibility.
+
+        Fails closed: anything adverse, or an explicit ``fail``/``false`` from a
+        merged base report, is ``fail``. ``incomplete`` is reserved for the case
+        where nothing is wrong and the rehearsal evidence is simply absent.
+        """
+        if self._has_adverse_evidence():
+            return "fail"
+        if self._explicit_outcome is not None:
+            return self._explicit_outcome
+        if self._explicit_ready is not None:
+            # A legacy base report with no discriminator: false means "not
+            # ready" and we cannot tell why, so treat it as a failure.
+            return "pass" if self._explicit_ready else "fail"
+        rehearse = self.stages.get("rehearse")
+        if rehearse and rehearse.get("status") == "pass":
+            return "pass"
+        return "incomplete"
 
     def release_ready(self) -> bool:
         """True iff no ran stage failed AND the rehearse stage passed.
@@ -326,6 +396,9 @@ class _Accumulator:
         The rehearse stage is mandatory: a report with nothing built is not
         release-ready. An explicit ``release_ready`` from a merged base report is
         honoured only when no stage contradicts it with a failure.
+
+        Unchanged and kept for compatibility. It cannot distinguish "failed"
+        from "incomplete" — read ``validation_outcome()`` for that.
         """
         if any(s.get("status") == "fail" for s in self.stages.values()):
             return False
@@ -400,6 +473,7 @@ def _distill(acc: _Accumulator, now: datetime.datetime | None = None) -> dict[st
     return {
         "schema_version": SCHEMA_VERSION,
         "release_ready": acc.release_ready(),
+        "validation_outcome": acc.validation_outcome(),
         "testpypi_version": acc.testpypi_version,
         "profile": acc.profile,
         "commit_shas": dict(sorted(acc.commit_shas.items())),

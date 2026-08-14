@@ -16,10 +16,16 @@ their own ``commit_shas`` / ``testpypi_version``). Rules:
 
 - a fresher local ingest is never regressed (report ts vs run creation time);
 - a run already ingested (sidecar-cached id) is never re-downloaded;
-- a FAILED rehearsal ingests too: ``release_ready: false`` is evidence, not an
-  evidence gap — readiness then shows the accurate ``release validation
+- a FAILED rehearsal ingests too: ``validation_outcome: "fail"`` is evidence,
+  not an evidence gap — readiness then shows the accurate ``release validation
   FAILED (stage integrate)`` instead of week-old STALE, and it self-clears on
   the next green night.
+
+The artifact this check downloads is an **integrate-only** stage report, so the
+folded report can never carry a ``rehearse`` stage and its ``release_ready`` is
+``false`` by construction — however green the run was. That is why severity is
+read from ``validation_outcome`` (``incomplete``, an evidence gap → STALE) and
+not from the boolean, which would report a failure that never happened.
 
 ``decide()`` is pure and no-network: the gh-backed callables are injected only
 by the ``main()`` tick/CLI entrypoint (the #83/#120 discipline).
@@ -119,6 +125,12 @@ def decide(
 
     Actions: no-runs · in-progress · cached (already ingested) ·
     local-fresher (never regress a newer local ingest) · ingest.
+
+    A report that predates ``validation_outcome`` is re-ingested once even when
+    the run id is cached: without that, a report already folded by the old code
+    would keep its missing discriminator forever, and the readiness gate — which
+    fails closed on reports it cannot classify — would stay RED until some
+    unrelated future run happened to come along.
     """
     if not run_record:
         return {"action": "no-runs"}
@@ -131,13 +143,44 @@ def decide(
     }
     if run_record.get("status") != "completed":
         return {**out, "action": "in-progress"}
-    if isinstance(sidecar, dict) and sidecar.get("last_ingested_run_id") == run_id:
-        return {**out, "action": "cached"}
-    report_ts = _parse_ts((current_report or {}).get("ts"))
-    created = _parse_ts(out["created"])
-    if report_ts is not None and created is not None and report_ts >= created:
-        return {**out, "action": "local-fresher"}
+    # A one-time re-fold for reports written before `validation_outcome` existed.
+    #
+    # Skipped when the current report already carries a `rehearse` stage: that is
+    # evidence this check's integrate-only artifact cannot reproduce (it comes
+    # from a manual multi-stage ingest during a release drive), so re-folding
+    # would throw it away and turn a `pass` into an `incomplete`. Note the test
+    # is the rehearsal, NOT `local-fresher` — every ingest necessarily happens
+    # after the run it ingests, so a report being "fresher than the run" says
+    # nothing about where it came from.
+    stages = (current_report or {}).get("stages")
+    has_rehearsal = isinstance(stages, dict) and "rehearse" in stages
+    stale_schema = (
+        isinstance(current_report, dict)
+        and bool(current_report)
+        and not has_rehearsal
+        and current_report.get("validation_outcome") not in ("pass", "fail", "incomplete")
+    )
+    if not stale_schema:
+        if isinstance(sidecar, dict) and sidecar.get("last_ingested_run_id") == run_id:
+            return {**out, "action": "cached"}
+        report_ts = _parse_ts((current_report or {}).get("ts"))
+        created = _parse_ts(out["created"])
+        if report_ts is not None and created is not None and report_ts >= created:
+            return {**out, "action": "local-fresher"}
     return {**out, "action": "ingest"}
+
+
+def resolve_outcome(ingested: dict[str, Any] | None) -> str:
+    """``pass`` | ``fail`` | ``incomplete`` for an ingested report.
+
+    Pure, like ``decide()``, so the tick's wording is testable without the
+    network. Reports predating ``validation_outcome`` fall back to the legacy
+    boolean and fail closed.
+    """
+    outcome = (ingested or {}).get("validation_outcome")
+    if outcome in ("pass", "fail", "incomplete"):
+        return str(outcome)
+    return "pass" if (ingested or {}).get("release_ready") is True else "fail"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -160,6 +203,7 @@ def main(argv: list[str] | None = None) -> int:
                     "last_ingested_run_id": decision.get("run_id"),
                     "ingested_ts": ingested.get("ts"),
                     "release_ready": ingested.get("release_ready"),
+                    "validation_outcome": ingested.get("validation_outcome"),
                     "run_url": decision.get("url"),
                 })
 
@@ -167,9 +211,16 @@ def main(argv: list[str] | None = None) -> int:
 
     label_id = decision.get("run_id", "?")
     if action == "ingest":
-        ready = (ingested or {}).get("release_ready")
-        if ready is True:
+        outcome = resolve_outcome(ingested)
+        if outcome == "pass":
             glyph, label = glyph_ok(), c_ok(f"rehearsal ingested (run {label_id}: pass)")
+        elif outcome == "incomplete":
+            # This is the ordinary state for this path: the artifact is an
+            # integrate-only stage report, so it carries no rehearsal evidence.
+            # Nothing failed — do not say FAILED.
+            glyph, label = glyph_warn(), c_warn(
+                f"integrate ingested (run {label_id}: no rehearsal evidence)"
+            )
         else:
             glyph, label = glyph_fail(), c_fail(f"rehearsal ingested (run {label_id}: FAILED)")
     elif action in ("cached", "local-fresher"):

@@ -571,9 +571,18 @@ def build_board(
         profile = vr.get("profile") or "?"
         stages = vr.get("stages") or {}
         meta = f"v{ver}  profile={profile}  ({vr.get('ts', '?')})"
-        if ready is False:
+        # Mirror the readiness gate: read `validation_outcome`, falling back to
+        # the legacy boolean. `incomplete` is an evidence gap (WARN), not a
+        # failure (FAIL) — a green integrate-only ingest lands there, and a FAIL
+        # row beside a stale header verdict reads as a broken release.
+        outcome = vr.get("validation_outcome")
+        if outcome not in ("pass", "fail", "incomplete"):
+            outcome = "fail" if ready is False else ("pass" if ready is True else None)
+        if outcome == "fail":
             st, summary = FAIL, f"NOT release_ready — {meta}"
-        elif ready is True:
+        elif outcome == "incomplete":
+            st, summary = WARN, f"incomplete — no rehearsal evidence — {meta}"
+        elif outcome == "pass":
             st, summary = OK, f"release_ready — {meta}"
         else:
             st, summary = WARN, f"release_ready unknown — {meta}"
@@ -798,6 +807,10 @@ def to_dict(board: Board) -> dict[str, Any]:
         "stale": board.stale,
         "red_reasons": board.red_reasons,
         "yellow_reasons": board.yellow_reasons,
+        # Evidence gaps belong on this surface too: the Health Agent and mobile
+        # read it, and a reason that moves from the red axis to the stale one
+        # would otherwise vanish from both rather than being re-classified.
+        "stale_reasons": board.stale_reasons,
         "pages_url": PAGES_URL,
         "sections": [
             {

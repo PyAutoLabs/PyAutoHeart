@@ -570,3 +570,117 @@ def test_run_keeps_newest_verify_install_across_artifacts(tmp_path, monkeypatch)
 
     importlib.reload(state_mod)
     importlib.reload(v_mod)
+
+
+# --- validation_outcome: the fail/incomplete split --------------------------
+#
+# `release_ready` collapses "something failed" and "nothing was built" into one
+# `false`. These pin the discriminator, and in particular that everything
+# ambiguous or adverse lands on `fail` rather than being softened.
+
+
+def test_outcome_integrate_only_green_is_incomplete(tmp_path):
+    """The tick's auto-ingest shape: green, integrate-only, no rehearsal.
+
+    This is the case that used to be graded a release FAILURE.
+    """
+    _write(tmp_path / "stage_report.json", dict(INTEGRATE))
+    report = validate.ingest([tmp_path])
+    assert report["validation_outcome"] == "incomplete"
+    assert report["release_ready"] is False  # legacy boolean unchanged
+    assert report["stages"]["integrate"]["status"] == "pass"
+    assert report["failures"] == []
+
+
+def test_outcome_rehearsal_plus_green_integrate_is_pass(tmp_path):
+    _write(tmp_path / "rehearsal.json", REHEARSAL)
+    _write(tmp_path / "integrate.json", dict(INTEGRATE))
+    report = validate.ingest([tmp_path])
+    assert report["validation_outcome"] == "pass"
+    assert report["release_ready"] is True
+
+
+def test_outcome_failed_stage_is_fail(tmp_path):
+    _write(tmp_path / "rehearsal.json", REHEARSAL)
+    _write(tmp_path / "integrate.json", dict(INTEGRATE, status="fail"))
+    report = validate.ingest([tmp_path])
+    assert report["validation_outcome"] == "fail"
+
+
+def test_outcome_failed_counts_without_failed_stage_is_fail(tmp_path):
+    """An artifact claiming `pass` while carrying failing counts must not soften.
+
+    `release_ready()` never consulted `totals`, so the stage test alone would
+    read this as "nothing failed" and, with no rehearsal, call it incomplete.
+    """
+    _write(tmp_path / "stage_report.json", dict(
+        INTEGRATE, status="pass",
+        summary={"passed": 100, "failed": 5, "skipped": 0, "timeout": 0},
+    ))
+    report = validate.ingest([tmp_path])
+    assert report["totals"]["failed"] == 5
+    assert report["stages"]["integrate"]["status"] == "pass"
+    assert report["validation_outcome"] == "fail"
+
+
+def test_outcome_timeout_counts_without_failed_stage_is_fail(tmp_path):
+    _write(tmp_path / "stage_report.json", dict(
+        INTEGRATE, status="pass",
+        summary={"passed": 100, "failed": 0, "skipped": 0, "timeout": 2},
+    ))
+    report = validate.ingest([tmp_path])
+    assert report["totals"]["timeout"] == 2
+    assert report["validation_outcome"] == "fail"
+
+
+def test_outcome_failures_list_without_failed_stage_is_fail(tmp_path):
+    _write(tmp_path / "stage_report.json", dict(
+        INTEGRATE, status="pass",
+        failures=[{"project": "autolens_workspace", "script": "x.py"}],
+    ))
+    report = validate.ingest([tmp_path])
+    assert report["failures"]
+    assert report["validation_outcome"] == "fail"
+
+
+def test_add_report_normalises_stage_status_synonyms(tmp_path):
+    """A merged base report's `"failure"` must normalise to `"fail"`.
+
+    `_norm_status` ran only in `add_stage`, so a synonym arriving through
+    `add_report` kept a status that no "did a stage fail?" test would match.
+    """
+    _write(tmp_path / "validation_report.json", {
+        "schema_version": 1,
+        "release_ready": False,
+        "stages": {"integrate": {"status": "failure"}},
+        "totals": {"passed": 0, "failed": 0, "skipped": 0, "timeout": 0},
+        "failures": [],
+        "ts": "2026-06-01T00:00:00+00:00",
+    })
+    report = validate.ingest([tmp_path])
+    assert report["stages"]["integrate"]["status"] == "fail"
+    assert report["validation_outcome"] == "fail"
+
+
+def test_outcome_legacy_report_without_discriminator_fails_closed(tmp_path):
+    """`release_ready: false` and no `validation_outcome`, nothing else adverse.
+
+    We cannot tell whether it failed or was merely incomplete, so it stays a
+    failure — the gate must never soften evidence it cannot classify.
+    """
+    _write(tmp_path / "validation_report.json", {
+        "schema_version": 1,
+        "release_ready": False,
+        "stages": {"integrate": {"status": "pass"}},
+        "totals": {"passed": 10, "failed": 0, "skipped": 0, "timeout": 0},
+        "failures": [],
+        "ts": "2026-06-01T00:00:00+00:00",
+    })
+    report = validate.ingest([tmp_path])
+    assert report["validation_outcome"] == "fail"
+
+
+def test_outcome_nothing_ingested_is_incomplete(tmp_path):
+    report = validate.ingest([tmp_path])
+    assert report["validation_outcome"] == "incomplete"
+    assert report["release_ready"] is False

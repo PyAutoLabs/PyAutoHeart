@@ -16,8 +16,10 @@ The verdict uses STRICT release gates:
   exceeds the newest released version of its library (UNSATISFIABLE — no
   installable release can satisfy it), or an unparseable (BAD) floor/tag; or the
   deep install verification last reported ``ready == false``; or the
-  release-validation report last ingested reports ``release_ready == false`` (a
-  stage failed).
+  release-validation report last ingested reports ``validation_outcome ==
+  "fail"`` (a stage failed, or failing/timed-out counts were recorded). A report
+  predating that field falls back to ``release_ready == false`` → RED, so the
+  gate fails closed on evidence it cannot classify.
 - **YELLOW** (caution) for soft signals: workspace-validation not passing (the
   workspace scripts/notebooks carry standing debt, so this is advisory — never a
   hard block), script-timing regressions, stale open PRs, stale parked scripts, a
@@ -30,7 +32,9 @@ The verdict uses STRICT release gates:
 - **STALE** (an evidence gap, the freshness tier) when nothing is known-bad but
   some evidence is *missing or expired*: a check that was never run, a
   passing-but-aged report, a rehearsal whose ``commit_shas`` no longer match
-  ``main``, an unknown repo/version status. The remedy for a stale reason is to
+  ``main``, a validation report whose ``validation_outcome`` is ``incomplete``
+  (nothing failed; the rehearsal evidence is absent), an unknown repo/version
+  status. The remedy for a stale reason is to
   **re-run the check**, never to fix code — which is exactly what separates it
   from yellow. The tier is not a skip lever: evidence whose *last known result
   was adverse* stays yellow/red until a fresh run says otherwise; only
@@ -453,13 +457,29 @@ def compute(
     # This is the M2 gate: the report proves the exact source about to ship was
     # built, published to TestPyPI, installed from the wheel, and exercised at
     # release fidelity. Absent/stale/source-not-matching → YELLOW ("no release
-    # rehearsal for current source"); failing → RED. Pass/fail (release_ready)
-    # is the RED axis; fidelity+freshness (profile / commit_shas / age) is the
-    # YELLOW axis — a passing-but-stale report is a caution, not a blocker.
+    # rehearsal for current source"); failing → RED. `validation_outcome` is the
+    # RED axis; fidelity+freshness (profile / commit_shas / age) is the YELLOW
+    # axis — a passing-but-stale report is a caution, not a blocker.
+    #
+    # Read `validation_outcome`, NOT `release_ready`: the boolean collapses
+    # "something failed" and "the rehearsal evidence is missing" into one
+    # `false`, and the tick's integrate-only auto-ingest always lands on that
+    # `false` (see heart/validate.py). Grading it RED reported a failure that
+    # had not happened. A report predating the field carries no discriminator,
+    # so `false` there stays RED — fail closed.
     vr = snapshot.get("validation_report")
     if isinstance(vr, dict) and vr:
         ready = vr.get("release_ready")
-        if ready is False:
+        outcome = vr.get("validation_outcome")
+        if outcome not in ("pass", "fail", "incomplete"):
+            outcome = "fail" if ready is False else ("pass" if ready is True else None)
+        if outcome == "incomplete":
+            # Nothing is wrong; the rehearsal evidence is simply absent. The
+            # wording must contain "release validation" — the Health Agent
+            # classifier matches on that string to route the remedy.
+            stale.append("release validation incomplete: no rehearsal for current source")
+            hit("validation_absent")
+        elif outcome == "fail":
             failed_stages = [
                 n for n, s in (vr.get("stages") or {}).items()
                 if isinstance(s, dict) and s.get("status") == "fail"
@@ -469,7 +489,7 @@ def compute(
                 + (f" (stage {', '.join(failed_stages)})" if failed_stages else "")
             )
             hit("validation_failed")
-        elif ready is True:
+        elif outcome == "pass":
             commit_shas = vr.get("commit_shas") or {}
             mismatched: list[str] = []
             unconfirmed: list[str] = []

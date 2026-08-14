@@ -838,3 +838,77 @@ def test_default_profile_output_is_unchanged_shape():
     assert v["verdict"] == "green"
     assert v["profile"] == "default"
     assert v["na_reasons"] == []
+
+
+# --- release validation: the fail/incomplete split --------------------------
+#
+# `test_validation_failed_is_red` above is the control for these: it sets a
+# genuinely failed stage and must keep reporting RED, unmodified.
+
+
+def test_validation_incomplete_is_stale_not_red():
+    """A green integrate-only ingest is an evidence gap, not a failure.
+
+    The tick's auto-ingest folds an integrate-only stage report, which can never
+    carry a `rehearse` stage, so `release_ready` is false by construction. This
+    used to be graded RED `release validation FAILED` on a run where nothing
+    failed at all.
+    """
+    report = _green_validation_report()
+    report["release_ready"] = False
+    report["validation_outcome"] = "incomplete"
+    report["stages"] = {"integrate": {"status": "pass", "profile": "release"}}
+    report["failures"] = []
+    v = compute(make_snapshot(validation_report=report))
+    assert v["verdict"] != "red"
+    assert not any("release validation FAILED" in r for r in v["red_reasons"])
+    assert any("release validation incomplete" in r for r in v["stale_reasons"])
+
+
+def test_validation_incomplete_reason_routes_in_health_agent():
+    """The reason text must stay matchable by the Health Agent classifier.
+
+    `health.sh` maps a reason to the `validate` capability by matching
+    "release validation" / "validation report"; a reason matching neither falls
+    through to `unknown` and recommends a bare tick, which cannot repair this.
+    """
+    report = _green_validation_report()
+    report["release_ready"] = False
+    report["validation_outcome"] = "incomplete"
+    v = compute(make_snapshot(validation_report=report))
+    reasons = [r for r in v["stale_reasons"] if "incomplete" in r]
+    assert reasons
+    assert all("release validation" in r for r in reasons)
+
+
+def test_validation_outcome_fail_is_red():
+    report = _green_validation_report()
+    report["release_ready"] = False
+    report["validation_outcome"] = "fail"
+    report["stages"]["integrate"] = {"status": "fail", "profile": "release"}
+    v = compute(make_snapshot(validation_report=report))
+    assert v["verdict"] == "red"
+    assert any("release validation FAILED" in r for r in v["red_reasons"])
+
+
+def test_validation_legacy_false_without_discriminator_stays_red():
+    """No `validation_outcome` field at all: fail closed.
+
+    Pre-existing reports carry no discriminator, so `false` cannot be told apart
+    from a real failure and must keep blocking.
+    """
+    report = _green_validation_report()
+    report["release_ready"] = False
+    report.pop("validation_outcome", None)
+    v = compute(make_snapshot(validation_report=report))
+    assert v["verdict"] == "red"
+    assert any("release validation FAILED" in r for r in v["red_reasons"])
+
+
+def test_validation_outcome_overrides_stale_release_ready_true():
+    """An explicit `fail` blocks even if the legacy boolean says ready."""
+    report = _green_validation_report()
+    report["release_ready"] = True
+    report["validation_outcome"] = "fail"
+    v = compute(make_snapshot(validation_report=report))
+    assert v["verdict"] == "red"
