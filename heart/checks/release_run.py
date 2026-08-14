@@ -16,10 +16,16 @@ their own ``commit_shas`` / ``testpypi_version``). Rules:
 
 - a fresher local ingest is never regressed (report ts vs run creation time);
 - a run already ingested (sidecar-cached id) is never re-downloaded;
-- a FAILED rehearsal ingests too: ``release_ready: false`` is evidence, not an
-  evidence gap — readiness then shows the accurate ``release validation
+- a FAILED rehearsal ingests too: ``validation_outcome: "fail"`` is evidence,
+  not an evidence gap — readiness then shows the accurate ``release validation
   FAILED (stage integrate)`` instead of week-old STALE, and it self-clears on
   the next green night.
+
+The artifact this check downloads is an **integrate-only** stage report, so the
+folded report can never carry a ``rehearse`` stage and its ``release_ready`` is
+``false`` by construction — however green the run was. That is why severity is
+read from ``validation_outcome`` (``incomplete``, an evidence gap → STALE) and
+not from the boolean, which would report a failure that never happened.
 
 ``decide()`` is pure and no-network: the gh-backed callables are injected only
 by the ``main()`` tick/CLI entrypoint (the #83/#120 discipline).
@@ -119,6 +125,12 @@ def decide(
 
     Actions: no-runs · in-progress · cached (already ingested) ·
     local-fresher (never regress a newer local ingest) · ingest.
+
+    A report that predates ``validation_outcome`` is re-ingested once even when
+    the run id is cached: without that, a report already folded by the old code
+    would keep its missing discriminator forever, and the readiness gate — which
+    fails closed on reports it cannot classify — would stay RED until some
+    unrelated future run happened to come along.
     """
     if not run_record:
         return {"action": "no-runs"}
@@ -131,13 +143,81 @@ def decide(
     }
     if run_record.get("status") != "completed":
         return {**out, "action": "in-progress"}
-    if isinstance(sidecar, dict) and sidecar.get("last_ingested_run_id") == run_id:
-        return {**out, "action": "cached"}
-    report_ts = _parse_ts((current_report or {}).get("ts"))
-    created = _parse_ts(out["created"])
-    if report_ts is not None and created is not None and report_ts >= created:
-        return {**out, "action": "local-fresher"}
+    # A one-time re-fold for reports written before `validation_outcome` existed.
+    #
+    # Strictly limited to reports this check's own integrate-only artifact can
+    # reproduce in full, because the re-fold OVERWRITES the canonical report:
+    #
+    #  - skipped when a `rehearse` stage is present — evidence from a manual
+    #    multi-stage ingest during a release drive, which this artifact cannot
+    #    reproduce; re-folding would turn its `pass` into an `incomplete`;
+    #  - skipped when the stored report carries ANY adverse evidence — a failed
+    #    stage, failing/timed-out counts in `totals` OR in any `per_project`
+    #    entry, or a failures list. Those can come from a run that broke before
+    #    it ever reached the rehearsal, and re-folding a green artifact over them
+    #    would silently convert a real RED into a STALE. The definition of
+    #    "adverse" must match `validate._Accumulator._has_adverse_evidence`;
+    #    when it did not, per-project failures were an escape hatch.
+    #  - triggered only when the field is genuinely ABSENT, not merely invalid.
+    #    A present-but-malformed discriminator is graded RED on purpose, so
+    #    treating it as "predates the schema" would let the migration overwrite
+    #    the very report that RED rests on.
+    #
+    # Note the test is neither `cached` nor `local-fresher`: every ingest happens
+    # after the run it ingests, so "the report is fresher than the run" says
+    # nothing about where the report came from.
+    from heart import validate
+
+    report = current_report if isinstance(current_report, dict) else {}
+    stages = report.get("stages")
+    stages = stages if isinstance(stages, dict) else {}
+
+    def _adverse_counts(counts: Any) -> bool:
+        return bool(
+            isinstance(counts, dict)
+            and (counts.get("failed", 0) or counts.get("timeout", 0))
+        )
+
+    per_project = report.get("per_project")
+    per_project = per_project if isinstance(per_project, dict) else {}
+    stored_adverse = (
+        # Normalise exactly as the ingest does. A stored report can carry a
+        # synonym ("failure", "timed_out"), which the accumulator folds to
+        # `fail`; matching only the literal token here let such a report look
+        # benign and be overwritten by a green artifact.
+        any(
+            isinstance(s, dict) and validate._norm_status(s.get("status")) == "fail"
+            for s in stages.values()
+        )
+        or _adverse_counts(report.get("totals"))
+        or any(_adverse_counts(c) for c in per_project.values())
+        or bool(report.get("failures"))
+    )
+    stale_schema = (
+        bool(report)
+        and "rehearse" not in stages
+        and not stored_adverse
+        and "validation_outcome" not in report
+    )
+    if not stale_schema:
+        if isinstance(sidecar, dict) and sidecar.get("last_ingested_run_id") == run_id:
+            return {**out, "action": "cached"}
+        report_ts = _parse_ts(report.get("ts"))
+        created = _parse_ts(out["created"])
+        if report_ts is not None and created is not None and report_ts >= created:
+            return {**out, "action": "local-fresher"}
     return {**out, "action": "ingest"}
+
+
+def resolve_outcome(ingested: dict[str, Any] | None) -> str:
+    """``pass`` | ``fail`` | ``incomplete`` for an ingested report.
+
+    Pure, like ``decide()``, so the tick's wording is testable without the
+    network. Reports predating ``validation_outcome`` fall back to the legacy
+    boolean and fail closed.
+    """
+    from heart import validate
+    return validate.report_outcome(ingested) or "fail"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -154,12 +234,20 @@ def main(argv: list[str] | None = None) -> int:
             if report_path is None:
                 action = decision["action"] = "artifact-unavailable"
             else:
-                ingested = validate.run([td])
+                # A run whose conclusion is not `success` is a failure even if
+                # the stage report it uploaded says otherwise — the workflow can
+                # break outside anything that artifact captures, and the artifact
+                # is written by a step that may have run before the break.
+                ingested = validate.run(
+                    [td],
+                    force_fail=str(decision.get("conclusion") or "").lower() != "success",
+                )
                 # Record the ingest so the tick never re-downloads this run.
                 state.atomic_write_json(SIDECAR, {
                     "last_ingested_run_id": decision.get("run_id"),
                     "ingested_ts": ingested.get("ts"),
                     "release_ready": ingested.get("release_ready"),
+                    "validation_outcome": ingested.get("validation_outcome"),
                     "run_url": decision.get("url"),
                 })
 
@@ -167,9 +255,16 @@ def main(argv: list[str] | None = None) -> int:
 
     label_id = decision.get("run_id", "?")
     if action == "ingest":
-        ready = (ingested or {}).get("release_ready")
-        if ready is True:
+        outcome = resolve_outcome(ingested)
+        if outcome == "pass":
             glyph, label = glyph_ok(), c_ok(f"rehearsal ingested (run {label_id}: pass)")
+        elif outcome == "incomplete":
+            # This is the ordinary state for this path: the artifact is an
+            # integrate-only stage report, so it carries no rehearsal evidence.
+            # Nothing failed — do not say FAILED.
+            glyph, label = glyph_warn(), c_warn(
+                f"integrate ingested (run {label_id}: no rehearsal evidence)"
+            )
         else:
             glyph, label = glyph_fail(), c_fail(f"rehearsal ingested (run {label_id}: FAILED)")
     elif action in ("cached", "local-fresher"):

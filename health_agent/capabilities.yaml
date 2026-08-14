@@ -128,14 +128,21 @@ release_validation:
       `release-stage-report` artifact emitted by the release-integrate.yml
       channel — collected and handed over by the Brain Release Agent.
     produces: >-
-      validation_report.json (schema_version 1): release_ready, testpypi_version,
-      profile, per-repo commit_shas, per-stage status, per-project counts,
-      failures, run URLs, timestamp — persisted in Heart state + a
-      validation_history/ archive.
+      validation_report.json (schema_version 1): validation_outcome
+      (pass|fail|incomplete), release_ready (legacy boolean, kept for
+      compatibility), testpypi_version, profile, per-repo commit_shas, per-stage
+      status, per-project counts, failures, run URLs, timestamp — persisted in
+      Heart state + a validation_history/ archive.
     gate_role: >-
-      HARD readiness gate. release_ready==false → RED; absent / stale-by-age /
-      commit_shas not matching current main HEADs / profile != release → YELLOW;
-      fresh pass matching current source under the release profile → GREEN.
+      HARD readiness gate. Read validation_outcome, NOT release_ready — the
+      boolean collapses "a stage failed" and "no rehearsal evidence" into one
+      false, and the tick's integrate-only auto-ingest always lands on that
+      false however green the run was. validation_outcome==fail → RED;
+      ==incomplete → STALE (an evidence gap, nothing known-bad); absent /
+      stale-by-age / commit_shas not matching current main HEADs / profile !=
+      release → YELLOW; fresh pass matching current source under the release
+      profile → GREEN. A report predating validation_outcome falls back to
+      release_ready==false → RED (fail closed).
     orchestrated_by: "PyAutoBrain Release Agent (agents/release/) — dispatch/poll/download"
     boundary: "ingest-and-judge only; never dispatches release.yml or workspace-validation.yml"
 

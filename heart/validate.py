@@ -35,7 +35,8 @@ Schema of ``validation_report.json`` (``schema_version`` 1)::
 
     {
       "schema_version": 1,
-      "release_ready": true,            # top-level pass/fail axis (no stage failed)
+      "release_ready": true,            # legacy boolean, kept for compatibility
+      "validation_outcome": "pass",     # pass | fail | incomplete — the real axis
       "testpypi_version": "2026.6.30.1.dev64501",
       "profile": "release",             # env profile the integration tier ran under
       "commit_shas": {                  # per-repo HEAD the rehearsal was built from
@@ -60,14 +61,38 @@ Schema of ``validation_report.json`` (``schema_version`` 1)::
       "ts": "2026-06-30T12:00:00+00:00"
     }
 
-``release_ready`` is the **pass/fail** axis only: it is ``false`` if any ran
-stage failed. Release *fidelity* and *freshness* (``profile == release``,
-``commit_shas`` matching the current ``main`` HEADs, age) are judged separately
-by the readiness gate (``heart/readiness.py``) — a passing-but-stale or
-passing-but-wrong-profile report is YELLOW there, not GREEN, while a failing one
-is RED. Keeping the axes separate is what lets an M2 rehearsal-only report be
-faithfully ``release_ready`` yet still gate YELLOW until M3 wires the
-release-fidelity integration.
+``validation_outcome`` is the **pass/fail/incomplete** axis, and it is the one to
+read:
+
+- ``fail`` — something adverse was ingested: a stage reported ``fail``;
+  ``failed``/``timeout`` is positive in ``totals`` **or in any ``per_project``
+  entry**; ``failures`` is non-empty; the caller passed ``force_fail`` (e.g. the
+  producing run's own conclusion was not ``success``, whatever its artifact
+  claims); a merged base report said so explicitly; or the discriminator is
+  malformed or contradicts the ``release_ready`` beside it.
+- ``incomplete`` — nothing adverse and nothing contradictory, but the report
+  cannot attest that everything ran: the ``rehearse`` evidence is absent, or a
+  stage ran without passing (``skip`` — which is also where ``_norm_status``
+  puts any token it does not recognise, so an unknown status can never read as a
+  pass). This is an **evidence gap**, which the readiness gate grades STALE —
+  *not* a failure.
+- ``pass`` — no adverse evidence, every stage passed, and the rehearsal passed.
+
+``release_ready`` is the older boolean, kept unchanged for compatibility. It
+collapses ``fail`` and ``incomplete`` into a single ``false``, which is exactly
+why it must not be used to decide RED: the tick's auto-ingest
+(``heart/checks/release_run.py``) folds an **integrate-only** stage report, which
+can never carry a ``rehearse`` stage, so it lands on ``false`` by construction
+however green the run was. Consumers deciding severity read
+``validation_outcome``; a report predating the field has no discriminator and is
+treated as a failure (fail closed).
+
+Release *fidelity* and *freshness* (``profile == release``, ``commit_shas``
+matching the current ``main`` HEADs, age) are judged separately by the readiness
+gate (``heart/readiness.py``) — a passing-but-stale or passing-but-wrong-profile
+report is YELLOW there, not GREEN. Keeping the axes separate is what lets an M2
+rehearsal-only report be faithfully ``pass`` yet still gate YELLOW until M3 wires
+the release-fidelity integration.
 
 Recognised input artifacts (files, or directories scanned for them):
 
@@ -115,6 +140,22 @@ def _read_json(path: Path) -> Any:
         return json.loads(path.read_text())
     except (OSError, json.JSONDecodeError):
         return None
+
+
+def _counts_adverse(counts: Any) -> bool:
+    """True if a counts block records failures or timeouts."""
+    return bool(
+        isinstance(counts, dict) and (counts.get("failed", 0) or counts.get("timeout", 0))
+    )
+
+
+def _parse_iso(value: Any) -> datetime.datetime | None:
+    """Parse an ISO timestamp, or None. Used to order merged base reports."""
+    try:
+        t = datetime.datetime.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return None
+    return t.replace(tzinfo=datetime.timezone.utc) if t.tzinfo is None else t
 
 
 def _norm_status(value: Any) -> str:
@@ -198,6 +239,12 @@ class _Accumulator:
         # persists it to the separate sidecar path readiness reads.
         self.verify_install: dict[str, Any] | None = None
         self._explicit_ready: bool | None = None
+        self._explicit_outcome: str | None = None
+        self._outcome_invalid = False
+        self._force_fail = False
+        self._base_seen = False
+        self._base_ts: datetime.datetime | None = None
+        self._base_adverse = False
         # True once a real stage artifact (add_stage) has contributed counts.
         # add_report() consults this so merging an old validation_report.json
         # as a "base" never double-counts totals/per_project/failures that a
@@ -297,17 +344,29 @@ class _Accumulator:
         ``--ingest`` at a directory containing both a prior
         ``validation_report.json`` AND the raw ``integrate.json`` that produced
         it — which would contradict the "idempotent re-ingest" claim below.
-        ``stages`` themselves stay merged unconditionally (deduped by name),
-        as do the scalar fields (version/profile/commit_shas/run_urls).
+        When a fresh stage artifact HAS contributed counts, the base is
+        subordinate in full — its stages and its verdict are skipped along with
+        its counts, and only the scalar fields (version/profile/commit_shas/
+        run_urls) seed through. Merging its stages anyway let a stale
+        ``rehearse: pass`` from a superseded attempt combine with a fresh
+        integrate-only artifact and read as complete evidence.
         """
         if data.get("testpypi_version") and not self.testpypi_version:
             self.testpypi_version = str(data["testpypi_version"])
         if data.get("profile") and not self.profile:
             self.profile = str(data["profile"])
         self.add_commit_shas(data.get("commit_shas"))
-        for name, entry in (data.get("stages") or {}).items():
+        base_stages = data.get("stages")
+        base_stages = base_stages if isinstance(base_stages, dict) else {}
+        for name, entry in ({} if self._stage_counts_seen else base_stages).items():
             if isinstance(entry, dict) and name not in self.stages:
-                self.stages[name] = dict(entry)
+                merged = dict(entry)
+                # Normalise exactly as add_stage does. Without this a merged
+                # report carrying a synonym ("failure", "timed_out") would keep
+                # a status that is not literally "fail", and every downstream
+                # "did a stage fail?" test would read it as not-a-failure.
+                merged["status"] = _norm_status(entry.get("status"))
+                self.stages[name] = merged
         if not self._stage_counts_seen:
             if isinstance(data.get("totals"), dict):
                 self._add_counts(self.totals, data["totals"])
@@ -317,22 +376,199 @@ class _Accumulator:
                     self.failures.append(f)
         for k, v in (data.get("run_urls") or {}).items():
             self.run_urls.setdefault(str(k), str(v))
-        if isinstance(data.get("release_ready"), bool):
-            self._explicit_ready = data["release_ready"]
+        # --- the base's own verdict --------------------------------------
+        #
+        # A base report is a SEED, not evidence. Three rules, in order:
+        #
+        # 1. If this ingest also folded first-hand stage artifacts, THEY are the
+        #    evidence and the base's verdict is ignored outright — the same rule
+        #    its counts already follow just above. Without this, a stale failed
+        #    report left in a re-used artifacts directory permanently poisons
+        #    every later attempt that writes into the same directory.
+        # 2. Otherwise the NEWEST base wins, by `ts`. Ingest walks a directory,
+        #    so which base is "last" is an accident of filename order; recency
+        #    is the only defensible ordering, and it makes the result
+        #    order-independent.
+        # 3. On an equal or unparseable `ts` we cannot tell which came first, so
+        #    a base may only ESCALATE to adverse, never soften. File order on
+        #    disk must not be able to clear a recorded failure.
+        has_outcome_key = "validation_outcome" in data
+        outcome = data.get("validation_outcome") if has_outcome_key else None
+        valid_outcome = outcome if outcome in ("pass", "fail", "incomplete") else None
+        if has_outcome_key and valid_outcome is None:
+            # Present but not a value we recognise — `null` included, which is
+            # why this tests key PRESENCE rather than the value being non-None.
+            # A malformed gate artifact must never read as a pass. Sticky.
+            self._outcome_invalid = True
+        ready = data["release_ready"] if isinstance(data.get("release_ready"), bool) else None
+        # `false` alone is adverse only when we cannot see why; paired with an
+        # explicit `incomplete` it just means "evidence missing", which is benign
+        # and must not be sticky.
+        adverse = valid_outcome == "fail" or (ready is False and not has_outcome_key)
 
-    def release_ready(self) -> bool:
-        """True iff no ran stage failed AND the rehearse stage passed.
+        if self._stage_counts_seen:
+            return
 
-        The rehearse stage is mandatory: a report with nothing built is not
-        release-ready. An explicit ``release_ready`` from a merged base report is
-        honoured only when no stage contradicts it with a failure.
+        ts = _parse_iso(data.get("ts"))
+        strictly_newer = ts is not None and (self._base_ts is None or ts > self._base_ts)
+        strictly_older = (
+            ts is not None and self._base_ts is not None and ts < self._base_ts
+        )
+        if self._base_seen and strictly_older:
+            # Superseded outright. Escalation is for the case where we CANNOT
+            # order the two, not for one we can order and know to be older.
+            return
+        if self._base_seen and not strictly_newer:
+            if adverse:
+                self._base_adverse = True
+                if valid_outcome == "fail":
+                    self._explicit_outcome = "fail"
+                if ready is False:
+                    self._explicit_ready = False
+            return
+
+        self._base_seen = True
+        if ts is not None:
+            self._base_ts = ts
+        self._explicit_outcome = valid_outcome
+        self._explicit_ready = ready
+        self._base_adverse = adverse
+
+    _counts_adverse = staticmethod(_counts_adverse)
+
+    def _has_adverse_evidence(self) -> bool:
+        """True if anything ingested is actually *bad* (not merely missing).
+
+        Deliberately wider than "a stage said fail". ``release_ready`` never
+        consulted the counts at all, so an artifact claiming ``status: pass``
+        while carrying failing ones slipped through the stage test — and an
+        unrecognised status token normalises to ``skip``, never ``fail``.
+        Per-project counts are checked too: they are merged independently of
+        ``totals``, so a report can carry a failing project while its top-level
+        totals read clean. Anything adverse here forces ``fail``.
         """
         if any(s.get("status") == "fail" for s in self.stages.values()):
-            return False
-        if self._explicit_ready is not None:
-            return bool(self._explicit_ready)
+            return True
+        if self._counts_adverse(self.totals):
+            return True
+        if any(self._counts_adverse(c) for c in self.per_project.values()):
+            return True
+        return bool(self.failures)
+
+    def validation_outcome(self) -> str:
+        """``pass`` | ``fail`` | ``incomplete`` — the two axes, separated.
+
+        ``release_ready`` is a single boolean that has to answer two different
+        questions ("did anything fail?" and "is the evidence complete?"), so a
+        report with nothing built is indistinguishable from a report where
+        something broke. This is the discriminator; ``release_ready`` is kept
+        beside it, unchanged, for compatibility.
+
+        Fails closed at every step. ``incomplete`` is reserved for the single
+        benign case: nothing adverse, nothing contradictory, and the rehearsal
+        evidence is simply absent.
+        """
+        if self._force_fail or self._has_adverse_evidence():
+            return "fail"
+        # A malformed discriminator is untrustworthy evidence, not a gap.
+        if self._outcome_invalid:
+            return "fail"
+        # An explicit `fail` from a merged base outranks everything below: a
+        # base saying "this failed" must never be softened by what the stages
+        # look like now.
+        if self._base_adverse or self._explicit_outcome == "fail":
+            return "fail"
+        if self._explicit_outcome == "pass" and self._explicit_ready is False:
+            # A base whose two fields contradict each other. Fails closed.
+            return "fail"
+        # Everything else is decided by the evidence actually folded in, NOT by
+        # the base's explicit `pass`/`incomplete`. A base's stale `incomplete`
+        # must not survive a rehearsal supplied in the same ingest, and its
+        # `pass` must not stand in for rehearsal evidence that isn't here.
+        #
+        # A stage that RAN and did not pass is not evidence of passing. `skip`
+        # covers both a deliberately skipped stage and any status token
+        # `_norm_status` did not recognise, so neither can read as a pass.
+        if any(s.get("status") != "pass" for s in self.stages.values()):
+            return "incomplete"
         rehearse = self.stages.get("rehearse")
-        return bool(rehearse and rehearse.get("status") == "pass")
+        if rehearse and rehearse.get("status") == "pass":
+            return "pass"
+        if self._explicit_outcome is None and self._explicit_ready is True:
+            # Legacy compatibility: a report predating `validation_outcome`
+            # states only `release_ready: true`, and the schema's idempotent
+            # re-ingest promise means folding it back must not silently demote
+            # it. A report that DOES carry the discriminator gets no such
+            # benefit — an explicit `pass` never substitutes for the rehearsal
+            # evidence it claims.
+            return "pass"
+        return "incomplete"
+
+    def release_ready(self) -> bool:
+        """The legacy boolean, now DERIVED from :meth:`validation_outcome`.
+
+        It used to be computed independently, and the two could then disagree
+        inside a single emitted report — an incomplete base upgraded by a fresh
+        rehearsal produced ``release_ready: false`` beside
+        ``validation_outcome: "pass"``, which every consumer then normalised
+        back to ``fail``, manufacturing a RED out of a passing ingest. One
+        source of truth removes that class of contradiction at the producer,
+        so the reconciliation in :func:`report_outcome` only ever has to cope
+        with hand-edited or foreign reports.
+
+        It still cannot distinguish "failed" from "incomplete" — that is what
+        ``validation_outcome`` is for.
+        """
+        return self.validation_outcome() == "pass"
+
+
+def report_outcome(report: Any) -> str | None:
+    """Severity of a *persisted* report: ``pass``/``fail``/``incomplete``/None.
+
+    The single normaliser every consumer must use — the readiness gate, the
+    dashboard, the ``validate`` CLI summary and the tick's status line. Each of
+    them previously re-derived this inline, which is how they came to disagree:
+    readiness rejected a malformed discriminator while the dashboard beside it
+    still rendered a green ``release_ready`` row for the same report.
+
+    Fails closed. ``None`` means "no report / nothing stated" — the caller
+    decides what an absent verdict means in its own context.
+    """
+    if not isinstance(report, dict) or not report:
+        return None
+    outcome = report.get("validation_outcome")
+    ready = report.get("release_ready")
+    # A declaration never outranks the evidence beside it. Legacy reports carry
+    # only `release_ready`, so a stale `true` sitting next to a failed stage
+    # used to reach GREEN on the strength of the boolean alone.
+    stages = report.get("stages")
+    per_project = report.get("per_project")
+    if (
+        any(
+            isinstance(v, dict) and _norm_status(v.get("status")) == "fail"
+            for v in (stages if isinstance(stages, dict) else {}).values()
+        )
+        or _counts_adverse(report.get("totals"))
+        or any(
+            _counts_adverse(c)
+            for c in (per_project if isinstance(per_project, dict) else {}).values()
+        )
+        or bool(report.get("failures"))
+    ):
+        return "fail"
+    if outcome in ("pass", "fail", "incomplete"):
+        # The two fields contradict each other; believe the pessimistic one.
+        if outcome == "pass" and ready is False:
+            return "fail"
+        return str(outcome)
+    if "validation_outcome" in report:
+        # Present but unrecognised: malformed, never a pass.
+        return "fail"
+    if ready is True:
+        return "pass"
+    if ready is False:
+        return "fail"
+    return None
 
 
 def _fold(
@@ -341,6 +577,7 @@ def _fold(
     profile: str | None = None,
     testpypi_version: str | None = None,
     commit_shas: dict[str, str] | None = None,
+    force_fail: bool = False,
 ) -> _Accumulator:
     """Fold the given artifacts into an accumulator (reads only; no writes).
 
@@ -350,6 +587,7 @@ def _fold(
     carry it and ``run`` persists it from here instead.
     """
     acc = _Accumulator()
+    acc._force_fail = bool(force_fail)
     if commit_shas:
         acc.add_commit_shas(commit_shas)
 
@@ -400,6 +638,7 @@ def _distill(acc: _Accumulator, now: datetime.datetime | None = None) -> dict[st
     return {
         "schema_version": SCHEMA_VERSION,
         "release_ready": acc.release_ready(),
+        "validation_outcome": acc.validation_outcome(),
         "testpypi_version": acc.testpypi_version,
         "profile": acc.profile,
         "commit_shas": dict(sorted(acc.commit_shas.items())),
@@ -419,6 +658,7 @@ def ingest(
     testpypi_version: str | None = None,
     commit_shas: dict[str, str] | None = None,
     now: datetime.datetime | None = None,
+    force_fail: bool = False,
 ) -> dict[str, Any]:
     """Fold the given artifacts into a single ``validation_report`` dict.
 
@@ -433,6 +673,7 @@ def ingest(
             profile=profile,
             testpypi_version=testpypi_version,
             commit_shas=commit_shas,
+            force_fail=force_fail,
         ),
         now=now,
     )
@@ -573,6 +814,7 @@ def run(
     commit_shas: dict[str, str] | None = None,
     out: Path | None = None,
     now: datetime.datetime | None = None,
+    force_fail: bool = False,
 ) -> dict[str, Any]:
     """Ingest, persist ``validation_report.json`` + a history copy, and return it.
 
@@ -591,6 +833,7 @@ def run(
         profile=profile,
         testpypi_version=testpypi_version,
         commit_shas=commit_shas,
+        force_fail=force_fail,
     )
     report = _distill(acc, now=now)
     target = out or VALIDATION_REPORT_FILE
@@ -616,15 +859,25 @@ def _print_summary(report: dict[str, Any]) -> None:
         c_fail, c_info, c_meta, c_ok, c_warn, glyph_fail, glyph_ok, glyph_warn,
     )
 
-    ready = report.get("release_ready")
-    if ready is True:
+    # Report the tri-state, not the legacy boolean: the two can legitimately
+    # disagree (a stage saying pass while carrying failing counts is
+    # `release_ready: true` but `validation_outcome: "fail"`), and printing the
+    # boolean alone rendered a green tick over a failing report.
+    outcome = report_outcome(report)
+    if outcome == "pass":
         glyph, label = glyph_ok(), c_ok("release_ready")
-    elif ready is False:
-        glyph, label = glyph_fail(), c_fail("NOT release_ready")
+    elif outcome == "fail":
+        glyph, label = glyph_fail(), c_fail("NOT release_ready (validation FAILED)")
+    elif outcome == "incomplete":
+        glyph, label = glyph_warn(), c_warn("incomplete — no rehearsal evidence")
     else:
         glyph, label = glyph_warn(), c_warn("release_ready unknown")
     t = report.get("totals", {}) or {}
-    stages = ", ".join(f"{n}:{s.get('status', '?')}" for n, s in (report.get("stages") or {}).items())
+    _stages = report.get("stages")
+    stages = ", ".join(
+        f"{n}:{s.get('status', '?') if isinstance(s, dict) else '?'}"
+        for n, s in (_stages if isinstance(_stages, dict) else {}).items()
+    )
     version = report.get("testpypi_version") or "?"
     prof = report.get("profile") or "?"
     print(f"{glyph} {c_info('validate')} {label} {c_meta(f'v{version}  profile={prof}')}")

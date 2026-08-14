@@ -37,6 +37,7 @@ import sys
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Sequence
 
+from heart import validate
 from heart.checks.test_run import counts_measured as tr_counts_measured
 from heart.heart_color import (
     c_bold, c_dim, c_fail, c_info, c_meta, c_ok, c_warn,
@@ -569,15 +570,25 @@ def build_board(
         ready = vr.get("release_ready")
         ver = vr.get("testpypi_version") or "?"
         profile = vr.get("profile") or "?"
-        stages = vr.get("stages") or {}
+        stages = vr.get("stages")
+        stages = stages if isinstance(stages, dict) else {}
         meta = f"v{ver}  profile={profile}  ({vr.get('ts', '?')})"
-        if ready is False:
+        # Same normaliser the readiness gate uses, so this row can never
+        # contradict the header verdict. `incomplete` is an evidence gap (WARN),
+        # not a failure (FAIL) — a green integrate-only ingest lands there, and
+        # a FAIL row beside a stale header reads as a broken release.
+        outcome = validate.report_outcome(vr)
+        if outcome == "fail":
             st, summary = FAIL, f"NOT release_ready — {meta}"
-        elif ready is True:
+        elif outcome == "incomplete":
+            st, summary = WARN, f"incomplete — no rehearsal evidence — {meta}"
+        elif outcome == "pass":
             st, summary = OK, f"release_ready — {meta}"
         else:
             st, summary = WARN, f"release_ready unknown — {meta}"
-        details = [f"stages: " + ", ".join(f"{n}:{s.get('status', '?')}" for n, s in stages.items())] \
+        details = [f"stages: " + ", ".join(
+            f"{n}:{s.get('status', '?') if isinstance(s, dict) else '?'}"
+            for n, s in stages.items())] \
             if stages else []
         sections.append(Section("release_validation", "Release validation", st, summary, details))
 
@@ -798,6 +809,10 @@ def to_dict(board: Board) -> dict[str, Any]:
         "stale": board.stale,
         "red_reasons": board.red_reasons,
         "yellow_reasons": board.yellow_reasons,
+        # Evidence gaps belong on this surface too: the Health Agent and mobile
+        # read it, and a reason that moves from the red axis to the stale one
+        # would otherwise vanish from both rather than being re-classified.
+        "stale_reasons": board.stale_reasons,
         "pages_url": PAGES_URL,
         "sections": [
             {

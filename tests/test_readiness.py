@@ -838,3 +838,150 @@ def test_default_profile_output_is_unchanged_shape():
     assert v["verdict"] == "green"
     assert v["profile"] == "default"
     assert v["na_reasons"] == []
+
+
+# --- release validation: the fail/incomplete split --------------------------
+#
+# `test_validation_failed_is_red` above is the control for these: it sets a
+# genuinely failed stage and must keep reporting RED, unmodified.
+
+
+def test_validation_incomplete_is_stale_not_red():
+    """A green integrate-only ingest is an evidence gap, not a failure.
+
+    The tick's auto-ingest folds an integrate-only stage report, which can never
+    carry a `rehearse` stage, so `release_ready` is false by construction. This
+    used to be graded RED `release validation FAILED` on a run where nothing
+    failed at all.
+    """
+    report = _green_validation_report()
+    # release_ready deliberately left True: this pins that the *discriminator*
+    # drives the verdict. With it False the legacy fallback would reach STALE
+    # even if the readiness change were reverted, so the test would prove
+    # nothing.
+    report["validation_outcome"] = "incomplete"
+    report["stages"] = {"integrate": {"status": "pass", "profile": "release"}}
+    report["failures"] = []
+    v = compute(make_snapshot(validation_report=report))
+    assert v["verdict"] == "stale"
+    assert v["red_reasons"] == []
+    assert any("release validation incomplete" in r for r in v["stale_reasons"])
+
+
+def test_validation_incomplete_reason_routes_in_health_agent():
+    """The reason text must stay matchable by the Health Agent classifier.
+
+    `health.sh` maps a reason to the `validate` capability by matching
+    "release validation" / "validation report"; a reason matching neither falls
+    through to `unknown` and recommends a bare tick, which cannot repair this.
+    """
+    report = _green_validation_report()
+    report["release_ready"] = False
+    report["validation_outcome"] = "incomplete"
+    v = compute(make_snapshot(validation_report=report))
+    reasons = [r for r in v["stale_reasons"] if "incomplete" in r]
+    assert reasons
+    assert all("release validation" in r for r in reasons)
+
+
+def test_validation_outcome_fail_is_red():
+    report = _green_validation_report()
+    report["release_ready"] = False
+    report["validation_outcome"] = "fail"
+    report["stages"]["integrate"] = {"status": "fail", "profile": "release"}
+    v = compute(make_snapshot(validation_report=report))
+    assert v["verdict"] == "red"
+    assert any("release validation FAILED" in r for r in v["red_reasons"])
+
+
+def test_validation_legacy_false_without_discriminator_stays_red():
+    """No `validation_outcome` field at all: fail closed.
+
+    Pre-existing reports carry no discriminator, so `false` cannot be told apart
+    from a real failure and must keep blocking.
+    """
+    report = _green_validation_report()
+    report["release_ready"] = False
+    report.pop("validation_outcome", None)
+    v = compute(make_snapshot(validation_report=report))
+    assert v["verdict"] == "red"
+    assert any("release validation FAILED" in r for r in v["red_reasons"])
+
+
+def test_validation_outcome_overrides_stale_release_ready_true():
+    """An explicit `fail` blocks even if the legacy boolean says ready."""
+    report = _green_validation_report()
+    report["release_ready"] = True
+    report["validation_outcome"] = "fail"
+    v = compute(make_snapshot(validation_report=report))
+    assert v["verdict"] == "red"
+
+
+def test_validation_incomplete_is_stale_even_when_release_ready_is_false():
+    """The common shape: both fields set, discriminator decides."""
+    report = _green_validation_report()
+    report["release_ready"] = False
+    report["validation_outcome"] = "incomplete"
+    v = compute(make_snapshot(validation_report=report))
+    assert v["verdict"] == "stale"
+    assert v["red_reasons"] == []
+
+
+def test_validation_outcome_pass_contradicting_release_ready_false_is_red():
+    """Contradictory fields are untrustworthy evidence — believe the pessimist."""
+    report = _green_validation_report()
+    report["release_ready"] = False
+    report["validation_outcome"] = "pass"
+    v = compute(make_snapshot(validation_report=report))
+    assert v["verdict"] == "red"
+    assert any("release validation FAILED" in r for r in v["red_reasons"])
+
+
+def test_validation_malformed_discriminator_is_red_even_with_legacy_true():
+    """Present-but-unrecognised must not fall back to the optimistic boolean."""
+    report = _green_validation_report()
+    report["release_ready"] = True
+    report["validation_outcome"] = "PASS"
+    v = compute(make_snapshot(validation_report=report))
+    assert v["verdict"] == "red"
+    assert any("release validation FAILED" in r for r in v["red_reasons"])
+
+
+def test_native_pass_report_is_green_and_keeps_the_fidelity_checks():
+    """The green path on the NATIVE schema, not via the legacy fallback.
+
+    The baseline fixture predates `validation_outcome`, so without this the
+    green-path tests would only ever exercise the compatibility branch.
+    """
+    report = _green_validation_report()
+    report["validation_outcome"] = "pass"
+    v = compute(make_snapshot(validation_report=report))
+    assert v["verdict"] == "green"
+
+    # ...and the fidelity checks the `pass` branch owns still fire.
+    stale_src = _green_validation_report()
+    stale_src["validation_outcome"] = "pass"
+    stale_src["commit_shas"]["PyAutoLens"] = "9" * 40
+    v2 = compute(make_snapshot(validation_report=stale_src))
+    assert any("source moved since rehearsal" in r for r in v2["stale_reasons"])
+
+    wrong_profile = _green_validation_report()
+    wrong_profile["validation_outcome"] = "pass"
+    wrong_profile["profile"] = "smoke"
+    v3 = compute(make_snapshot(validation_report=wrong_profile))
+    assert any("is not 'release'" in r for r in v3["stale_reasons"])
+
+
+@pytest.mark.parametrize("stages", [[{"stage": "integrate"}], "a-string", 42, None])
+def test_malformed_stages_never_raises(stages):
+    """`compute` promises never to raise on partial/malformed data.
+
+    `(x or {}).items()` catches an EMPTY list but not a populated one, so the
+    guard has to be an isinstance check.
+    """
+    report = _green_validation_report()
+    report["release_ready"] = False
+    report["validation_outcome"] = "fail"
+    report["stages"] = stages
+    v = compute(make_snapshot(validation_report=report))
+    assert v["verdict"] == "red"

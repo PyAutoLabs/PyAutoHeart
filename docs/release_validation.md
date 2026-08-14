@@ -138,7 +138,10 @@ a failing local artifact remains RED.
 `heart/validate.py` records `profile` and per-repo `commit_shas` in
 `validation_report.json`; `heart/readiness.py` then requires, for GREEN:
 
-- `release_ready == true` (no stage failed — else RED),
+- `validation_outcome == pass` (else RED for `fail`; **STALE** for `incomplete`,
+  which means nothing failed and the rehearsal evidence is simply absent — a
+  report predating the field falls back to `release_ready == false` → RED, so
+  the gate fails closed on evidence it cannot classify),
 - `profile == release` (else YELLOW — a smoke-fidelity run is not a release gate),
 - `commit_shas` matching the current `main` HEADs (else YELLOW — stale source),
 - freshness (a rehearsal older than `VALIDATION_STALE_DAYS` is YELLOW).

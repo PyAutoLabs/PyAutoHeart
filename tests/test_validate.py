@@ -60,6 +60,9 @@ def test_ingest_rehearsal_only(tmp_path):
     assert report["stages"]["rehearse"]["run_id"] == "645"
     # rehearsal artifact presence = build succeeded → release_ready True (pass axis)
     assert report["release_ready"] is True
+    # The M2 intent: a rehearsal-only report is a genuine `pass`, gated on
+    # fidelity by readiness rather than downgraded to an evidence gap here.
+    assert report["validation_outcome"] == "pass"
     # no integration stage yet → no release profile (the gate keeps this YELLOW)
     assert report["profile"] is None
     # the build sha is recorded under PyAutoHands, not a library head
@@ -570,3 +573,583 @@ def test_run_keeps_newest_verify_install_across_artifacts(tmp_path, monkeypatch)
 
     importlib.reload(state_mod)
     importlib.reload(v_mod)
+
+
+# --- validation_outcome: the fail/incomplete split --------------------------
+#
+# `release_ready` collapses "something failed" and "nothing was built" into one
+# `false`. These pin the discriminator, and in particular that everything
+# ambiguous or adverse lands on `fail` rather than being softened.
+
+
+def test_outcome_integrate_only_green_is_incomplete(tmp_path):
+    """The tick's auto-ingest shape: green, integrate-only, no rehearsal.
+
+    This is the case that used to be graded a release FAILURE.
+    """
+    _write(tmp_path / "stage_report.json", dict(INTEGRATE))
+    report = validate.ingest([tmp_path])
+    assert report["validation_outcome"] == "incomplete"
+    assert report["release_ready"] is False  # legacy boolean unchanged
+    assert report["stages"]["integrate"]["status"] == "pass"
+    assert report["failures"] == []
+
+
+def test_outcome_rehearsal_plus_green_integrate_is_pass(tmp_path):
+    _write(tmp_path / "rehearsal.json", REHEARSAL)
+    _write(tmp_path / "integrate.json", dict(INTEGRATE))
+    report = validate.ingest([tmp_path])
+    assert report["validation_outcome"] == "pass"
+    assert report["release_ready"] is True
+
+
+def test_outcome_failed_stage_is_fail(tmp_path):
+    _write(tmp_path / "rehearsal.json", REHEARSAL)
+    _write(tmp_path / "integrate.json", dict(INTEGRATE, status="fail"))
+    report = validate.ingest([tmp_path])
+    assert report["validation_outcome"] == "fail"
+
+
+def test_outcome_failed_counts_without_failed_stage_is_fail(tmp_path):
+    """An artifact claiming `pass` while carrying failing counts must not soften.
+
+    `release_ready()` never consulted `totals`, so the stage test alone would
+    read this as "nothing failed" and, with no rehearsal, call it incomplete.
+    """
+    _write(tmp_path / "stage_report.json", dict(
+        INTEGRATE, status="pass",
+        summary={"passed": 100, "failed": 5, "skipped": 0, "timeout": 0},
+    ))
+    report = validate.ingest([tmp_path])
+    assert report["totals"]["failed"] == 5
+    assert report["stages"]["integrate"]["status"] == "pass"
+    assert report["validation_outcome"] == "fail"
+
+
+def test_outcome_timeout_counts_without_failed_stage_is_fail(tmp_path):
+    _write(tmp_path / "stage_report.json", dict(
+        INTEGRATE, status="pass",
+        summary={"passed": 100, "failed": 0, "skipped": 0, "timeout": 2},
+    ))
+    report = validate.ingest([tmp_path])
+    assert report["totals"]["timeout"] == 2
+    assert report["validation_outcome"] == "fail"
+
+
+def test_outcome_failures_list_without_failed_stage_is_fail(tmp_path):
+    _write(tmp_path / "stage_report.json", dict(
+        INTEGRATE, status="pass",
+        failures=[{"project": "autolens_workspace", "script": "x.py"}],
+    ))
+    report = validate.ingest([tmp_path])
+    assert report["failures"]
+    assert report["validation_outcome"] == "fail"
+
+
+def test_add_report_normalises_stage_status_synonyms(tmp_path):
+    """A merged base report's `"failure"` must normalise to `"fail"`.
+
+    `_norm_status` ran only in `add_stage`, so a synonym arriving through
+    `add_report` kept a status that no "did a stage fail?" test would match.
+    """
+    _write(tmp_path / "validation_report.json", {
+        "schema_version": 1,
+        "release_ready": False,
+        "stages": {"integrate": {"status": "failure"}},
+        "totals": {"passed": 0, "failed": 0, "skipped": 0, "timeout": 0},
+        "failures": [],
+        "ts": "2026-06-01T00:00:00+00:00",
+    })
+    report = validate.ingest([tmp_path])
+    assert report["stages"]["integrate"]["status"] == "fail"
+    assert report["validation_outcome"] == "fail"
+
+
+def test_outcome_legacy_report_without_discriminator_fails_closed(tmp_path):
+    """`release_ready: false` and no `validation_outcome`, nothing else adverse.
+
+    We cannot tell whether it failed or was merely incomplete, so it stays a
+    failure — the gate must never soften evidence it cannot classify.
+    """
+    _write(tmp_path / "validation_report.json", {
+        "schema_version": 1,
+        "release_ready": False,
+        "stages": {"integrate": {"status": "pass"}},
+        "totals": {"passed": 10, "failed": 0, "skipped": 0, "timeout": 0},
+        "failures": [],
+        "ts": "2026-06-01T00:00:00+00:00",
+    })
+    report = validate.ingest([tmp_path])
+    assert report["validation_outcome"] == "fail"
+
+
+def test_outcome_nothing_ingested_is_incomplete(tmp_path):
+    report = validate.ingest([tmp_path])
+    assert report["validation_outcome"] == "incomplete"
+    assert report["release_ready"] is False
+
+
+# --- validation_outcome: the fail-closed edges -----------------------------
+#
+# Every case below reached `pass` or `incomplete` at some point during review.
+# They are the reason the predicate is wider than "did a stage say fail".
+
+
+def test_outcome_per_project_failures_with_clean_totals_is_fail(tmp_path):
+    """per_project is merged independently of totals, so it can disagree."""
+    _write(tmp_path / "rehearsal.json", REHEARSAL)
+    _write(tmp_path / "integrate.json", dict(
+        INTEGRATE,
+        summary={"passed": 10, "failed": 0, "skipped": 0, "timeout": 0},
+        per_project={"autolens_workspace":
+                     {"passed": 7, "failed": 3, "skipped": 0, "timeout": 0}},
+        failures=[],
+    ))
+    report = validate.ingest([tmp_path])
+    assert report["totals"]["failed"] == 0
+    assert report["validation_outcome"] == "fail"
+
+
+def test_outcome_per_project_timeouts_with_clean_totals_is_fail(tmp_path):
+    _write(tmp_path / "rehearsal.json", REHEARSAL)
+    _write(tmp_path / "integrate.json", dict(
+        INTEGRATE,
+        summary={"passed": 10, "failed": 0, "skipped": 0, "timeout": 0},
+        per_project={"autolens_workspace":
+                     {"passed": 7, "failed": 0, "skipped": 0, "timeout": 2}},
+        failures=[],
+    ))
+    assert validate.ingest([tmp_path])["validation_outcome"] == "fail"
+
+
+def test_outcome_skipped_stage_is_incomplete_not_pass(tmp_path):
+    """A stage that ran without passing is not evidence of passing."""
+    _write(tmp_path / "rehearsal.json", REHEARSAL)
+    _write(tmp_path / "integrate.json", dict(INTEGRATE, status="skipped"))
+    report = validate.ingest([tmp_path])
+    assert report["stages"]["integrate"]["status"] == "skip"
+    assert report["validation_outcome"] == "incomplete"
+
+
+def test_outcome_unknown_status_token_is_incomplete_not_pass(tmp_path):
+    """`_norm_status` folds unrecognised tokens to `skip`, never `fail`.
+
+    So an adverse-sounding token Heart does not know must still not read as a
+    pass just because the rehearsal succeeded.
+    """
+    _write(tmp_path / "rehearsal.json", REHEARSAL)
+    _write(tmp_path / "integrate.json", dict(INTEGRATE, status="completed_with_failures"))
+    report = validate.ingest([tmp_path])
+    assert report["stages"]["integrate"]["status"] == "skip"
+    assert report["validation_outcome"] == "incomplete"
+
+
+def test_outcome_contradicting_explicit_fields_fails_closed(tmp_path):
+    """`validation_outcome: pass` beside `release_ready: false` is not trustworthy."""
+    _write(tmp_path / "validation_report.json", {
+        "schema_version": 1,
+        "release_ready": False,
+        "validation_outcome": "pass",
+        "stages": {"rehearse": {"status": "pass"}, "integrate": {"status": "pass"}},
+        "totals": {"passed": 5, "failed": 0, "skipped": 0, "timeout": 0},
+        "failures": [],
+        "ts": "2026-06-01T00:00:00+00:00",
+    })
+    assert validate.ingest([tmp_path])["validation_outcome"] == "fail"
+
+
+def test_outcome_malformed_discriminator_fails_closed(tmp_path):
+    """Present-but-unrecognised is a malformed artifact, not a legacy report."""
+    _write(tmp_path / "validation_report.json", {
+        "schema_version": 1,
+        "release_ready": True,
+        "validation_outcome": "PASS",          # wrong case → not a value we accept
+        "stages": {"rehearse": {"status": "pass"}, "integrate": {"status": "pass"}},
+        "totals": {"passed": 5, "failed": 0, "skipped": 0, "timeout": 0},
+        "failures": [],
+        "ts": "2026-06-01T00:00:00+00:00",
+    })
+    assert validate.ingest([tmp_path])["validation_outcome"] == "fail"
+
+
+def test_outcome_absent_discriminator_with_legacy_true_still_passes(tmp_path):
+    """The compatibility case: no field at all + a genuine legacy `true`."""
+    _write(tmp_path / "validation_report.json", {
+        "schema_version": 1,
+        "release_ready": True,
+        "stages": {"rehearse": {"status": "pass"}, "integrate": {"status": "pass"}},
+        "totals": {"passed": 5, "failed": 0, "skipped": 0, "timeout": 0},
+        "failures": [],
+        "ts": "2026-06-01T00:00:00+00:00",
+    })
+    assert validate.ingest([tmp_path])["validation_outcome"] == "pass"
+
+
+def test_force_fail_overrides_a_passing_artifact(tmp_path):
+    """The producing run's own conclusion outranks what its artifact claims.
+
+    A workflow can break outside anything the stage report captures, and that
+    report is written by a step that may have run before the break.
+    """
+    _write(tmp_path / "stage_report.json", dict(INTEGRATE))
+    assert validate.ingest([tmp_path])["validation_outcome"] == "incomplete"
+    assert validate.ingest([tmp_path], force_fail=True)["validation_outcome"] == "fail"
+
+
+def test_force_fail_beats_even_a_complete_passing_report(tmp_path):
+    _write(tmp_path / "rehearsal.json", REHEARSAL)
+    _write(tmp_path / "integrate.json", dict(INTEGRATE))
+    assert validate.ingest([tmp_path])["validation_outcome"] == "pass"
+    assert validate.ingest([tmp_path], force_fail=True)["validation_outcome"] == "fail"
+
+
+# --- precedence inside validation_outcome ----------------------------------
+
+
+def test_explicit_fail_outranks_a_non_passing_stage(tmp_path):
+    """A base saying "this failed" must not be softened to an evidence gap.
+
+    Ordering the not-passed-stage check before the explicit outcome laundered
+    RED into STALE.
+    """
+    _write(tmp_path / "validation_report.json", {
+        "schema_version": 1, "release_ready": False, "validation_outcome": "fail",
+        "stages": {"integrate": {"status": "skip"}},
+        "totals": {"passed": 0, "failed": 0, "skipped": 0, "timeout": 0},
+        "failures": [], "ts": "2026-06-01T00:00:00+00:00",
+    })
+    assert validate.ingest([tmp_path])["validation_outcome"] == "fail"
+
+
+def test_explicit_pass_cannot_substitute_for_missing_rehearsal(tmp_path):
+    """`pass` requires rehearsal evidence to actually be present."""
+    _write(tmp_path / "validation_report.json", {
+        "schema_version": 1, "release_ready": True, "validation_outcome": "pass",
+        "stages": {"integrate": {"status": "pass"}},
+        "totals": {"passed": 5, "failed": 0, "skipped": 0, "timeout": 0},
+        "failures": [], "ts": "2026-06-01T00:00:00+00:00",
+    })
+    assert validate.ingest([tmp_path])["validation_outcome"] == "incomplete"
+
+
+def test_stale_incomplete_base_is_upgraded_by_a_fresh_rehearsal(tmp_path):
+    """The false-STALE case: evidence supplied in the same ingest wins.
+
+    Base reports are folded after fresh artifacts, so a base's explicit
+    `incomplete` must not override a rehearsal that has just arrived.
+    """
+    _write(tmp_path / "validation_report.json", {
+        "schema_version": 1, "release_ready": False, "validation_outcome": "incomplete",
+        "stages": {"integrate": {"status": "pass"}},
+        "totals": {"passed": 5, "failed": 0, "skipped": 0, "timeout": 0},
+        "failures": [], "ts": "2026-06-01T00:00:00+00:00",
+    })
+    _write(tmp_path / "rehearsal.json", REHEARSAL)
+    report = validate.ingest([tmp_path])
+    assert report["validation_outcome"] == "pass"
+    # ...and what a CONSUMER sees, which is the part that actually gated. The
+    # emitted report used to carry `release_ready: false` beside that `pass`,
+    # and every consumer normalised the contradiction back to `fail` — a RED
+    # manufactured out of a passing ingest.
+    assert report["release_ready"] is True
+    assert validate.report_outcome(report) == "pass"
+
+
+# --- report_outcome: the one normaliser every consumer shares --------------
+
+
+@pytest.mark.parametrize("report,expected", [
+    ({"validation_outcome": "pass", "release_ready": True}, "pass"),
+    ({"validation_outcome": "fail", "release_ready": False}, "fail"),
+    ({"validation_outcome": "incomplete", "release_ready": False}, "incomplete"),
+    # contradiction → believe the pessimistic field
+    ({"validation_outcome": "pass", "release_ready": False}, "fail"),
+    # present but unrecognised → malformed, never a pass
+    ({"validation_outcome": "PASS", "release_ready": True}, "fail"),
+    ({"validation_outcome": None, "release_ready": True}, "fail"),
+    # absent field → legacy compatibility
+    ({"release_ready": True}, "pass"),
+    ({"release_ready": False}, "fail"),
+    ({"release_ready": None}, None),
+    ({}, None),
+    (None, None),
+    ("not-a-dict", None),
+])
+def test_report_outcome(report, expected):
+    assert validate.report_outcome(report) == expected
+
+
+def test_print_summary_reports_the_tri_state_not_the_legacy_boolean(capsys):
+    """The CLI printed a green tick over a failing report.
+
+    `release_ready` and `validation_outcome` legitimately disagree when a stage
+    says pass while carrying failing counts.
+    """
+    validate._print_summary({
+        "release_ready": True, "validation_outcome": "fail",
+        "totals": {"passed": 10, "failed": 2, "skipped": 0, "timeout": 0},
+        "stages": {"integrate": {"status": "pass"}},
+    })
+    out = capsys.readouterr().out
+    assert "NOT release_ready" in out
+
+    validate._print_summary({
+        "release_ready": False, "validation_outcome": "incomplete",
+        "totals": {"passed": 10, "failed": 0, "skipped": 0, "timeout": 0},
+        "stages": {"integrate": {"status": "pass"}},
+    })
+    assert "no rehearsal evidence" in capsys.readouterr().out
+
+
+def test_emitted_reports_are_never_self_contradictory(tmp_path):
+    """`release_ready` is derived, so the producer cannot emit `false` + `pass`.
+
+    Anything self-contradictory is normalised to `fail` by every consumer, so a
+    producer able to emit it manufactures REDs.
+    """
+    cases = [
+        {"rehearsal.json": REHEARSAL},                                   # M2
+        {"rehearsal.json": REHEARSAL, "integrate.json": dict(INTEGRATE)},  # full pass
+        {"integrate.json": dict(INTEGRATE)},                             # incomplete
+        {"integrate.json": dict(INTEGRATE, status="fail")},              # fail
+        {"integrate.json": dict(                                          # adverse counts
+            INTEGRATE, summary={"passed": 1, "failed": 1, "skipped": 0, "timeout": 0})},
+    ]
+    for i, files in enumerate(cases):
+        d = tmp_path / f"case{i}"
+        d.mkdir()
+        for name, payload in files.items():
+            _write(d / name, payload)
+        report = validate.ingest([d])
+        assert validate.report_outcome(report) == report["validation_outcome"], report
+        assert report["release_ready"] is (report["validation_outcome"] == "pass")
+
+
+def test_explicit_fail_is_sticky_across_multiple_bases(tmp_path):
+    """`--ingest` folds a whole directory; file order must not clear a failure."""
+    common = {
+        "schema_version": 1, "release_ready": True,
+        "stages": {"rehearse": {"status": "pass"}, "integrate": {"status": "pass"}},
+        "totals": {"passed": 5, "failed": 0, "skipped": 0, "timeout": 0},
+        "failures": [], "ts": "2026-06-01T00:00:00+00:00",
+    }
+    _write(tmp_path / "a_failed.json", dict(common, validation_outcome="fail"))
+    _write(tmp_path / "z_pass.json", dict(common, validation_outcome="pass"))
+    assert validate.ingest([tmp_path])["validation_outcome"] == "fail"
+
+
+def test_explicit_not_ready_is_sticky_across_multiple_bases(tmp_path):
+    common = {
+        "schema_version": 1,
+        "stages": {"integrate": {"status": "pass"}},
+        "totals": {"passed": 5, "failed": 0, "skipped": 0, "timeout": 0},
+        "failures": [], "ts": "2026-06-01T00:00:00+00:00",
+    }
+    _write(tmp_path / "a_notready.json", dict(common, release_ready=False))
+    _write(tmp_path / "z_ready.json", dict(common, release_ready=True))
+    assert validate.ingest([tmp_path])["validation_outcome"] == "fail"
+
+
+# --- ordering across merged base reports -----------------------------------
+#
+# `--ingest` walks a directory, so which base is folded "last" is an accident of
+# filename order. Recency decides; an equal/unparseable ts falls back to
+# "adverse wins" so file order can never clear a recorded failure.
+
+_OLD_TS = "2026-06-01T00:00:00+00:00"
+_NEW_TS = "2026-08-01T00:00:00+00:00"
+
+
+def _base(ts, **kw):
+    return dict({
+        "schema_version": 1,
+        "stages": {"rehearse": {"status": "pass"}, "integrate": {"status": "pass"}},
+        "totals": {"passed": 5, "failed": 0, "skipped": 0, "timeout": 0},
+        "failures": [], "ts": ts,
+    }, **kw)
+
+
+@pytest.mark.parametrize("first_name,second_name", [
+    ("a_old.json", "z_new.json"),   # older sorts first
+    ("z_old.json", "a_new.json"),   # older sorts LAST — result must not change
+])
+def test_newest_base_wins_regardless_of_filename_order(tmp_path, first_name, second_name):
+    _write(tmp_path / first_name, _base(_OLD_TS, release_ready=False,
+                                        validation_outcome="incomplete"))
+    _write(tmp_path / second_name, _base(_NEW_TS, release_ready=True,
+                                         validation_outcome="pass"))
+    report = validate.ingest([tmp_path])
+    assert report["validation_outcome"] == "pass"
+    assert report["release_ready"] is True
+
+
+def test_a_stale_failure_does_not_poison_a_newer_successful_attempt(tmp_path):
+    """A retried release drive writing into the same artifacts directory."""
+    _write(tmp_path / "a_old.json", _base(_OLD_TS, release_ready=False,
+                                          validation_outcome="fail"))
+    _write(tmp_path / "z_new.json", _base(_NEW_TS, release_ready=True,
+                                          validation_outcome="pass"))
+    assert validate.ingest([tmp_path])["validation_outcome"] == "pass"
+
+
+def test_a_newer_failure_is_not_cleared_by_an_older_pass(tmp_path):
+    _write(tmp_path / "a_new.json", _base(_NEW_TS, release_ready=False,
+                                          validation_outcome="fail"))
+    _write(tmp_path / "z_old.json", _base(_OLD_TS, release_ready=True,
+                                          validation_outcome="pass"))
+    assert validate.ingest([tmp_path])["validation_outcome"] == "fail"
+
+
+def test_fresh_stage_artifacts_outrank_a_stale_failed_base(tmp_path):
+    """The accumulating-artifacts-directory case.
+
+    A base is a seed, not evidence. When the ingest also folded first-hand stage
+    artifacts they decide — otherwise one old failed report in a re-used
+    directory blocks every later attempt written beside it, forever.
+    """
+    _write(tmp_path / "validation_report.json",
+           _base(_OLD_TS, release_ready=False, validation_outcome="fail"))
+    _write(tmp_path / "rehearsal.json", REHEARSAL)
+    _write(tmp_path / "stage_report.json", dict(INTEGRATE))
+    assert validate.ingest([tmp_path])["validation_outcome"] == "pass"
+
+
+def test_benign_not_ready_is_not_sticky(tmp_path):
+    """`release_ready: false` beside `incomplete` means "evidence missing".
+
+    That is not adverse, so it must not behave like a recorded failure.
+    """
+    _write(tmp_path / "a_gap.json", _base(_OLD_TS, release_ready=False,
+                                          validation_outcome="incomplete"))
+    _write(tmp_path / "z_ok.json", _base(_NEW_TS, release_ready=True,
+                                         validation_outcome="pass"))
+    assert validate.ingest([tmp_path])["validation_outcome"] == "pass"
+
+
+def test_legacy_report_re_ingest_is_idempotent(tmp_path):
+    """The schema promises idempotent full-report re-ingest.
+
+    A legacy report states only `release_ready: true`; folding it back must not
+    silently demote it to an evidence gap. A report that DOES carry the
+    discriminator gets no such benefit (see
+    test_explicit_pass_cannot_substitute_for_missing_rehearsal).
+    """
+    legacy = {
+        "schema_version": 1, "release_ready": True,
+        "stages": {"integrate": {"status": "pass"}},
+        "totals": {"passed": 5, "failed": 0, "skipped": 0, "timeout": 0},
+        "failures": [], "ts": _OLD_TS,
+    }
+    assert validate.report_outcome(legacy) == "pass"
+    _write(tmp_path / "validation_report.json", legacy)
+    report = validate.ingest([tmp_path])
+    assert report["validation_outcome"] == "pass"
+    assert report["release_ready"] is True
+    assert validate.report_outcome(report) == "pass"
+
+
+@pytest.mark.parametrize("fail_name,pass_name", [
+    ("a_failed.json", "z_pass.json"),   # adverse base folded FIRST
+    ("z_failed.json", "a_pass.json"),   # adverse base folded SECOND
+])
+def test_equal_timestamps_let_a_base_escalate_but_never_soften(
+    tmp_path, fail_name, pass_name
+):
+    """With equal timestamps we cannot tell which attempt came first.
+
+    So a base may only escalate to adverse. Both permutations are needed: with
+    the failure folded first the initial assignment already records it, and only
+    the second permutation exercises the escalation path.
+    """
+    _write(tmp_path / fail_name, _base(_OLD_TS, release_ready=True,
+                                       validation_outcome="fail"))
+    _write(tmp_path / pass_name, _base(_OLD_TS, release_ready=True,
+                                       validation_outcome="pass"))
+    assert validate.ingest([tmp_path])["validation_outcome"] == "fail"
+
+
+@pytest.mark.parametrize("gap_name,pass_name", [
+    ("a_gap.json", "z_pass.json"),
+    ("z_gap.json", "a_pass.json"),
+])
+def test_equal_timestamps_do_not_let_a_benign_gap_block(tmp_path, gap_name, pass_name):
+    """The escalation path must fire only for genuinely adverse bases."""
+    _write(tmp_path / gap_name, _base(_OLD_TS, release_ready=False,
+                                      validation_outcome="incomplete"))
+    _write(tmp_path / pass_name, _base(_OLD_TS, release_ready=True,
+                                       validation_outcome="pass"))
+    assert validate.ingest([tmp_path])["validation_outcome"] == "pass"
+
+
+# --- a declaration never outranks the evidence beside it -------------------
+
+
+@pytest.mark.parametrize("report", [
+    # legacy: only the boolean, contradicted by a failed stage
+    {"release_ready": True, "stages": {"integrate": {"status": "fail"}}},
+    # legacy: contradicted by failing counts
+    {"release_ready": True, "stages": {"integrate": {"status": "pass"}},
+     "totals": {"passed": 1, "failed": 1, "skipped": 0, "timeout": 0}},
+    # legacy: contradicted by per-project counts
+    {"release_ready": True, "stages": {"integrate": {"status": "pass"}},
+     "per_project": {"ws": {"passed": 1, "failed": 1, "skipped": 0, "timeout": 0}}},
+    # legacy: contradicted by a failures list
+    {"release_ready": True, "stages": {"integrate": {"status": "pass"}},
+     "failures": [{"project": "ws", "script": "x.py"}]},
+    # native: an explicit pass contradicted by a failed stage
+    {"release_ready": True, "validation_outcome": "pass",
+     "stages": {"integrate": {"status": "fail"}}},
+    # a status synonym still counts
+    {"release_ready": True, "stages": {"integrate": {"status": "failure"}}},
+])
+def test_report_outcome_never_lets_a_declaration_beat_the_evidence(report):
+    """A stale `release_ready: true` beside a failed stage reached GREEN.
+
+    The normaliser is what every consumer trusts, so it has to reconcile the
+    report's contents, not just its two verdict fields.
+    """
+    assert validate.report_outcome(report) == "fail"
+
+
+def test_a_superseded_base_cannot_lend_its_rehearsal_to_fresh_artifacts(tmp_path):
+    """The base is subordinate in FULL when fresh artifacts are present.
+
+    Merging its stages anyway let a stale `rehearse: pass` from a superseded
+    attempt combine with a fresh integrate-only artifact and read as complete
+    evidence — laundering a force-failed run into a pass.
+    """
+    _write(tmp_path / "validation_report.json", _base(
+        _OLD_TS, release_ready=False, validation_outcome="fail"))
+    _write(tmp_path / "stage_report.json", dict(INTEGRATE))
+    report = validate.ingest([tmp_path])
+    assert report["validation_outcome"] != "pass"
+    assert "rehearse" not in report["stages"]
+
+
+@pytest.mark.parametrize("first,second", [
+    ("a_old.json", "z_new.json"),
+    ("a_new.json", "z_old.json"),
+])
+def test_base_ordering_is_symmetric_for_adverse_reports(tmp_path, first, second):
+    """A strictly older adverse base is superseded, whichever order it is read.
+
+    Allowing every "not strictly newer" base to escalate meant an older failure
+    still pinned RED when it happened to be folded second.
+    """
+    older = _base(_OLD_TS, release_ready=False, validation_outcome="fail")
+    newer = _base(_NEW_TS, release_ready=True, validation_outcome="pass")
+    _write(tmp_path / first, older if "old" in first else newer)
+    _write(tmp_path / second, older if "old" in second else newer)
+    assert validate.ingest([tmp_path])["validation_outcome"] == "pass"
+
+
+def test_null_discriminator_is_malformed_not_absent(tmp_path):
+    """`validation_outcome: null` is present-but-unrecognised.
+
+    Testing the value for None rather than the KEY made the producer disagree
+    with `report_outcome`, which already called it malformed.
+    """
+    nul = _base(_OLD_TS, release_ready=True, validation_outcome=None)
+    assert validate.report_outcome(nul) == "fail"
+    _write(tmp_path / "validation_report.json", nul)
+    assert validate.ingest([tmp_path])["validation_outcome"] == "fail"
