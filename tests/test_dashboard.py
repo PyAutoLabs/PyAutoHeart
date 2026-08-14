@@ -358,3 +358,23 @@ def test_machine_surface_carries_stale_reasons():
     payload = dashboard.to_dict(board)
     assert "stale_reasons" in payload
     assert payload["stale_reasons"] == verdict["stale_reasons"]
+
+
+def test_validation_row_mirrors_the_readiness_normaliser():
+    """The row must not contradict the header verdict.
+
+    Both now go through `validate.report_outcome`; when they each re-derived it
+    inline, readiness graded these RED while the row rendered a green
+    `release_ready`.
+    """
+    for vr in (
+        {"release_ready": False, "validation_outcome": "pass",     # contradictory
+         "testpypi_version": "1", "profile": "release",
+         "stages": {"integrate": {"status": "pass"}}, "ts": TS},
+        {"release_ready": True, "validation_outcome": "PASS",      # malformed
+         "testpypi_version": "1", "profile": "release",
+         "stages": {"integrate": {"status": "pass"}}, "ts": TS},
+    ):
+        board = dashboard.build_board(make_snapshot(validation_report=vr),
+                                      make_verdict("red", 45), now=FRESH_NOW)
+        assert _section(board, "release_validation").state == dashboard.FAIL

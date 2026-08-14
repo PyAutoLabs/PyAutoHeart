@@ -87,7 +87,7 @@ from typing import Any, Sequence
 
 import yaml
 
-from heart import state
+from heart import state, validate
 from heart.checks.ci_status import FAILURE_CONCLUSIONS, load_required_workflows
 from heart.checks.test_run import counts_measured as tr_counts_measured
 from heart.heart_color import (
@@ -469,18 +469,7 @@ def compute(
     # so `false` there stays RED — fail closed.
     vr = snapshot.get("validation_report")
     if isinstance(vr, dict) and vr:
-        ready = vr.get("release_ready")
-        outcome = vr.get("validation_outcome")
-        if outcome not in ("pass", "fail", "incomplete"):
-            if "validation_outcome" in vr:
-                # Present but unrecognised: a malformed gate artifact is
-                # untrustworthy evidence, never a pass.
-                outcome = "fail"
-            else:
-                outcome = "fail" if ready is False else ("pass" if ready is True else None)
-        elif outcome == "pass" and ready is False:
-            # The two fields contradict each other; believe the pessimistic one.
-            outcome = "fail"
+        outcome = validate.report_outcome(vr)
         if outcome == "incomplete":
             # Nothing is wrong; the rehearsal evidence is simply absent. The
             # wording must contain "release validation" — the Health Agent

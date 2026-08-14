@@ -60,6 +60,9 @@ def test_ingest_rehearsal_only(tmp_path):
     assert report["stages"]["rehearse"]["run_id"] == "645"
     # rehearsal artifact presence = build succeeded → release_ready True (pass axis)
     assert report["release_ready"] is True
+    # The M2 intent: a rehearsal-only report is a genuine `pass`, gated on
+    # fidelity by readiness rather than downgraded to an evidence gap here.
+    assert report["validation_outcome"] == "pass"
     # no integration stage yet → no release profile (the gate keeps this YELLOW)
     assert report["profile"] is None
     # the build sha is recorded under PyAutoHands, not a library head
@@ -798,3 +801,94 @@ def test_force_fail_beats_even_a_complete_passing_report(tmp_path):
     _write(tmp_path / "integrate.json", dict(INTEGRATE))
     assert validate.ingest([tmp_path])["validation_outcome"] == "pass"
     assert validate.ingest([tmp_path], force_fail=True)["validation_outcome"] == "fail"
+
+
+# --- precedence inside validation_outcome ----------------------------------
+
+
+def test_explicit_fail_outranks_a_non_passing_stage(tmp_path):
+    """A base saying "this failed" must not be softened to an evidence gap.
+
+    Ordering the not-passed-stage check before the explicit outcome laundered
+    RED into STALE.
+    """
+    _write(tmp_path / "validation_report.json", {
+        "schema_version": 1, "release_ready": False, "validation_outcome": "fail",
+        "stages": {"integrate": {"status": "skip"}},
+        "totals": {"passed": 0, "failed": 0, "skipped": 0, "timeout": 0},
+        "failures": [], "ts": "2026-06-01T00:00:00+00:00",
+    })
+    assert validate.ingest([tmp_path])["validation_outcome"] == "fail"
+
+
+def test_explicit_pass_cannot_substitute_for_missing_rehearsal(tmp_path):
+    """`pass` requires rehearsal evidence to actually be present."""
+    _write(tmp_path / "validation_report.json", {
+        "schema_version": 1, "release_ready": True, "validation_outcome": "pass",
+        "stages": {"integrate": {"status": "pass"}},
+        "totals": {"passed": 5, "failed": 0, "skipped": 0, "timeout": 0},
+        "failures": [], "ts": "2026-06-01T00:00:00+00:00",
+    })
+    assert validate.ingest([tmp_path])["validation_outcome"] == "incomplete"
+
+
+def test_stale_incomplete_base_is_upgraded_by_a_fresh_rehearsal(tmp_path):
+    """The false-STALE case: evidence supplied in the same ingest wins.
+
+    Base reports are folded after fresh artifacts, so a base's explicit
+    `incomplete` must not override a rehearsal that has just arrived.
+    """
+    _write(tmp_path / "validation_report.json", {
+        "schema_version": 1, "release_ready": False, "validation_outcome": "incomplete",
+        "stages": {"integrate": {"status": "pass"}},
+        "totals": {"passed": 5, "failed": 0, "skipped": 0, "timeout": 0},
+        "failures": [], "ts": "2026-06-01T00:00:00+00:00",
+    })
+    _write(tmp_path / "rehearsal.json", REHEARSAL)
+    assert validate.ingest([tmp_path])["validation_outcome"] == "pass"
+
+
+# --- report_outcome: the one normaliser every consumer shares --------------
+
+
+@pytest.mark.parametrize("report,expected", [
+    ({"validation_outcome": "pass", "release_ready": True}, "pass"),
+    ({"validation_outcome": "fail", "release_ready": False}, "fail"),
+    ({"validation_outcome": "incomplete", "release_ready": False}, "incomplete"),
+    # contradiction → believe the pessimistic field
+    ({"validation_outcome": "pass", "release_ready": False}, "fail"),
+    # present but unrecognised → malformed, never a pass
+    ({"validation_outcome": "PASS", "release_ready": True}, "fail"),
+    ({"validation_outcome": None, "release_ready": True}, "fail"),
+    # absent field → legacy compatibility
+    ({"release_ready": True}, "pass"),
+    ({"release_ready": False}, "fail"),
+    ({"release_ready": None}, None),
+    ({}, None),
+    (None, None),
+    ("not-a-dict", None),
+])
+def test_report_outcome(report, expected):
+    assert validate.report_outcome(report) == expected
+
+
+def test_print_summary_reports_the_tri_state_not_the_legacy_boolean(capsys):
+    """The CLI printed a green tick over a failing report.
+
+    `release_ready` and `validation_outcome` legitimately disagree when a stage
+    says pass while carrying failing counts.
+    """
+    validate._print_summary({
+        "release_ready": True, "validation_outcome": "fail",
+        "totals": {"passed": 10, "failed": 2, "skipped": 0, "timeout": 0},
+        "stages": {"integrate": {"status": "pass"}},
+    })
+    out = capsys.readouterr().out
+    assert "NOT release_ready" in out
+
+    validate._print_summary({
+        "release_ready": False, "validation_outcome": "incomplete",
+        "totals": {"passed": 10, "failed": 0, "skipped": 0, "timeout": 0},
+        "stages": {"integrate": {"status": "pass"}},
+    })
+    assert "no rehearsal evidence" in capsys.readouterr().out

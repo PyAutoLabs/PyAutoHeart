@@ -37,6 +37,7 @@ import sys
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Sequence
 
+from heart import validate
 from heart.checks.test_run import counts_measured as tr_counts_measured
 from heart.heart_color import (
     c_bold, c_dim, c_fail, c_info, c_meta, c_ok, c_warn,
@@ -571,13 +572,11 @@ def build_board(
         profile = vr.get("profile") or "?"
         stages = vr.get("stages") or {}
         meta = f"v{ver}  profile={profile}  ({vr.get('ts', '?')})"
-        # Mirror the readiness gate: read `validation_outcome`, falling back to
-        # the legacy boolean. `incomplete` is an evidence gap (WARN), not a
-        # failure (FAIL) — a green integrate-only ingest lands there, and a FAIL
-        # row beside a stale header verdict reads as a broken release.
-        outcome = vr.get("validation_outcome")
-        if outcome not in ("pass", "fail", "incomplete"):
-            outcome = "fail" if ready is False else ("pass" if ready is True else None)
+        # Same normaliser the readiness gate uses, so this row can never
+        # contradict the header verdict. `incomplete` is an evidence gap (WARN),
+        # not a failure (FAIL) — a green integrate-only ingest lands there, and
+        # a FAIL row beside a stale header reads as a broken release.
+        outcome = validate.report_outcome(vr)
         if outcome == "fail":
             st, summary = FAIL, f"NOT release_ready — {meta}"
         elif outcome == "incomplete":

@@ -185,12 +185,12 @@ def test_migration_never_re_folds_a_report_carrying_adverse_evidence():
     guard alone would let the migration overwrite it with a green integrate-only
     artifact — converting a real failure into an evidence gap.
     """
+    # ONE adverse signal only — a combined fixture would still pass with any
+    # single check removed.
     legacy_red = {
         "ts": "2026-08-14T20:00:00+00:00",
         "release_ready": False,
         "stages": {"unit": {"status": "fail"}},
-        "totals": {"passed": 0, "failed": 3, "skipped": 0, "timeout": 0},
-        "failures": [{"project": "x", "script": "y.py"}],
     }
     d = rr.decide(legacy_red, {"last_ingested_run_id": 7}, _run(run_id=7))
     assert d["action"] == "cached"
@@ -217,14 +217,126 @@ def test_migration_blocked_by_a_failures_list_alone():
 
 
 def test_migration_survives_a_malformed_stages_or_totals_field():
-    """Defensive: a corrupt report must not crash the tick."""
+    """Defensive: a corrupt report must not crash the tick.
+
+    Asserts the exact action — accepting either would pass with the guard gone.
+    No rehearsal, nothing adverse readable, no discriminator → migrate.
+    """
     d = rr.decide(
         {"ts": "2026-08-14T20:00:00+00:00", "stages": "not-a-dict", "totals": None},
         {"last_ingested_run_id": 7}, _run(run_id=7),
     )
-    assert d["action"] in ("ingest", "cached")
+    assert d["action"] == "ingest"
+
+
+def test_decide_survives_a_report_that_is_not_an_object():
+    """`validate.load()` returns whatever JSON was on disk, not always a dict."""
+    for junk in ("a string", ["a", "list"], 42):
+        assert rr.decide(junk, None, _run(run_id=7))["action"] in (
+            "ingest", "cached", "local-fresher",
+        )
 
 
 def test_resolve_outcome_reads_incomplete_over_the_legacy_boolean():
     assert rr.resolve_outcome({"release_ready": False,
                                "validation_outcome": "incomplete"}) == "incomplete"
+
+
+def test_migration_blocked_by_timeouts_alone():
+    d = rr.decide(
+        {"ts": "2026-08-14T20:00:00+00:00",
+         "stages": {"integrate": {"status": "pass"}},
+         "totals": {"passed": 9, "failed": 0, "skipped": 0, "timeout": 1}},
+        {"last_ingested_run_id": 7}, _run(run_id=7),
+    )
+    assert d["action"] == "cached"
+
+
+def test_migration_blocked_by_per_project_counts_alone():
+    """`per_project` is merged independently of `totals`, so it can be the only
+    adverse signal — and the guard must use the same definition of "adverse"
+    that `validate._has_adverse_evidence` does."""
+    d = rr.decide(
+        {"ts": "2026-08-14T20:00:00+00:00",
+         "stages": {"integrate": {"status": "pass"}},
+         "totals": {"passed": 9, "failed": 0, "skipped": 0, "timeout": 0},
+         "per_project": {"autolens_workspace":
+                         {"passed": 6, "failed": 1, "skipped": 0, "timeout": 0}}},
+        {"last_ingested_run_id": 7}, _run(run_id=7),
+    )
+    assert d["action"] == "cached"
+
+
+def test_migration_not_triggered_by_a_present_but_malformed_discriminator():
+    """Readiness grades a malformed discriminator RED on purpose.
+
+    Treating it as "predates the schema" would let the migration overwrite the
+    very report that RED rests on.
+    """
+    d = rr.decide(
+        {"ts": "2026-08-14T20:00:00+00:00", "validation_outcome": "FAILED",
+         "stages": {"integrate": {"status": "pass"}}},
+        {"last_ingested_run_id": 7}, _run(run_id=7),
+    )
+    assert d["action"] == "cached"
+
+
+def test_tick_forces_fail_when_the_run_conclusion_is_not_success(monkeypatch, tmp_path):
+    """Pins the tick -> validate.run hop, not just `ingest(force_fail=True)`.
+
+    Reverting either the tick's argument or `run`'s threading of it must fail
+    here; asserting on `ingest` alone would not catch that.
+    """
+    import json as _json
+    from heart import validate
+
+    (tmp_path / "stage_report.json").write_text(_json.dumps({
+        "stage": "integrate", "status": "pass", "profile": "release",
+        "summary": {"passed": 50, "failed": 0, "skipped": 0, "timeout": 0},
+        "failures": [],
+    }))
+
+    seen = {}
+    real_run = validate.run
+
+    def spy(sources, **kw):
+        seen.update(kw)
+        return real_run(sources, **kw)
+
+    # `main()` imports these inside the function body, so patch the modules.
+    monkeypatch.setattr(validate, "run", spy)
+    monkeypatch.setattr(validate, "load", lambda: None)
+    monkeypatch.setattr(rr, "latest_run", lambda: _run(run_id=99, conclusion="failure"))
+    monkeypatch.setattr(rr, "download_stage_report",
+                        lambda run_id, dest: tmp_path / "stage_report.json")
+    monkeypatch.setattr(rr, "_read_json", lambda p: None)
+
+    rr.main([])
+    assert seen.get("force_fail") is True
+
+
+def test_tick_does_not_force_fail_on_a_successful_run(monkeypatch, tmp_path):
+    import json as _json
+    from heart import validate
+
+    (tmp_path / "stage_report.json").write_text(_json.dumps({
+        "stage": "integrate", "status": "pass", "profile": "release",
+        "summary": {"passed": 50, "failed": 0, "skipped": 0, "timeout": 0},
+        "failures": [],
+    }))
+    seen = {}
+    real_run = validate.run
+
+    def spy(sources, **kw):
+        seen.update(kw)
+        return real_run(sources, **kw)
+
+    monkeypatch.setattr(validate, "run", spy)
+    monkeypatch.setattr(validate, "load", lambda: None)
+    monkeypatch.setattr(rr, "latest_run", lambda: _run(run_id=98, conclusion="success"))
+    monkeypatch.setattr(rr, "download_stage_report",
+                        lambda run_id, dest: tmp_path / "stage_report.json")
+    monkeypatch.setattr(rr, "_read_json", lambda p: None)
+
+    rr.main([])
+    assert seen.get("force_fail") is False

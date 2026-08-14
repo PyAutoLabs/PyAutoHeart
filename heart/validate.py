@@ -403,26 +403,28 @@ class _Accumulator:
         """
         if self._force_fail or self._has_adverse_evidence():
             return "fail"
-        # A malformed discriminator, or one contradicting the boolean beside it,
-        # is untrustworthy evidence — not an evidence gap.
+        # A malformed discriminator is untrustworthy evidence, not a gap.
         if self._outcome_invalid:
             return "fail"
-        if (
-            self._explicit_outcome == "pass"
-            and self._explicit_ready is False
-        ):
+        # An explicit `fail` from a merged base outranks everything below: a
+        # base saying "this failed" must never be softened by what the stages
+        # look like now.
+        if self._explicit_outcome == "fail":
             return "fail"
+        if self._explicit_ready is False and self._explicit_outcome in (None, "pass"):
+            # Either a legacy report whose `false` we cannot explain, or a base
+            # whose two fields contradict each other. Both fail closed.
+            return "fail"
+        # Everything else is decided by the evidence actually folded in, NOT by
+        # the base's explicit `pass`/`incomplete`. A base's stale `incomplete`
+        # must not survive a rehearsal supplied in the same ingest, and its
+        # `pass` must not stand in for rehearsal evidence that isn't here.
+        #
         # A stage that RAN and did not pass is not evidence of passing. `skip`
         # covers both a deliberately skipped stage and any status token
-        # `_norm_status` did not recognise, so neither can be read as a pass.
+        # `_norm_status` did not recognise, so neither can read as a pass.
         if any(s.get("status") != "pass" for s in self.stages.values()):
             return "incomplete"
-        if self._explicit_outcome is not None:
-            return self._explicit_outcome
-        if self._explicit_ready is not None:
-            # A legacy base report with no discriminator: false means "not
-            # ready" and we cannot tell why, so treat it as a failure.
-            return "pass" if self._explicit_ready else "fail"
         rehearse = self.stages.get("rehearse")
         if rehearse and rehearse.get("status") == "pass":
             return "pass"
@@ -444,6 +446,37 @@ class _Accumulator:
             return bool(self._explicit_ready)
         rehearse = self.stages.get("rehearse")
         return bool(rehearse and rehearse.get("status") == "pass")
+
+
+def report_outcome(report: Any) -> str | None:
+    """Severity of a *persisted* report: ``pass``/``fail``/``incomplete``/None.
+
+    The single normaliser every consumer must use — the readiness gate, the
+    dashboard, the ``validate`` CLI summary and the tick's status line. Each of
+    them previously re-derived this inline, which is how they came to disagree:
+    readiness rejected a malformed discriminator while the dashboard beside it
+    still rendered a green ``release_ready`` row for the same report.
+
+    Fails closed. ``None`` means "no report / nothing stated" — the caller
+    decides what an absent verdict means in its own context.
+    """
+    if not isinstance(report, dict) or not report:
+        return None
+    outcome = report.get("validation_outcome")
+    ready = report.get("release_ready")
+    if outcome in ("pass", "fail", "incomplete"):
+        # The two fields contradict each other; believe the pessimistic one.
+        if outcome == "pass" and ready is False:
+            return "fail"
+        return str(outcome)
+    if "validation_outcome" in report:
+        # Present but unrecognised: malformed, never a pass.
+        return "fail"
+    if ready is True:
+        return "pass"
+    if ready is False:
+        return "fail"
+    return None
 
 
 def _fold(
@@ -738,10 +771,7 @@ def _print_summary(report: dict[str, Any]) -> None:
     # disagree (a stage saying pass while carrying failing counts is
     # `release_ready: true` but `validation_outcome: "fail"`), and printing the
     # boolean alone rendered a green tick over a failing report.
-    outcome = report.get("validation_outcome")
-    ready = report.get("release_ready")
-    if outcome not in ("pass", "fail", "incomplete"):
-        outcome = "pass" if ready is True else ("fail" if ready is False else None)
+    outcome = report_outcome(report)
     if outcome == "pass":
         glyph, label = glyph_ok(), c_ok("release_ready")
     elif outcome == "fail":

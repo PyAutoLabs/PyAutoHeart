@@ -152,33 +152,48 @@ def decide(
     #    multi-stage ingest during a release drive, which this artifact cannot
     #    reproduce; re-folding would turn its `pass` into an `incomplete`;
     #  - skipped when the stored report carries ANY adverse evidence — a failed
-    #    stage, failing/timed-out counts, or a failures list. Those can come from
-    #    a run that broke before it ever reached the rehearsal, and re-folding a
-    #    green artifact over them would silently convert a real RED into a STALE.
+    #    stage, failing/timed-out counts in `totals` OR in any `per_project`
+    #    entry, or a failures list. Those can come from a run that broke before
+    #    it ever reached the rehearsal, and re-folding a green artifact over them
+    #    would silently convert a real RED into a STALE. The definition of
+    #    "adverse" must match `validate._Accumulator._has_adverse_evidence`;
+    #    when it did not, per-project failures were an escape hatch.
+    #  - triggered only when the field is genuinely ABSENT, not merely invalid.
+    #    A present-but-malformed discriminator is graded RED on purpose, so
+    #    treating it as "predates the schema" would let the migration overwrite
+    #    the very report that RED rests on.
     #
     # Note the test is neither `cached` nor `local-fresher`: every ingest happens
     # after the run it ingests, so "the report is fresher than the run" says
     # nothing about where the report came from.
-    stages = (current_report or {}).get("stages") or {}
+    report = current_report if isinstance(current_report, dict) else {}
+    stages = report.get("stages")
     stages = stages if isinstance(stages, dict) else {}
-    totals = (current_report or {}).get("totals") or {}
-    totals = totals if isinstance(totals, dict) else {}
+
+    def _adverse_counts(counts: Any) -> bool:
+        return bool(
+            isinstance(counts, dict)
+            and (counts.get("failed", 0) or counts.get("timeout", 0))
+        )
+
+    per_project = report.get("per_project")
+    per_project = per_project if isinstance(per_project, dict) else {}
     stored_adverse = (
         any(isinstance(s, dict) and s.get("status") == "fail" for s in stages.values())
-        or bool(totals.get("failed", 0) or totals.get("timeout", 0))
-        or bool((current_report or {}).get("failures"))
+        or _adverse_counts(report.get("totals"))
+        or any(_adverse_counts(c) for c in per_project.values())
+        or bool(report.get("failures"))
     )
     stale_schema = (
-        isinstance(current_report, dict)
-        and bool(current_report)
+        bool(report)
         and "rehearse" not in stages
         and not stored_adverse
-        and current_report.get("validation_outcome") not in ("pass", "fail", "incomplete")
+        and "validation_outcome" not in report
     )
     if not stale_schema:
         if isinstance(sidecar, dict) and sidecar.get("last_ingested_run_id") == run_id:
             return {**out, "action": "cached"}
-        report_ts = _parse_ts((current_report or {}).get("ts"))
+        report_ts = _parse_ts(report.get("ts"))
         created = _parse_ts(out["created"])
         if report_ts is not None and created is not None and report_ts >= created:
             return {**out, "action": "local-fresher"}
@@ -192,10 +207,8 @@ def resolve_outcome(ingested: dict[str, Any] | None) -> str:
     network. Reports predating ``validation_outcome`` fall back to the legacy
     boolean and fail closed.
     """
-    outcome = (ingested or {}).get("validation_outcome")
-    if outcome in ("pass", "fail", "incomplete"):
-        return str(outcome)
-    return "pass" if (ingested or {}).get("release_ready") is True else "fail"
+    from heart import validate
+    return validate.report_outcome(ingested) or "fail"
 
 
 def main(argv: list[str] | None = None) -> int:
