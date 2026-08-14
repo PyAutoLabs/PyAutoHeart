@@ -570,7 +570,8 @@ def build_board(
         ready = vr.get("release_ready")
         ver = vr.get("testpypi_version") or "?"
         profile = vr.get("profile") or "?"
-        stages = vr.get("stages") or {}
+        stages = vr.get("stages")
+        stages = stages if isinstance(stages, dict) else {}
         meta = f"v{ver}  profile={profile}  ({vr.get('ts', '?')})"
         # Same normaliser the readiness gate uses, so this row can never
         # contradict the header verdict. `incomplete` is an evidence gap (WARN),

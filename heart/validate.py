@@ -142,6 +142,15 @@ def _read_json(path: Path) -> Any:
         return None
 
 
+def _parse_iso(value: Any) -> datetime.datetime | None:
+    """Parse an ISO timestamp, or None. Used to order merged base reports."""
+    try:
+        t = datetime.datetime.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return None
+    return t.replace(tzinfo=datetime.timezone.utc) if t.tzinfo is None else t
+
+
 def _norm_status(value: Any) -> str:
     """Map a stage/status token onto pass|fail|skip (unknown → ``skip``)."""
     s = str(value or "").strip().lower()
@@ -226,6 +235,9 @@ class _Accumulator:
         self._explicit_outcome: str | None = None
         self._outcome_invalid = False
         self._force_fail = False
+        self._base_seen = False
+        self._base_ts: datetime.datetime | None = None
+        self._base_adverse = False
         # True once a real stage artifact (add_stage) has contributed counts.
         # add_report() consults this so merging an old validation_report.json
         # as a "base" never double-counts totals/per_project/failures that a
@@ -351,23 +363,54 @@ class _Accumulator:
                     self.failures.append(f)
         for k, v in (data.get("run_urls") or {}).items():
             self.run_urls.setdefault(str(k), str(v))
-        # Adverse verdicts are STICKY across bases. `--ingest` accepts a whole
-        # directory and folds every report in it in filename order, so without
-        # this a later `z_pass.json` silently overwrites an earlier
-        # `a_failed.json` and the failure disappears. Nothing about the ordering
-        # of files on disk should be able to clear a recorded failure.
-        if isinstance(data.get("release_ready"), bool):
-            if self._explicit_ready is not False:
-                self._explicit_ready = data["release_ready"]
-        if "validation_outcome" in data:
-            outcome = data.get("validation_outcome")
-            if outcome in ("pass", "fail", "incomplete"):
-                if self._explicit_outcome != "fail":
-                    self._explicit_outcome = str(outcome)
-            else:
-                # Present but not a value we recognise: the report is malformed,
-                # and a malformed gate artifact must never read as a pass.
-                self._outcome_invalid = True
+        # --- the base's own verdict --------------------------------------
+        #
+        # A base report is a SEED, not evidence. Three rules, in order:
+        #
+        # 1. If this ingest also folded first-hand stage artifacts, THEY are the
+        #    evidence and the base's verdict is ignored outright — the same rule
+        #    its counts already follow just above. Without this, a stale failed
+        #    report left in a re-used artifacts directory permanently poisons
+        #    every later attempt that writes into the same directory.
+        # 2. Otherwise the NEWEST base wins, by `ts`. Ingest walks a directory,
+        #    so which base is "last" is an accident of filename order; recency
+        #    is the only defensible ordering, and it makes the result
+        #    order-independent.
+        # 3. On an equal or unparseable `ts` we cannot tell which came first, so
+        #    a base may only ESCALATE to adverse, never soften. File order on
+        #    disk must not be able to clear a recorded failure.
+        outcome = data.get("validation_outcome") if "validation_outcome" in data else None
+        valid_outcome = outcome if outcome in ("pass", "fail", "incomplete") else None
+        if outcome is not None and valid_outcome is None:
+            # Present but not a value we recognise: the report is malformed, and
+            # a malformed gate artifact must never read as a pass. Sticky.
+            self._outcome_invalid = True
+        ready = data["release_ready"] if isinstance(data.get("release_ready"), bool) else None
+        # `false` alone is adverse only when we cannot see why; paired with an
+        # explicit `incomplete` it just means "evidence missing", which is benign
+        # and must not be sticky.
+        adverse = valid_outcome == "fail" or (ready is False and outcome is None)
+
+        if self._stage_counts_seen:
+            return
+
+        ts = _parse_iso(data.get("ts"))
+        strictly_newer = ts is not None and (self._base_ts is None or ts > self._base_ts)
+        if self._base_seen and not strictly_newer:
+            if adverse:
+                self._base_adverse = True
+                if valid_outcome == "fail":
+                    self._explicit_outcome = "fail"
+                if ready is False:
+                    self._explicit_ready = False
+            return
+
+        self._base_seen = True
+        if ts is not None:
+            self._base_ts = ts
+        self._explicit_outcome = valid_outcome
+        self._explicit_ready = ready
+        self._base_adverse = adverse
 
     @staticmethod
     def _counts_adverse(counts: Any) -> bool:
@@ -416,11 +459,10 @@ class _Accumulator:
         # An explicit `fail` from a merged base outranks everything below: a
         # base saying "this failed" must never be softened by what the stages
         # look like now.
-        if self._explicit_outcome == "fail":
+        if self._base_adverse or self._explicit_outcome == "fail":
             return "fail"
-        if self._explicit_ready is False and self._explicit_outcome in (None, "pass"):
-            # Either a legacy report whose `false` we cannot explain, or a base
-            # whose two fields contradict each other. Both fail closed.
+        if self._explicit_outcome == "pass" and self._explicit_ready is False:
+            # A base whose two fields contradict each other. Fails closed.
             return "fail"
         # Everything else is decided by the evidence actually folded in, NOT by
         # the base's explicit `pass`/`incomplete`. A base's stale `incomplete`
@@ -434,6 +476,14 @@ class _Accumulator:
             return "incomplete"
         rehearse = self.stages.get("rehearse")
         if rehearse and rehearse.get("status") == "pass":
+            return "pass"
+        if self._explicit_outcome is None and self._explicit_ready is True:
+            # Legacy compatibility: a report predating `validation_outcome`
+            # states only `release_ready: true`, and the schema's idempotent
+            # re-ingest promise means folding it back must not silently demote
+            # it. A report that DOES carry the discriminator gets no such
+            # benefit — an explicit `pass` never substitutes for the rehearsal
+            # evidence it claims.
             return "pass"
         return "incomplete"
 
@@ -788,7 +838,11 @@ def _print_summary(report: dict[str, Any]) -> None:
     else:
         glyph, label = glyph_warn(), c_warn("release_ready unknown")
     t = report.get("totals", {}) or {}
-    stages = ", ".join(f"{n}:{s.get('status', '?')}" for n, s in (report.get("stages") or {}).items())
+    _stages = report.get("stages")
+    stages = ", ".join(
+        f"{n}:{s.get('status', '?') if isinstance(s, dict) else '?'}"
+        for n, s in (_stages if isinstance(_stages, dict) else {}).items()
+    )
     version = report.get("testpypi_version") or "?"
     prof = report.get("profile") or "?"
     print(f"{glyph} {c_info('validate')} {label} {c_meta(f'v{version}  profile={prof}')}")

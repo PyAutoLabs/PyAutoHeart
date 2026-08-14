@@ -378,3 +378,12 @@ def test_validation_row_mirrors_the_readiness_normaliser():
         board = dashboard.build_board(make_snapshot(validation_report=vr),
                                       make_verdict("red", 45), now=FRESH_NOW)
         assert _section(board, "release_validation").state == dashboard.FAIL
+
+
+def test_malformed_stages_does_not_break_the_board():
+    vr = {"release_ready": False, "validation_outcome": "fail",
+          "testpypi_version": "1", "profile": "release",
+          "stages": [{"stage": "integrate"}], "ts": TS}
+    board = dashboard.build_board(make_snapshot(validation_report=vr),
+                                  make_verdict("red", 45), now=FRESH_NOW)
+    assert _section(board, "release_validation").state == dashboard.FAIL

@@ -477,8 +477,9 @@ def compute(
             stale.append("release validation incomplete: no rehearsal for current source")
             hit("validation_absent")
         elif outcome == "fail":
+            vr_stages = vr.get("stages")
             failed_stages = [
-                n for n, s in (vr.get("stages") or {}).items()
+                n for n, s in (vr_stages if isinstance(vr_stages, dict) else {}).items()
                 if isinstance(s, dict) and s.get("status") == "fail"
             ]
             red.append(

@@ -970,3 +970,18 @@ def test_native_pass_report_is_green_and_keeps_the_fidelity_checks():
     wrong_profile["profile"] = "smoke"
     v3 = compute(make_snapshot(validation_report=wrong_profile))
     assert any("is not 'release'" in r for r in v3["stale_reasons"])
+
+
+@pytest.mark.parametrize("stages", [[{"stage": "integrate"}], "a-string", 42, None])
+def test_malformed_stages_never_raises(stages):
+    """`compute` promises never to raise on partial/malformed data.
+
+    `(x or {}).items()` catches an EMPTY list but not a populated one, so the
+    guard has to be an isinstance check.
+    """
+    report = _green_validation_report()
+    report["release_ready"] = False
+    report["validation_outcome"] = "fail"
+    report["stages"] = stages
+    v = compute(make_snapshot(validation_report=report))
+    assert v["verdict"] == "red"
