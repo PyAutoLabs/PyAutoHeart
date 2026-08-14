@@ -260,12 +260,13 @@ This NEVER dispatches a build, talks to GitHub, or mutates any repo. All
 dispatching/polling/downloading is the Brain Release Agent's job; Heart is spec
 + ingest + verdict, credential-free.
 
-The report carries release_ready (pass/fail axis), testpypi_version, profile,
-per-repo commit_shas, per-stage status, per-project counts, failures and run
-URLs. \`pyauto-heart readiness\` consumes it as a HARD gate: GREEN-for-release
+The report carries validation_outcome (pass|fail|incomplete — the severity axis),
+release_ready (the legacy boolean, kept for compatibility), testpypi_version,
+profile, per-repo commit_shas, per-stage status, per-project counts, failures and
+run URLs. \`pyauto-heart readiness\` consumes it as a HARD gate: GREEN-for-release
 now requires a fresh passing report whose commit_shas match the current main
-HEADs under the 'release' profile; absent/stale/mismatch → YELLOW; a failed
-stage → RED.
+HEADs under the 'release' profile; absent/stale/mismatch → YELLOW; incomplete
+(nothing failed, no rehearsal evidence) → STALE; a failure → RED.
 
 With no --ingest, prints the currently persisted validation_report.json.
 EOF

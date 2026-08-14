@@ -176,3 +176,55 @@ def test_in_progress_still_never_ingests_even_with_a_stale_schema():
     d = rr.decide(_report(), {"last_ingested_run_id": 7},
                   _run(run_id=7, status="in_progress", conclusion=None))
     assert d["action"] == "in-progress"
+
+
+def test_migration_never_re_folds_a_report_carrying_adverse_evidence():
+    """A legacy RED that never reached the rehearsal must not be softened.
+
+    Such a report has no `rehearse` stage and no discriminator, so the rehearsal
+    guard alone would let the migration overwrite it with a green integrate-only
+    artifact — converting a real failure into an evidence gap.
+    """
+    legacy_red = {
+        "ts": "2026-08-14T20:00:00+00:00",
+        "release_ready": False,
+        "stages": {"unit": {"status": "fail"}},
+        "totals": {"passed": 0, "failed": 3, "skipped": 0, "timeout": 0},
+        "failures": [{"project": "x", "script": "y.py"}],
+    }
+    d = rr.decide(legacy_red, {"last_ingested_run_id": 7}, _run(run_id=7))
+    assert d["action"] == "cached"
+
+
+def test_migration_blocked_by_failing_totals_alone():
+    d = rr.decide(
+        {"ts": "2026-08-14T20:00:00+00:00", "release_ready": False,
+         "stages": {"integrate": {"status": "pass"}},
+         "totals": {"passed": 9, "failed": 1, "skipped": 0, "timeout": 0}},
+        {"last_ingested_run_id": 7}, _run(run_id=7),
+    )
+    assert d["action"] == "cached"
+
+
+def test_migration_blocked_by_a_failures_list_alone():
+    d = rr.decide(
+        {"ts": "2026-08-14T20:00:00+00:00", "release_ready": False,
+         "stages": {"integrate": {"status": "pass"}},
+         "failures": [{"project": "x", "script": "y.py"}]},
+        {"last_ingested_run_id": 7}, _run(run_id=7),
+    )
+    assert d["action"] == "cached"
+
+
+def test_migration_survives_a_malformed_stages_or_totals_field():
+    """Defensive: a corrupt report must not crash the tick."""
+    d = rr.decide(
+        {"ts": "2026-08-14T20:00:00+00:00", "stages": "not-a-dict", "totals": None},
+        {"last_ingested_run_id": 7}, _run(run_id=7),
+    )
+    assert d["action"] in ("ingest", "cached")
+
+
+def test_resolve_outcome_reads_incomplete_over_the_legacy_boolean():
+    assert rr.resolve_outcome({"release_ready": False,
+                               "validation_outcome": "incomplete"}) == "incomplete"

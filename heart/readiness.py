@@ -472,7 +472,15 @@ def compute(
         ready = vr.get("release_ready")
         outcome = vr.get("validation_outcome")
         if outcome not in ("pass", "fail", "incomplete"):
-            outcome = "fail" if ready is False else ("pass" if ready is True else None)
+            if "validation_outcome" in vr:
+                # Present but unrecognised: a malformed gate artifact is
+                # untrustworthy evidence, never a pass.
+                outcome = "fail"
+            else:
+                outcome = "fail" if ready is False else ("pass" if ready is True else None)
+        elif outcome == "pass" and ready is False:
+            # The two fields contradict each other; believe the pessimistic one.
+            outcome = "fail"
         if outcome == "incomplete":
             # Nothing is wrong; the rehearsal evidence is simply absent. The
             # wording must contain "release validation" — the Health Agent

@@ -684,3 +684,117 @@ def test_outcome_nothing_ingested_is_incomplete(tmp_path):
     report = validate.ingest([tmp_path])
     assert report["validation_outcome"] == "incomplete"
     assert report["release_ready"] is False
+
+
+# --- validation_outcome: the fail-closed edges -----------------------------
+#
+# Every case below reached `pass` or `incomplete` at some point during review.
+# They are the reason the predicate is wider than "did a stage say fail".
+
+
+def test_outcome_per_project_failures_with_clean_totals_is_fail(tmp_path):
+    """per_project is merged independently of totals, so it can disagree."""
+    _write(tmp_path / "rehearsal.json", REHEARSAL)
+    _write(tmp_path / "integrate.json", dict(
+        INTEGRATE,
+        summary={"passed": 10, "failed": 0, "skipped": 0, "timeout": 0},
+        per_project={"autolens_workspace":
+                     {"passed": 7, "failed": 3, "skipped": 0, "timeout": 0}},
+        failures=[],
+    ))
+    report = validate.ingest([tmp_path])
+    assert report["totals"]["failed"] == 0
+    assert report["validation_outcome"] == "fail"
+
+
+def test_outcome_per_project_timeouts_with_clean_totals_is_fail(tmp_path):
+    _write(tmp_path / "rehearsal.json", REHEARSAL)
+    _write(tmp_path / "integrate.json", dict(
+        INTEGRATE,
+        summary={"passed": 10, "failed": 0, "skipped": 0, "timeout": 0},
+        per_project={"autolens_workspace":
+                     {"passed": 7, "failed": 0, "skipped": 0, "timeout": 2}},
+        failures=[],
+    ))
+    assert validate.ingest([tmp_path])["validation_outcome"] == "fail"
+
+
+def test_outcome_skipped_stage_is_incomplete_not_pass(tmp_path):
+    """A stage that ran without passing is not evidence of passing."""
+    _write(tmp_path / "rehearsal.json", REHEARSAL)
+    _write(tmp_path / "integrate.json", dict(INTEGRATE, status="skipped"))
+    report = validate.ingest([tmp_path])
+    assert report["stages"]["integrate"]["status"] == "skip"
+    assert report["validation_outcome"] == "incomplete"
+
+
+def test_outcome_unknown_status_token_is_incomplete_not_pass(tmp_path):
+    """`_norm_status` folds unrecognised tokens to `skip`, never `fail`.
+
+    So an adverse-sounding token Heart does not know must still not read as a
+    pass just because the rehearsal succeeded.
+    """
+    _write(tmp_path / "rehearsal.json", REHEARSAL)
+    _write(tmp_path / "integrate.json", dict(INTEGRATE, status="completed_with_failures"))
+    report = validate.ingest([tmp_path])
+    assert report["stages"]["integrate"]["status"] == "skip"
+    assert report["validation_outcome"] == "incomplete"
+
+
+def test_outcome_contradicting_explicit_fields_fails_closed(tmp_path):
+    """`validation_outcome: pass` beside `release_ready: false` is not trustworthy."""
+    _write(tmp_path / "validation_report.json", {
+        "schema_version": 1,
+        "release_ready": False,
+        "validation_outcome": "pass",
+        "stages": {"rehearse": {"status": "pass"}, "integrate": {"status": "pass"}},
+        "totals": {"passed": 5, "failed": 0, "skipped": 0, "timeout": 0},
+        "failures": [],
+        "ts": "2026-06-01T00:00:00+00:00",
+    })
+    assert validate.ingest([tmp_path])["validation_outcome"] == "fail"
+
+
+def test_outcome_malformed_discriminator_fails_closed(tmp_path):
+    """Present-but-unrecognised is a malformed artifact, not a legacy report."""
+    _write(tmp_path / "validation_report.json", {
+        "schema_version": 1,
+        "release_ready": True,
+        "validation_outcome": "PASS",          # wrong case → not a value we accept
+        "stages": {"rehearse": {"status": "pass"}, "integrate": {"status": "pass"}},
+        "totals": {"passed": 5, "failed": 0, "skipped": 0, "timeout": 0},
+        "failures": [],
+        "ts": "2026-06-01T00:00:00+00:00",
+    })
+    assert validate.ingest([tmp_path])["validation_outcome"] == "fail"
+
+
+def test_outcome_absent_discriminator_with_legacy_true_still_passes(tmp_path):
+    """The compatibility case: no field at all + a genuine legacy `true`."""
+    _write(tmp_path / "validation_report.json", {
+        "schema_version": 1,
+        "release_ready": True,
+        "stages": {"rehearse": {"status": "pass"}, "integrate": {"status": "pass"}},
+        "totals": {"passed": 5, "failed": 0, "skipped": 0, "timeout": 0},
+        "failures": [],
+        "ts": "2026-06-01T00:00:00+00:00",
+    })
+    assert validate.ingest([tmp_path])["validation_outcome"] == "pass"
+
+
+def test_force_fail_overrides_a_passing_artifact(tmp_path):
+    """The producing run's own conclusion outranks what its artifact claims.
+
+    A workflow can break outside anything the stage report captures, and that
+    report is written by a step that may have run before the break.
+    """
+    _write(tmp_path / "stage_report.json", dict(INTEGRATE))
+    assert validate.ingest([tmp_path])["validation_outcome"] == "incomplete"
+    assert validate.ingest([tmp_path], force_fail=True)["validation_outcome"] == "fail"
+
+
+def test_force_fail_beats_even_a_complete_passing_report(tmp_path):
+    _write(tmp_path / "rehearsal.json", REHEARSAL)
+    _write(tmp_path / "integrate.json", dict(INTEGRATE))
+    assert validate.ingest([tmp_path])["validation_outcome"] == "pass"
+    assert validate.ingest([tmp_path], force_fail=True)["validation_outcome"] == "fail"

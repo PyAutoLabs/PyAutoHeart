@@ -145,19 +145,34 @@ def decide(
         return {**out, "action": "in-progress"}
     # A one-time re-fold for reports written before `validation_outcome` existed.
     #
-    # Skipped when the current report already carries a `rehearse` stage: that is
-    # evidence this check's integrate-only artifact cannot reproduce (it comes
-    # from a manual multi-stage ingest during a release drive), so re-folding
-    # would throw it away and turn a `pass` into an `incomplete`. Note the test
-    # is the rehearsal, NOT `local-fresher` — every ingest necessarily happens
-    # after the run it ingests, so a report being "fresher than the run" says
-    # nothing about where it came from.
-    stages = (current_report or {}).get("stages")
-    has_rehearsal = isinstance(stages, dict) and "rehearse" in stages
+    # Strictly limited to reports this check's own integrate-only artifact can
+    # reproduce in full, because the re-fold OVERWRITES the canonical report:
+    #
+    #  - skipped when a `rehearse` stage is present — evidence from a manual
+    #    multi-stage ingest during a release drive, which this artifact cannot
+    #    reproduce; re-folding would turn its `pass` into an `incomplete`;
+    #  - skipped when the stored report carries ANY adverse evidence — a failed
+    #    stage, failing/timed-out counts, or a failures list. Those can come from
+    #    a run that broke before it ever reached the rehearsal, and re-folding a
+    #    green artifact over them would silently convert a real RED into a STALE.
+    #
+    # Note the test is neither `cached` nor `local-fresher`: every ingest happens
+    # after the run it ingests, so "the report is fresher than the run" says
+    # nothing about where the report came from.
+    stages = (current_report or {}).get("stages") or {}
+    stages = stages if isinstance(stages, dict) else {}
+    totals = (current_report or {}).get("totals") or {}
+    totals = totals if isinstance(totals, dict) else {}
+    stored_adverse = (
+        any(isinstance(s, dict) and s.get("status") == "fail" for s in stages.values())
+        or bool(totals.get("failed", 0) or totals.get("timeout", 0))
+        or bool((current_report or {}).get("failures"))
+    )
     stale_schema = (
         isinstance(current_report, dict)
         and bool(current_report)
-        and not has_rehearsal
+        and "rehearse" not in stages
+        and not stored_adverse
         and current_report.get("validation_outcome") not in ("pass", "fail", "incomplete")
     )
     if not stale_schema:
@@ -197,7 +212,14 @@ def main(argv: list[str] | None = None) -> int:
             if report_path is None:
                 action = decision["action"] = "artifact-unavailable"
             else:
-                ingested = validate.run([td])
+                # A run whose conclusion is not `success` is a failure even if
+                # the stage report it uploaded says otherwise — the workflow can
+                # break outside anything that artifact captures, and the artifact
+                # is written by a step that may have run before the break.
+                ingested = validate.run(
+                    [td],
+                    force_fail=str(decision.get("conclusion") or "").lower() != "success",
+                )
                 # Record the ingest so the tick never re-downloads this run.
                 state.atomic_write_json(SIDECAR, {
                     "last_ingested_run_id": decision.get("run_id"),
