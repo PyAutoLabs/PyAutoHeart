@@ -274,7 +274,13 @@ def compute(
             continue
         ci = body.get("ci_status", {}) or {}
         conclusion = ci.get("conclusion")
-        if conclusion not in (None, "", "success"):
+        if ci.get("error"):
+            # The CI query failed, so we have no evidence either way. That is a
+            # STALE "unknown", never a pass — and it must be *said*, because a
+            # silent unknown here is indistinguishable from a healthy repo.
+            stale.append(f"{lib}: CI status unavailable ({ci['error']})")
+            hit("lib_ci_unavailable")
+        elif conclusion not in (None, "", "success"):
             red.append(f"{lib}: CI {conclusion}")
             hit("lib_ci")
         rs = body.get("repo_state", {}) or {}

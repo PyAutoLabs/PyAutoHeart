@@ -397,3 +397,27 @@ def test_malformed_stage_entry_does_not_break_the_board():
     board = dashboard.build_board(make_snapshot(validation_report=vr),
                                   make_verdict("red", 45), now=FRESH_NOW)
     assert _section(board, "release_validation").state == dashboard.FAIL
+
+
+# --- CI query failure is reported as itself, not as a pending run ----------
+
+def test_ci_fragment_flags_failed_query_distinctly():
+    """Regression: a broken `gh` call rendered as "CI in_progress" on every
+    repo at once, so a dead query and a genuine red looked identical."""
+    state, text = dashboard._ci_fragment(
+        {"conclusion": "", "status": "unavailable", "error": "unknown flag: --branch"}
+    )
+    assert "unavailable" in text.lower()
+    assert "in_progress" not in text
+
+
+def test_ci_fragment_still_reports_real_pending():
+    state, text = dashboard._ci_fragment({"conclusion": "", "status": "in_progress"})
+    assert text == "CI in_progress"
+
+
+def test_ci_fragment_success_and_failure_unchanged():
+    assert dashboard._ci_fragment({"conclusion": "success"})[1] == "CI ✓"
+    assert "Smoke Tests" in dashboard._ci_fragment(
+        {"conclusion": "failure", "workflow": "Smoke Tests"}
+    )[1]

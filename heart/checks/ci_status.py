@@ -8,6 +8,20 @@ single conclusion, write the structured sidecar, and print the coloured summary
 line. Keeping it in Python (not inlined ``python3 -c`` in bash) makes the
 gating logic unit-testable in isolation.
 
+Two input shapes are accepted (see ``normalize_runs``): the REST
+``/actions/runs`` payload that ``ci_status.sh`` now sends, and the older bare
+list from ``gh run list --json``. The shell fetches over ``gh api`` rather than
+``gh run list`` because ``gh run list``'s flags and ``--json`` field names moved
+between ``gh`` releases (``--branch`` does not exist before gh 2.9), whereas the
+REST endpoint is stable across every ``gh`` version that has ``gh api``.
+
+A *failed fetch* is not a *pending CI*. When the shell cannot retrieve runs it
+passes ``--fetch-error``, and the sidecar records ``status="unavailable"`` plus
+an ``error`` string instead of silently looking like an in-progress run. This
+distinction matters because the release gate leans on this evidence: before it
+existed, a broken ``gh`` call rendered identically to "CI still running" on
+every repo at once, so a genuine red and a dead query were indistinguishable.
+
 Why per-workflow, not "the newest run": each workspace gates on several
 workflows (e.g. ``Smoke Tests`` + ``Navigator Check``), each a matrix over two
 Pythons. ``gh run list --limit 1`` returns one run of *some* workflow, so it can
@@ -24,6 +38,7 @@ Sidecar schema written to ``<name>.ci_status.json``::
       "required": ["Smoke Tests", "Navigator Check"],
       "conclusion": "failure",        # rolled-up over required workflows (back-compat)
       "status": "completed",          # rolled-up status (back-compat)
+      "error": "",                    # non-empty => the runs fetch itself failed
       "sha": "abc1234",               # short HEAD sha (back-compat with old sidecar)
       "workflow": "Smoke Tests",      # the failing/representative workflow, for the summary
       "url": "https://github.com/.../actions/runs/123",
@@ -87,6 +102,58 @@ def load_required_workflows(config_path: Path | str = CONFIG_PATH) -> dict[str, 
 def required_for(group: str, config_path: Path | str = CONFIG_PATH) -> list[str]:
     """Required gating workflows for ``group`` ([] if the group is advisory)."""
     return load_required_workflows(config_path).get(group, [])
+
+
+def normalize_runs(payload: Any, branch: str = "main") -> list[dict[str, Any]]:
+    """Coerce a runs payload into the internal run shape, filtered to ``branch``.
+
+    Accepts either shape:
+
+    - the REST ``GET /repos/{owner}/{repo}/actions/runs`` object, i.e.
+      ``{"workflow_runs": [...]}`` with snake_case keys, which is what
+      ``ci_status.sh`` sends; or
+    - a bare list of camelCase runs, the historical ``gh run list --json``
+      output (still accepted so older cached payloads and the existing tests
+      keep working).
+
+    REST runs carry the workflow's display name in ``name`` (the commit subject
+    lives in ``display_title``), which is exactly the key ``required_workflows``
+    is written against. Runs whose ``head_branch`` is known and is not
+    ``branch`` are dropped — the REST query already filters by branch, so this
+    is belt-and-braces for the legacy shape, which was never branch-filtered on
+    a ``gh`` too old to support ``--branch``.
+    """
+    if isinstance(payload, dict):
+        raw = payload.get("workflow_runs") or []
+    elif isinstance(payload, list):
+        raw = payload
+    else:
+        raw = []
+
+    runs: list[dict[str, Any]] = []
+    for run in raw:
+        if not isinstance(run, dict):
+            continue
+        if "workflow_runs" in run:  # guard against a doubly-wrapped payload
+            continue
+        # REST shape is detected by its snake_case keys; camelCase wins when
+        # present so an already-normalized run passes through untouched.
+        head_branch = run.get("headBranch", run.get("head_branch"))
+        if head_branch and branch and head_branch != branch:
+            continue
+        runs.append(
+            {
+                "workflowName": run.get("workflowName") or run.get("name") or "",
+                "conclusion": run.get("conclusion") or "",
+                "status": run.get("status") or "",
+                "headSha": run.get("headSha") or run.get("head_sha") or "",
+                "createdAt": run.get("createdAt") or run.get("created_at") or "",
+                "url": run.get("url") or run.get("html_url") or "",
+                "event": run.get("event") or "",
+                "headBranch": head_branch or "",
+            }
+        )
+    return runs
 
 
 def latest_per_workflow(runs: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -174,17 +241,27 @@ def rollup(workflows: dict[str, dict[str, Any]], required: list[str]) -> dict[st
 def build_sidecar(
     name: str,
     group: str,
-    runs: list[dict[str, Any]],
+    runs: Any,
     head_sha: str,
     ts: str,
     config_path: Path | str = CONFIG_PATH,
+    error: str = "",
 ) -> dict[str, Any]:
-    """Construct the full ci_status sidecar dict for one repo."""
+    """Construct the full ci_status sidecar dict for one repo.
+
+    ``error`` is the reason the runs fetch failed. When set, the sidecar
+    reports ``status="unavailable"`` rather than the ``in_progress`` that an
+    empty run list would otherwise roll up to, so "we could not ask" is
+    readable as itself instead of impersonating "CI is still running".
+    """
     required = required_for(group, config_path)
-    latest = latest_per_workflow(runs)
+    latest = latest_per_workflow(normalize_runs(runs))
     workflows = {wf: _wf_entry(run, head_sha) for wf, run in latest.items()}
 
-    roll = rollup(workflows, required)
+    if error:
+        roll = {"conclusion": "", "status": "unavailable", "workflow": ""}
+    else:
+        roll = rollup(workflows, required)
     # Pick a representative url: the failing workflow's, else HEAD's newest.
     rep_wf = roll["workflow"]
     rep = workflows.get(rep_wf) if rep_wf else None
@@ -200,6 +277,7 @@ def build_sidecar(
         "conclusion": roll["conclusion"],
         "status": roll["status"],
         "workflow": roll["workflow"],
+        "error": error,
         "url": (rep or {}).get("url", ""),
         "workflows": workflows,
         "ts": ts,
@@ -218,7 +296,10 @@ def summary_line(sidecar: dict[str, Any]) -> str:
     status = sidecar.get("status", "")
     sha = sidecar.get("sha", "")
     workflows = sidecar.get("workflows") or {}
+    error = sidecar.get("error", "")
 
+    if error:
+        return f"{glyph_warn()} {c_info(name)} {c_warn('CI UNAVAILABLE')} {c_meta(error)}"
     if not workflows and not sha:
         return f"{c_meta('·')} {c_info(name)} {c_meta('(no runs)')}"
     if conclusion == "success":
@@ -234,13 +315,14 @@ def summary_line(sidecar: dict[str, Any]) -> str:
 def write_and_summarise(
     name: str,
     group: str,
-    runs: list[dict[str, Any]],
+    runs: Any,
     head_sha: str,
     ts: str,
     out_path: Path,
     config_path: Path | str = CONFIG_PATH,
+    error: str = "",
 ) -> dict[str, Any]:
-    sidecar = build_sidecar(name, group, runs, head_sha, ts, config_path)
+    sidecar = build_sidecar(name, group, runs, head_sha, ts, config_path, error)
     sys.path.insert(0, str(HEART_HOME))
     from heart import state
 
@@ -255,17 +337,24 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--head-sha", default="")
     ap.add_argument("--ts", required=True)
     ap.add_argument("--out", required=True)
+    ap.add_argument(
+        "--fetch-error",
+        default="",
+        help="reason the runs fetch failed; recorded instead of a bogus pending state",
+    )
     ns = ap.parse_args(argv)
 
+    error = ns.fetch_error
     try:
-        runs = json.load(sys.stdin)
+        runs: Any = json.load(sys.stdin)
     except (json.JSONDecodeError, ValueError):
+        # Unparseable stdin is itself a fetch failure: report it as one rather
+        # than falling through to an empty run list that reads as "pending".
         runs = []
-    if not isinstance(runs, list):
-        runs = []
+        error = error or "runs payload was not valid JSON"
 
     sidecar = write_and_summarise(
-        ns.name, ns.group, runs, ns.head_sha, ns.ts, Path(ns.out)
+        ns.name, ns.group, runs, ns.head_sha, ns.ts, Path(ns.out), error=error
     )
     print(summary_line(sidecar))
     return 0

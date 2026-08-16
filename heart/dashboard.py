@@ -222,6 +222,11 @@ def _ci_fragment(ci: dict) -> tuple[str, str] | None:
     """(state, text) for a repo's CI, or None when there is no CI signal."""
     if not ci:
         return None
+    # A failed CI query is not a CI state: say so, rather than letting it read
+    # as a pending run. Without this the panel showed "CI in_progress" on every
+    # repo at once when the underlying `gh` call was simply broken.
+    if ci.get("error"):
+        return WARN, "CI unavailable (query failed)"
     concl = ci.get("conclusion")
     if concl == "success":
         return OK, "CI ✓"
