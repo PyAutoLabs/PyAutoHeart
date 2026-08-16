@@ -985,3 +985,27 @@ def test_malformed_stages_never_raises(stages):
     report["stages"] = stages
     v = compute(make_snapshot(validation_report=report))
     assert v["verdict"] == "red"
+
+
+# --- CI query failure is an explicit unknown, never a silent pass ----------
+
+def test_library_ci_fetch_error_is_stale_not_green():
+    """A failed CI query means no evidence. It must be said out loud rather
+    than leaving the repo looking healthy — the release gate leans on this."""
+    snap = make_snapshot()
+    snap["repos"]["PyAutoLens"]["ci_status"] = {
+        "conclusion": "", "status": "unavailable", "error": "unknown flag: --branch",
+    }
+    v = compute(snap)
+    assert v["verdict"] != "green"
+    assert any("PyAutoLens" in r and "unavailable" in r for r in v["stale_reasons"])
+
+
+def test_library_ci_fetch_error_is_not_counted_as_red():
+    """Unknown is not the same as failing: an unreachable API must not fake a red."""
+    snap = make_snapshot()
+    snap["repos"]["PyAutoLens"]["ci_status"] = {
+        "conclusion": "", "status": "unavailable", "error": "boom",
+    }
+    v = compute(snap)
+    assert not any("PyAutoLens" in r for r in v["red_reasons"])
