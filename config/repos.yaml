@@ -113,6 +113,39 @@ version_skew:
   euclid_strong_lens_modeling_pipeline: {library: PyAutoLens, package: autolens}
   autolens_assistant: {library: PyAutoLens, package: autolens}
 
+# Smoke-suite table: the workspaces the local smoke runner (heart/smoke.py)
+# can prepare and run — each key names its workspace checkout directory and the
+# library install chain — plus the repo -> import-package map the preflight
+# proves. Read strictly by heart/smoke.py (a missing block fails loudly rather
+# than silently preparing nothing); an adopter replaces this with their own
+# workspaces. Repo IDENTITY here must match the body map, same as above.
+smoke:
+  import_names:
+    PyAutoNerves: autonerves
+    PyAutoFit: autofit
+    PyAutoArray: autoarray
+    PyAutoGalaxy: autogalaxy
+    PyAutoLens: autolens
+  workspaces:
+    autofit:
+      directory: autofit_workspace
+      chain: [PyAutoNerves, PyAutoFit]
+    autogalaxy:
+      directory: autogalaxy_workspace
+      chain: [PyAutoNerves, PyAutoFit, PyAutoArray, PyAutoGalaxy]
+    autolens:
+      directory: autolens_workspace
+      chain: [PyAutoNerves, PyAutoFit, PyAutoArray, PyAutoGalaxy, PyAutoLens]
+    autolens_test:
+      directory: autolens_workspace_test
+      chain: [PyAutoNerves, PyAutoFit, PyAutoArray, PyAutoGalaxy, PyAutoLens]
+    euclid:
+      directory: euclid_strong_lens_modeling_pipeline
+      chain: [PyAutoNerves, PyAutoFit, PyAutoArray, PyAutoGalaxy, PyAutoLens]
+    howtolens:
+      directory: HowToLens
+      chain: [PyAutoNerves, PyAutoFit, PyAutoArray, PyAutoGalaxy, PyAutoLens]
+
 # Excluded — not polled. Listed here for documentation only.
 excluded:
   - admin_jammy           # personal tooling

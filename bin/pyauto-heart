@@ -376,9 +376,9 @@ pyauto-heart smoke [WORKSPACE ...] [--prepare-only] [--rebuild]
                    [--python PATH] [--root DIR] [--state-dir DIR]
 
 Prepare a separate, cached Python environment for each selected workspace,
-then run its workspace-owned smoke runner. The default is all six workspaces;
-valid filters are: autofit, autogalaxy, autolens, autolens_test, euclid,
-howtolens.
+then run its workspace-owned smoke runner. The workspace table (keys,
+directories, install chains) is the smoke: block of config/repos.yaml; the
+default is every workspace configured there.
 
 Environment dependencies come from each workspace's CI smoke_install.sh (or a
 metadata-derived fallback for a legacy workspace), not from the invoking shell.
@@ -389,7 +389,7 @@ source imports, and Jupyter kernel ownership before science scripts begin.
   --prepare-only  Build/reuse and preflight; do not run workspace scripts
   --rebuild       Force selected cached environments to rebuild
   --python PATH   Base Python used to create environments (default: current)
-  --root DIR      PyAutoLabs root (default: \$PYAUTO_ROOT)
+  --root DIR      organism root (default: \$PYAUTO_ROOT)
   --state-dir DIR Environment/cache root (default: \$HEART_STATE_DIR)
 EOF
 }

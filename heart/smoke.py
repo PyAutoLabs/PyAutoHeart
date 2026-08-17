@@ -29,8 +29,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
 
+import yaml
+
 FINGERPRINT_SCHEMA = 1
 MARKER_NAME = ".pyauto-smoke-environment.json"
+
+HEART_HOME = Path(__file__).resolve().parents[1]
+CONFIG_PATH = HEART_HOME / "config" / "repos.yaml"
 
 
 @dataclass(frozen=True)
@@ -40,69 +45,25 @@ class WorkspaceSpec:
     chain: tuple[str, ...]
 
 
-WORKSPACES: dict[str, WorkspaceSpec] = {
-    "autofit": WorkspaceSpec(
-        "autofit", "autofit_workspace", ("PyAutoNerves", "PyAutoFit")
-    ),
-    "autogalaxy": WorkspaceSpec(
-        "autogalaxy",
-        "autogalaxy_workspace",
-        ("PyAutoNerves", "PyAutoFit", "PyAutoArray", "PyAutoGalaxy"),
-    ),
-    "autolens": WorkspaceSpec(
-        "autolens",
-        "autolens_workspace",
-        (
-            "PyAutoNerves",
-            "PyAutoFit",
-            "PyAutoArray",
-            "PyAutoGalaxy",
-            "PyAutoLens",
-        ),
-    ),
-    "autolens_test": WorkspaceSpec(
-        "autolens_test",
-        "autolens_workspace_test",
-        (
-            "PyAutoNerves",
-            "PyAutoFit",
-            "PyAutoArray",
-            "PyAutoGalaxy",
-            "PyAutoLens",
-        ),
-    ),
-    "euclid": WorkspaceSpec(
-        "euclid",
-        "euclid_strong_lens_modeling_pipeline",
-        (
-            "PyAutoNerves",
-            "PyAutoFit",
-            "PyAutoArray",
-            "PyAutoGalaxy",
-            "PyAutoLens",
-        ),
-    ),
-    "howtolens": WorkspaceSpec(
-        "howtolens",
-        "HowToLens",
-        (
-            "PyAutoNerves",
-            "PyAutoFit",
-            "PyAutoArray",
-            "PyAutoGalaxy",
-            "PyAutoLens",
-        ),
-    ),
-}
+def load_smoke_config(
+    config_path: Path | str = CONFIG_PATH,
+) -> tuple[dict[str, WorkspaceSpec], dict[str, str]]:
+    """Workspace specs + repo -> import-name map, from the policy file's
+    ``smoke`` block. Strict: a missing block is a config bug and fails
+    loudly rather than silently preparing nothing (the ``version_skew``
+    idiom). Which workspaces exist is instance policy, so it lives in
+    ``config/repos.yaml`` — the declared surface an adopting fork replaces —
+    not in this module."""
+    cfg = yaml.safe_load(Path(config_path).read_text()) or {}
+    block = cfg["smoke"]
+    workspaces = {
+        key: WorkspaceSpec(key, spec["directory"], tuple(spec["chain"]))
+        for key, spec in block["workspaces"].items()
+    }
+    return workspaces, dict(block["import_names"])
 
 
-IMPORT_NAMES = {
-    "PyAutoNerves": "autonerves",
-    "PyAutoFit": "autofit",
-    "PyAutoArray": "autoarray",
-    "PyAutoGalaxy": "autogalaxy",
-    "PyAutoLens": "autolens",
-}
+WORKSPACES, IMPORT_NAMES = load_smoke_config()
 
 
 class SmokeEnvironmentError(RuntimeError):
@@ -588,7 +549,7 @@ def _parser() -> argparse.ArgumentParser:
         default=Path(
             os.environ.get("PYAUTO_ROOT", Path(__file__).resolve().parents[2])
         ),
-        help="PyAutoLabs organism root",
+        help="organism root",
     )
     parser.add_argument(
         "--state-dir",
