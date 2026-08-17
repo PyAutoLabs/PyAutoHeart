@@ -255,12 +255,17 @@ def test_migration_blocked_by_timeouts_alone():
 def test_migration_blocked_by_per_project_counts_alone():
     """`per_project` is merged independently of `totals`, so it can be the only
     adverse signal — and the guard must use the same definition of "adverse"
-    that `validate._has_adverse_evidence` does."""
+    that `validate._has_adverse_evidence` does.
+
+    The project key is deliberately synthetic (`demo_workspace`): it is merged
+    generically, never matched against a repo list, so a real name here would
+    be an instance fact in organ code (the tenant firewall's concern) for no
+    test value."""
     d = rr.decide(
         {"ts": "2026-08-14T20:00:00+00:00",
          "stages": {"integrate": {"status": "pass"}},
          "totals": {"passed": 9, "failed": 0, "skipped": 0, "timeout": 0},
-         "per_project": {"autolens_workspace":
+         "per_project": {"demo_workspace":
                          {"passed": 6, "failed": 1, "skipped": 0, "timeout": 0}}},
         {"last_ingested_run_id": 7}, _run(run_id=7),
     )

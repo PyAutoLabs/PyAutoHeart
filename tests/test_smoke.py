@@ -10,8 +10,13 @@ import pytest
 from heart import smoke
 
 
+# Fixture repo and root names are deliberately synthetic (LibraryA/LibraryB
+# chains under an `organism` root): nothing in smoke.py matches a spec against
+# a real repo list, so a real name here would be an instance fact in organ code
+# — the tenant firewall's concern (PyAutoMind/scripts/repos_sync.py) — for no
+# test value. Keep them synthetic.
 def make_tree(tmp_path: Path, spec: smoke.WorkspaceSpec) -> Path:
-    root = tmp_path / "PyAutoLabs"
+    root = tmp_path / "organism"
     workspace = root / spec.directory
     (workspace / ".github" / "scripts").mkdir(parents=True)
     (workspace / ".github" / "scripts" / "smoke_install.sh").write_text(
@@ -32,7 +37,7 @@ def completed(stdout: str = "") -> subprocess.CompletedProcess[str]:
 
 
 def test_fingerprint_changes_with_installer_and_dependency_metadata(tmp_path):
-    spec = smoke.WorkspaceSpec("demo", "demo_workspace", ("PyAutoArray",))
+    spec = smoke.WorkspaceSpec("demo", "demo_workspace", ("LibraryB",))
     root = make_tree(tmp_path, spec)
     identity = {"executable": "/usr/bin/python3", "version": "3.12.8"}
 
@@ -44,8 +49,8 @@ def test_fingerprint_changes_with_installer_and_dependency_metadata(tmp_path):
     installer_changed = smoke.fingerprint_digest(
         smoke.environment_fingerprint(root, spec, identity)
     )
-    (root / "PyAutoArray" / "pyproject.toml").write_text(
-        '[project]\nname = "autoarray"\nversion = "2"\n'
+    (root / "LibraryB" / "pyproject.toml").write_text(
+        '[project]\nname = "libraryb"\nversion = "2"\n'
     )
     metadata_changed = smoke.fingerprint_digest(
         smoke.environment_fingerprint(root, spec, identity)
@@ -58,7 +63,7 @@ def test_fingerprint_changes_with_installer_and_dependency_metadata(tmp_path):
 def test_runtime_environment_replaces_ambient_python_and_pyauto_state(
     tmp_path, monkeypatch
 ):
-    spec = smoke.WorkspaceSpec("demo", "demo_workspace", ("PyAutoFit", "PyAutoArray"))
+    spec = smoke.WorkspaceSpec("demo", "demo_workspace", ("LibraryA", "LibraryB"))
     root = make_tree(tmp_path, spec)
     environment = tmp_path / "environment"
     smoke._environment_bin(environment).mkdir(parents=True)
@@ -69,8 +74,8 @@ def test_runtime_environment_replaces_ambient_python_and_pyauto_state(
 
     assert "/ambient/leak" not in env["PYTHONPATH"]
     assert env["PYTHONPATH"].split(os.pathsep) == [
-        str(root / "PyAutoFit"),
-        str(root / "PyAutoArray"),
+        str(root / "LibraryA"),
+        str(root / "LibraryB"),
         str(root / "PyAutoHands" / "autohands"),
     ]
     assert "PYAUTO_TEST_MODE" not in env
@@ -81,7 +86,7 @@ def test_runtime_environment_replaces_ambient_python_and_pyauto_state(
 def test_prepare_reuses_cache_then_rebuilds_after_metadata_change(
     tmp_path, monkeypatch
 ):
-    spec = smoke.WorkspaceSpec("demo", "demo_workspace", ("PyAutoArray",))
+    spec = smoke.WorkspaceSpec("demo", "demo_workspace", ("LibraryB",))
     root = make_tree(tmp_path, spec)
     state = tmp_path / "state"
     identity = {"executable": "/fake/python", "version": "3.12.8"}
@@ -112,8 +117,8 @@ def test_prepare_reuses_cache_then_rebuilds_after_metadata_change(
 
     first, first_built = smoke.prepare_environment(root, state, spec)
     second, second_built = smoke.prepare_environment(root, state, spec)
-    (root / "PyAutoArray" / "pyproject.toml").write_text(
-        '[project]\nname = "autoarray"\nversion = "2"\n'
+    (root / "LibraryB" / "pyproject.toml").write_text(
+        '[project]\nname = "libraryb"\nversion = "2"\n'
     )
     third, third_built = smoke.prepare_environment(root, state, spec)
 
@@ -127,7 +132,7 @@ def test_prepare_reuses_cache_then_rebuilds_after_metadata_change(
 
 
 def test_failed_rebuild_restores_previous_complete_environment(tmp_path, monkeypatch):
-    spec = smoke.WorkspaceSpec("demo", "demo_workspace", ("PyAutoArray",))
+    spec = smoke.WorkspaceSpec("demo", "demo_workspace", ("LibraryB",))
     root = make_tree(tmp_path, spec)
     state = tmp_path / "state"
     identity = {"executable": "/fake/python", "version": "3.12.8"}
@@ -146,8 +151,8 @@ def test_failed_rebuild_restores_previous_complete_environment(tmp_path, monkeyp
     monkeypatch.setattr(smoke, "_preflight", lambda *_: None)
     target, _ = smoke.prepare_environment(root, state, spec)
     old_marker = (target / smoke.MARKER_NAME).read_text()
-    (root / "PyAutoArray" / "pyproject.toml").write_text(
-        '[project]\nname = "autoarray"\nversion = "2"\n'
+    (root / "LibraryB" / "pyproject.toml").write_text(
+        '[project]\nname = "libraryb"\nversion = "2"\n'
     )
     monkeypatch.setattr(
         smoke,
@@ -163,7 +168,7 @@ def test_failed_rebuild_restores_previous_complete_environment(tmp_path, monkeyp
 
 
 def test_workspace_installer_is_the_dependency_source_of_truth(tmp_path, monkeypatch):
-    spec = smoke.WorkspaceSpec("demo", "demo_workspace", ("PyAutoFit",))
+    spec = smoke.WorkspaceSpec("demo", "demo_workspace", ("LibraryA",))
     root = make_tree(tmp_path, spec)
     environment = tmp_path / "environment"
     python = smoke._environment_python(environment)
@@ -188,19 +193,19 @@ def test_workspace_installer_is_the_dependency_source_of_truth(tmp_path, monkeyp
 
     installer = root / spec.directory / ".github" / "scripts" / "smoke_install.sh"
     assert any(command == ["bash", str(installer)] for command, _ in calls)
-    assert all("./PyAutoFit" not in command for command, _ in calls)
+    assert all("./LibraryA" not in command for command, _ in calls)
     installer_call = next(kwargs for command, kwargs in calls if command[0] == "bash")
     assert installer_call["cwd"] == root
     assert installer_call["env"]["PYTHON_VERSION"] == "3.12"
 
 
 def test_legacy_installer_derives_optional_extras_from_pyproject(tmp_path, monkeypatch):
-    spec = smoke.WorkspaceSpec("legacy", "legacy_workspace", ("PyAutoArray",))
+    spec = smoke.WorkspaceSpec("legacy", "legacy_workspace", ("LibraryB",))
     root = make_tree(tmp_path, spec)
     (root / spec.directory / ".github" / "scripts" / "smoke_install.sh").unlink()
-    (root / "PyAutoArray" / "pyproject.toml").write_text("""
+    (root / "LibraryB" / "pyproject.toml").write_text("""
 [project]
-name = "autoarray"
+name = "libraryb"
 version = "1"
 
 [project.optional-dependencies]
@@ -225,8 +230,8 @@ optional = ["nufftax>=0.6"]
         {"executable": "/fake/python", "version": "3.12.8"},
     )
 
-    assert any("./PyAutoArray" in command for command in commands)
-    assert any("./PyAutoArray[optional]" in command for command in commands)
+    assert any("./LibraryB" in command for command in commands)
+    assert any("./LibraryB[optional]" in command for command in commands)
     assert all("nufftax" not in command for command in commands)
 
 
@@ -341,7 +346,7 @@ def test_safe_remove_refuses_paths_outside_smoke_cache(tmp_path):
 def test_run_workspace_uses_prepared_python_and_isolated_environment(
     tmp_path, monkeypatch
 ):
-    spec = smoke.WorkspaceSpec("demo", "demo_workspace", ("PyAutoFit",))
+    spec = smoke.WorkspaceSpec("demo", "demo_workspace", ("LibraryA",))
     root = make_tree(tmp_path, spec)
     runner = root / spec.directory / ".github" / "scripts" / "run_smoke.py"
     runner.write_text("")
