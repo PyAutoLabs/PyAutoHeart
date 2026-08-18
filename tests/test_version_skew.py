@@ -150,9 +150,9 @@ def test_pypi_floor_status(floor, releases, expected):
 
 
 def test_run_pypi_one_fetch_per_package(tmp_path, monkeypatch):
-    # autolens_workspace and HowToLens both map to package `autolens` → the
-    # probe must fetch each distinct package once, not once per workspace.
-    for ws in ("autolens_workspace", "HowToLens"):
+    # autolens_workspace and autolens_assistant both map to package `autolens`
+    # → the probe must fetch each distinct package once, not once per workspace.
+    for ws in ("autolens_workspace", "autolens_assistant"):
         cfg = tmp_path / ws / "config"
         cfg.mkdir(parents=True)
         (cfg / "general.yaml").write_text("version:\n  minimum_library_version: 2026.7.9.1\n")
@@ -162,7 +162,7 @@ def test_run_pypi_one_fetch_per_package(tmp_path, monkeypatch):
     assert calls == ["autolens"]
     by_ws = {w["workspace"]: w for w in result["workspaces"]}
     assert by_ws["autolens_workspace"]["status"] == "OK"
-    assert by_ws["HowToLens"]["package"] == "autolens"
+    assert by_ws["autolens_assistant"]["package"] == "autolens"
 
 
 def test_run_pypi_offline_is_unknown(tmp_path, monkeypatch):
