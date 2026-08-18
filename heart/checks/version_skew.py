@@ -29,11 +29,25 @@ Statuses:
 - **UNKNOWN** — the library isn't checked out / carries no release tags, so the
   newest release can't be resolved; surfaced as caution, never a hard block.
 
-Not covered here (deeper, non-tick checks own it): whether the floor names a
-release that was later *yanked* on PyPI — that needs the PyPI API, not git tags.
+The yank gap is owned by the **deep PyPI leg** (``--pypi``): git tags cannot see
+a release being *yanked* on PyPI after the fact, so ``--pypi`` asks the PyPI
+JSON API whether each floor still names an installable (non-yanked) release and
+whether *any* installable release satisfies it. Network — never part of the
+tick; run it on demand or from a nightly. Its statuses:
+
+- **UNSATISFIABLE** — no installable release >= floor exists on PyPI (every
+  candidate yanked): same defect class as the tag-based UNSATISFIABLE.
+- **FLOOR_YANKED** — the floor version itself is yanked/absent but a newer
+  installable release satisfies it; floors are ``>=`` so installs still
+  resolve — warn, fix by bumping the floor.
+- **OK** / **BAD** / **UNKNOWN** — as above; UNKNOWN covers PyPI unreachable
+  (offline is caution, never a false hard block).
+
 An informational "floor lags far behind newest" signal is a possible future add.
 
-The result lands at ``$HEART_STATE_DIR/version_skew.json``.
+The tick result lands at ``$HEART_STATE_DIR/version_skew.json``; the ``--pypi``
+leg at ``version_skew_pypi.json`` (a sibling file, so the tick never clobbers
+on-demand evidence).
 """
 
 from __future__ import annotations
@@ -149,20 +163,103 @@ def run(root: Path = PYAUTO_ROOT) -> dict[str, Any]:
     return {"workspaces": workspaces}
 
 
+# --------------------------------------------------------------------------- #
+# Deep PyPI leg (``--pypi``) — yank-awareness. Network; never run from the tick.
+# --------------------------------------------------------------------------- #
+
+PYPI_URL = "https://pypi.org/pypi/{package}/json"
+PYPI_TIMEOUT_S = 10
+
+
+def fetch_pypi_releases(package: str) -> dict[str, list] | None:
+    """The package's ``releases`` map from the PyPI JSON API, or None when the
+    API is unreachable/unparseable — offline must degrade to UNKNOWN, never a
+    false hard block."""
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(
+            PYPI_URL.format(package=package), timeout=PYPI_TIMEOUT_S
+        ) as resp:
+            data = json.load(resp)
+    except Exception:
+        return None
+    releases = data.get("releases")
+    return releases if isinstance(releases, dict) else None
+
+
+def _installable(files: list) -> bool:
+    """A release is installable iff at least one of its files is not yanked
+    (PyPI marks yank per file; a fileless release installs nothing)."""
+    return any(isinstance(f, dict) and not f.get("yanked") for f in files or [])
+
+
+def pypi_floor_status(floor: str | None, releases: dict[str, list] | None) -> str:
+    """OK / FLOOR_YANKED / UNSATISFIABLE / UNKNOWN / BAD for one floor vs PyPI.
+
+    Floors are ``>=`` bounds, so a yanked floor with a newer installable
+    release still resolves at install time — that is FLOOR_YANKED (fix by
+    bumping the floor to an installable release), not a hard block. No
+    installable release >= floor at all is the same defect class as the
+    tag-based UNSATISFIABLE.
+    """
+    if releases is None:
+        return "UNKNOWN"
+    ft = _tuple(floor or "")
+    if ft is None:
+        return "BAD"
+    installable = {
+        v.strip()
+        for v, files in releases.items()
+        if _TAG_RE.match(v.strip()) and _installable(files)
+    }
+    if not any(_tuple(v) >= ft for v in installable):
+        return "UNSATISFIABLE"
+    return "OK" if (floor or "").strip() in installable else "FLOOR_YANKED"
+
+
+def run_pypi(root: Path = PYAUTO_ROOT) -> dict[str, Any]:
+    """Side-effect-free like run(): one PyPI fetch per distinct package, one
+    entry per floored workspace."""
+    releases_by_package: dict[str, dict[str, list] | None] = {}
+    workspaces = []
+    for workspace, (repo, pkg) in workspace_library().items():
+        floor = read_workspace_floor(workspace, root)
+        if floor is None:
+            continue  # no floor recorded → not a candidate
+        if pkg not in releases_by_package:
+            releases_by_package[pkg] = fetch_pypi_releases(pkg)
+        workspaces.append(
+            {
+                "workspace": workspace,
+                "library": repo,
+                "package": pkg,
+                "floor": floor,
+                "status": pypi_floor_status(floor, releases_by_package[pkg]),
+            }
+        )
+    return {"workspaces": workspaces}
+
+
 def main(argv: list[str]) -> int:
-    result = run()
+    pypi = "--pypi" in argv
+    result = run_pypi() if pypi else run()
     sys.path.insert(0, str(HEART_HOME))
     from heart import state
 
-    # Persist only here, at the tick/CLI entrypoint — run() is side-effect-free
-    # so library callers (and the test suite) can never clobber live state.
-    state.atomic_write_json(HEART_STATE_DIR / "version_skew.json", result)
+    # Persist only here, at the tick/CLI entrypoint — run()/run_pypi() are
+    # side-effect-free so library callers (and the test suite) can never
+    # clobber live state. The --pypi leg gets its own sidecar so the tick's
+    # version_skew.json rewrite never clobbers on-demand PyPI evidence.
+    name = "version_skew_pypi.json" if pypi else "version_skew.json"
+    state.atomic_write_json(HEART_STATE_DIR / name, result)
 
     from heart.heart_color import c_ok, c_warn, c_fail, c_info, c_meta, glyph_ok, glyph_warn, glyph_fail
 
     workspaces = result["workspaces"]
     unsatisfiable = [w for w in workspaces if w["status"] == "UNSATISFIABLE"]
     bad = [w for w in workspaces if w["status"] == "BAD"]
+    yanked = [w for w in workspaces if w["status"] == "FLOOR_YANKED"]
     unknown = [w for w in workspaces if w["status"] == "UNKNOWN"]
     blocking = unsatisfiable + bad  # release-blocking statuses
     if blocking:
@@ -173,13 +270,19 @@ def main(argv: list[str]) -> int:
         if bad:
             parts.append(c_warn(f"{len(bad)} bad"))
         label = " ".join(parts)
-    elif unknown:
+    elif yanked or unknown:
         glyph = glyph_warn()
-        label = c_warn(f"{len(unknown)} unknown")
+        parts = []
+        if yanked:
+            parts.append(c_warn(f"{len(yanked)} floor yanked"))
+        if unknown:
+            parts.append(c_warn(f"{len(unknown)} unknown"))
+        label = " ".join(parts)
     else:
         glyph = glyph_ok()
         label = c_ok(f"{len(workspaces)} floors satisfiable")
-    print(f"{glyph} {c_info('version_skew')} {label} {c_meta(f'({len(workspaces)} floors)')}")
+    check_name = "version_skew --pypi" if pypi else "version_skew"
+    print(f"{glyph} {c_info(check_name)} {label} {c_meta(f'({len(workspaces)} floors)')}")
     return 0
 
 

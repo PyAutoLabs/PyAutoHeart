@@ -80,6 +80,7 @@ def aggregate() -> dict[str, Any]:
         "test_run": _read_json_or_default(HEART_STATE_DIR / "test_run.json", {}),
         "workspace_testmode_timing": _read_json_or_default(HEART_STATE_DIR / "workspace_testmode_timing.json", {}),
         "version_skew": _read_json_or_default(HEART_STATE_DIR / "version_skew.json", {}),
+        "version_skew_pypi": _read_json_or_default(HEART_STATE_DIR / "version_skew_pypi.json", {}),
         "manifest_drift": _read_json_or_default(HEART_STATE_DIR / "manifest_drift.json", {}),
         "verify_install": _read_json_or_default(HEART_STATE_DIR / "verify_install.json", {}),
         "url_check": _read_json_or_default(HEART_STATE_DIR / "url_check.json", {}),

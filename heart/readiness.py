@@ -126,6 +126,10 @@ _WEIGHTS: dict[str, tuple[int, int]] = {
     "parked": (5, 15),
     "skew_bad": (25, 50),
     "skew_unknown": (10, 30),
+    "skew_pypi_unsatisfiable": (25, 50),
+    "skew_pypi_bad": (25, 50),
+    "skew_pypi_floor_yanked": (8, 24),
+    "skew_pypi_unknown": (10, 30),
     "install_not_ready": (40, 40),
     "install_non_release": (10, 10),
     "install_stale": (10, 10),
@@ -401,6 +405,37 @@ def compute(
             elif status == "UNKNOWN":
                 stale.append(f"{w.get('workspace')}: newest {w.get('library')} release unknown")
                 hit("skew_unknown")
+
+    # --- version skew, PyPI yank leg (deep `version_skew --pypi`; the slice is
+    # absent until that on-demand probe has run — absence is no signal) ---
+    skew_pypi = snapshot.get("version_skew_pypi")
+    if isinstance(skew_pypi, dict):
+        for w in skew_pypi.get("workspaces") or []:
+            if not isinstance(w, dict):
+                continue
+            status = str(w.get("status", "")).upper()
+            if status == "UNSATISFIABLE":
+                red.append(
+                    f"{w.get('workspace')}: no installable {w.get('package')} release "
+                    f"on PyPI satisfies floor {w.get('floor')} (all candidates yanked)"
+                )
+                hit("skew_pypi_unsatisfiable")
+            elif status == "BAD":
+                red.append(
+                    f"{w.get('workspace')}: unparseable floor {w.get('floor')} (PyPI leg)"
+                )
+                hit("skew_pypi_bad")
+            elif status == "FLOOR_YANKED":
+                yellow.append(
+                    f"{w.get('workspace')}: floor {w.get('floor')} names a yanked/"
+                    f"unavailable {w.get('package')} release — bump the floor"
+                )
+                hit("skew_pypi_floor_yanked")
+            elif status == "UNKNOWN":
+                stale.append(
+                    f"{w.get('workspace')}: PyPI unreachable for {w.get('package')}"
+                )
+                hit("skew_pypi_unknown")
 
     # --- manifest drift (YELLOW — identity hygiene vs PyAutoMind/repos.yaml) ---
     manifest = snapshot.get("manifest_drift")

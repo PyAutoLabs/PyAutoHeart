@@ -121,6 +121,72 @@ def test_autolens_assistant_is_a_polled_workspace():
     assert mapping["autolens_assistant"] == ("PyAutoLens", "autolens")
 
 
+# --- deep PyPI yank leg (--pypi) ----------------------------------------------
+
+def _files(*yanked):
+    return [{"yanked": y} for y in yanked]
+
+
+# 2026.7.6.649 fully yanked (the real 2026-07 incident); two installable newer.
+RELEASES = {
+    "2026.7.6.649": _files(True, True),
+    "2026.7.9.1": _files(False, False),
+    "2026.7.15.1": _files(False),
+}
+
+
+@pytest.mark.parametrize("floor,releases,expected", [
+    ("2026.7.9.1", RELEASES, "OK"),                    # floor installable
+    ("2026.7.6.649", RELEASES, "FLOOR_YANKED"),        # floor yanked, newer installable
+    ("2026.7.1.1", RELEASES, "FLOOR_YANKED"),          # floor absent from PyPI, newer installable
+    ("2026.8.1.1", RELEASES, "UNSATISFIABLE"),         # nothing >= floor exists
+    ("2026.7.9.1", {"2026.7.9.1": _files(True)}, "UNSATISFIABLE"),  # everything >= floor yanked
+    ("2026.7.9.1", {"2026.7.9.1": []}, "UNSATISFIABLE"),            # fileless release installs nothing
+    ("not.a.version", RELEASES, "BAD"),
+    ("2026.7.9.1", None, "UNKNOWN"),                   # PyPI unreachable → never a false block
+])
+def test_pypi_floor_status(floor, releases, expected):
+    assert vs.pypi_floor_status(floor, releases) == expected
+
+
+def test_run_pypi_one_fetch_per_package(tmp_path, monkeypatch):
+    # autolens_workspace and autolens_assistant both map to package `autolens`
+    # → the probe must fetch each distinct package once, not once per workspace.
+    for ws in ("autolens_workspace", "autolens_assistant"):
+        cfg = tmp_path / ws / "config"
+        cfg.mkdir(parents=True)
+        (cfg / "general.yaml").write_text("version:\n  minimum_library_version: 2026.7.9.1\n")
+    calls = []
+    monkeypatch.setattr(vs, "fetch_pypi_releases", lambda pkg: calls.append(pkg) or RELEASES)
+    result = vs.run_pypi(root=tmp_path)
+    assert calls == ["autolens"]
+    by_ws = {w["workspace"]: w for w in result["workspaces"]}
+    assert by_ws["autolens_workspace"]["status"] == "OK"
+    assert by_ws["autolens_assistant"]["package"] == "autolens"
+
+
+def test_run_pypi_offline_is_unknown(tmp_path, monkeypatch):
+    ws = tmp_path / "autolens_workspace" / "config"
+    ws.mkdir(parents=True)
+    (ws / "general.yaml").write_text("version:\n  minimum_library_version: 2026.7.9.1\n")
+    monkeypatch.setattr(vs, "fetch_pypi_releases", lambda pkg: None)
+    result = vs.run_pypi(root=tmp_path)
+    w = {x["workspace"]: x for x in result["workspaces"]}["autolens_workspace"]
+    assert w["status"] == "UNKNOWN"
+
+
+def test_run_pypi_flags_yanked_floor(tmp_path, monkeypatch):
+    # The 2026-07 incident shape: floor names the yanked release while newer
+    # installable releases exist → FLOOR_YANKED (warn), not a hard block.
+    ws = tmp_path / "autolens_workspace" / "config"
+    ws.mkdir(parents=True)
+    (ws / "general.yaml").write_text("version:\n  minimum_library_version: 2026.7.6.649\n")
+    monkeypatch.setattr(vs, "fetch_pypi_releases", lambda pkg: RELEASES)
+    result = vs.run_pypi(root=tmp_path)
+    w = {x["workspace"]: x for x in result["workspaces"]}["autolens_workspace"]
+    assert w["status"] == "FLOOR_YANKED"
+
+
 # --- state-dir isolation (the 2026-07-15 clobber incident's sibling) -----------
 
 def test_run_writes_nothing_to_state_dir(tmp_path):
@@ -144,3 +210,22 @@ def test_main_persists_result_to_state_dir(monkeypatch):
     assert vs.main(["version_skew"]) == 0
     written = json.loads((Path(os.environ["HEART_STATE_DIR"]) / "version_skew.json").read_text())
     assert written == {"workspaces": []}
+
+
+def test_main_pypi_persists_to_sibling_file(monkeypatch):
+    """--pypi writes version_skew_pypi.json and never touches the tick's
+    version_skew.json — the tick must not clobber on-demand PyPI evidence and
+    vice versa."""
+    import json
+    import os
+    from pathlib import Path
+    state_dir = Path(os.environ["HEART_STATE_DIR"])
+    tick_file = state_dir / "version_skew.json"
+    tick_before = tick_file.read_text() if tick_file.is_file() else None
+    payload = {"workspaces": [{"workspace": "autolens_workspace", "status": "FLOOR_YANKED"}]}
+    monkeypatch.setattr(vs, "run_pypi", lambda root=vs.PYAUTO_ROOT: payload)
+    assert vs.main(["version_skew", "--pypi"]) == 0
+    written = json.loads((state_dir / "version_skew_pypi.json").read_text())
+    assert written == payload
+    tick_after = tick_file.read_text() if tick_file.is_file() else None
+    assert tick_after == tick_before
