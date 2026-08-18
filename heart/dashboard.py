@@ -545,6 +545,23 @@ def build_board(
         elif skew:
             sections.append(Section("version_skew", "Version skew", OK, "all floors satisfiable", []))
 
+    # Version skew — PyPI yank leg (deep `version_skew --pypi`; the slice is
+    # absent until that on-demand probe has run, so no section = not yet run) --
+    skew_pypi = (snapshot.get("version_skew_pypi") or {}).get("workspaces") or []
+    pypi_off = [w for w in skew_pypi if isinstance(w, dict) and w.get("status") not in ("OK", None)]
+    pypi_blocking = [w for w in pypi_off if str(w.get("status")).upper() in ("UNSATISFIABLE", "BAD")]
+    if pypi_off:
+        st = FAIL if pypi_blocking else WARN
+        summary = f"{len(pypi_blocking)} blocking" if pypi_blocking else f"{len(pypi_off)} unresolved"
+        details = [
+            f"{w.get('status')}: {w.get('workspace')} floor {w.get('floor')} "
+            f"({w.get('package')} on PyPI)"
+            for w in pypi_off[:8]
+        ]
+        sections.append(Section("version_skew_pypi", "Version skew (PyPI)", st, summary, details))
+    elif skew_pypi:
+        sections.append(Section("version_skew_pypi", "Version skew (PyPI)", OK, "all floors installable", []))
+
     # Install verification ---------------------------------------------------
     vi = snapshot.get("verify_install") or {}
     if isinstance(vi, dict) and "ready" in vi:

@@ -178,6 +178,44 @@ def test_version_skew_unknown_is_stale_tier():
     assert any("release unknown" in r for r in v["stale_reasons"])
 
 
+# --- version skew, PyPI yank leg (deep `version_skew --pypi`) ------------------
+# The slice is absent from make_snapshot(), so the all-green test already proves
+# absence is no signal (the probe is on-demand, not part of the tick).
+
+def test_version_skew_pypi_unsatisfiable_is_red():
+    snap = make_snapshot(version_skew_pypi={"workspaces": [
+        {"workspace": "autolens_workspace", "library": "PyAutoLens", "package": "autolens",
+         "floor": "2026.7.6.649", "status": "UNSATISFIABLE"}
+    ]})
+    v = compute(snap)
+    assert v["verdict"] == "red"
+    assert any("no installable" in r and "yanked" in r for r in v["red_reasons"])
+    assert v["score"] == 75
+
+
+def test_version_skew_pypi_yanked_floor_is_yellow():
+    # Floors are >= bounds: a yanked floor with newer installable releases
+    # still resolves at install time — warn (bump the floor), never block.
+    snap = make_snapshot(version_skew_pypi={"workspaces": [
+        {"workspace": "autolens_workspace", "library": "PyAutoLens", "package": "autolens",
+         "floor": "2026.7.6.649", "status": "FLOOR_YANKED"}
+    ]})
+    v = compute(snap)
+    assert v["verdict"] == "yellow"
+    assert any("yanked" in r and "bump the floor" in r for r in v["yellow_reasons"])
+
+
+def test_version_skew_pypi_unknown_is_stale_tier():
+    # PyPI unreachable (offline box) must degrade to caution, never a false RED.
+    snap = make_snapshot(version_skew_pypi={"workspaces": [
+        {"workspace": "autolens_workspace", "library": "PyAutoLens", "package": "autolens",
+         "floor": "2026.7.9.1", "status": "UNKNOWN"}
+    ]})
+    v = compute(snap)
+    assert v["verdict"] == "stale"
+    assert any("PyPI unreachable" in r for r in v["stale_reasons"])
+
+
 def test_install_verification_failed_is_red():
     snap = make_snapshot(verify_install={
         "ready": False, "ts": "2026-06-01T00:00:00+00:00",
