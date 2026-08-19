@@ -23,6 +23,7 @@ SUBCOMMAND_ORDER=(
   status
   readiness
   dashboard
+  publish
   logs
   fix
   "# Release validation (ingest-and-judge only; never dispatches a build)"
@@ -45,6 +46,7 @@ declare -A SHORT_DESC=(
   [status]="Print the cached state with green/yellow/red colouring"
   [readiness]="Print the release-readiness verdict (green/yellow/red + score)"
   [dashboard]="The unified health board (--oneline/--md/--html/--json); reads cache, no tick"
+  [publish]="Push a distilled dev-box board into the repo so the cloud page fills its grey rows"
   [validate]="Ingest release-validation artifacts into validation_report.json"
   [smoke]="Prepare isolated local environments and run workspace smoke suites"
   [logs]="Tail the daemon log"
@@ -208,8 +210,9 @@ cmd_readiness() {
 }
 
 help_dashboard() { cat <<EOF
-pyauto-heart dashboard [--oneline|--md|--html|--json|--badge] [--cloud]
-                       [--quiet] [--no-color] [--stale-after SECS]
+pyauto-heart dashboard [--oneline|--md|--md-brief|--html|--json|--badge]
+                       [--cloud] [--devbox PATH] [--quiet] [--no-color]
+                       [--stale-after SECS]
 
 The ONE unified health board — a single renderer, many formats. It folds
 today's \`status\` + \`readiness\` + the release-validation report into one screen
@@ -217,14 +220,19 @@ and reads the CACHED snapshot only (no tick), so it is instant.
 
 Formats (default is the full colour terminal board):
   --oneline   compact one-liner for a venv/shell prompt hook
-  --md        GitHub-flavoured markdown (step summary / issue / README block)
-  --html      standalone self-contained page (GitHub Pages)
+  --md        GitHub-flavoured markdown (step summary / issue)
+  --md-brief  the README strip: verdict + linked blockers + board link
+  --html      standalone self-contained page (GitHub Pages) with one-tap 📋
+              copy buttons (Claude prompts / commands) and run links
   --json      the machine surface the Health Agent + mobile card consume
   --badge     a shields.io endpoint-badge JSON (verdict colour)
 
   --cloud     mark the local-only checks (repo_state, worktree_drift,
               script_timing, test_run, version_skew) as "not observed here" —
               the honest vantage of the cloud job, which has no working tree.
+  --devbox P  merge a published dev-box board (see \`pyauto-heart publish\`) so
+              unobserved rows fill in, age-stamped; under --cloud the checked-in
+              state/devbox_board.json is auto-detected.
 
 Every format is a projection of the same snapshot + verdict, so the surfaces
 cannot disagree. See also the sourceable venv hook: heart/shell/heart_prompt.sh.
@@ -232,6 +240,23 @@ EOF
 }
 cmd_dashboard() {
   exec env PYTHONPATH="$HEART_HOME" python3 -m heart.dashboard "$@"
+}
+
+help_publish() { cat <<EOF
+pyauto-heart publish [--dry-run]
+
+Distill the LOCAL board's dev-box-only families (worktree drift, timings,
+test run, version skew, profiling drift) into state/devbox_board.json and
+commit+push it to the Heart repo (main only). The cloud board merges the file
+so its "not observed here" rows fill in, age-stamped
+"observed Nh ago on the dev box". Detail lines naming local filesystem paths
+never leave the machine.
+
+  --dry-run   print the distilled JSON; write and push nothing
+EOF
+}
+cmd_publish() {
+  exec env PYTHONPATH="$HEART_HOME" python3 -m heart.publish "$@"
 }
 
 help_validate() { cat <<EOF

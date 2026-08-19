@@ -226,7 +226,7 @@ operations:
   daemon:   "pyauto-heart watch|live|tick|stop          # the continuous monitor"
   logs:     "pyauto-heart logs [--tail N] [--follow]"
 
-# Boundary the agent must respect (see pyautobuild_boundary_audit.md).
+# Boundary the agent must respect (audit retired 2026-08; see git history).
 boundary:
   heart: >-
     owns all health/readiness checks, the release-validation report spec + ingest,
