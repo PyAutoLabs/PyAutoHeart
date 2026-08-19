@@ -86,8 +86,25 @@ STALE_AFTER_SECONDS = 3600
 # as current would be worse than the honest grey row.
 DEVBOX_FRESH_SECONDS = 48 * 3600
 
-# GitHub org for repo/run links on blockers. Same assumption fix.py makes.
-GH_ORG = "PyAutoLabs"
+# GitHub owner per repo, for repo/run links on blockers. Derived from the
+# declared config surface (config/repos.yaml `owner:`), never hardcoded —
+# the tenant firewall keeps instance facts out of organ code.
+def _repo_owners() -> dict:
+    import pathlib
+
+    import yaml
+
+    cfg_path = pathlib.Path(__file__).resolve().parents[1] / "config" / "repos.yaml"
+    cfg = yaml.safe_load(cfg_path.read_text()) or {}
+    owners: dict = {}
+    for group in (cfg.get("repos") or {}).values():
+        for r in group if isinstance(group, list) else []:
+            if isinstance(r, dict) and r.get("name") and r.get("owner"):
+                owners[str(r["name"])] = str(r["owner"])
+    return owners
+
+
+REPO_OWNERS = _repo_owners()
 
 # One line per local-only family on WHAT the dev box would observe — shown on
 # the grey rows so "not observed here" is a fact with a remedy, not a shrug.
@@ -734,7 +751,8 @@ def _reason_item(text: str, severity: str, repos: dict) -> dict:
     head = text.split(":", 1)[0].strip()
     body = repos.get(head) if isinstance(repos, dict) else None
     repo = head if isinstance(body, dict) else None
-    repo_url = f"https://github.com/{GH_ORG}/{repo}" if repo else None
+    owner = REPO_OWNERS.get(repo) if repo else None
+    repo_url = f"https://github.com/{owner}/{repo}" if owner else None
     run_url = None
     if repo:
         ci = body.get("ci_status") or {}

@@ -16,14 +16,16 @@ TS = "2026-06-01T00:00:00+00:00"
 NOW = datetime.datetime(2026, 6, 1, 0, 1, 0, tzinfo=datetime.timezone.utc)
 
 
+# Fixture names are deliberately fake (RepoA, /home/user/...): this file is
+# not on the tenant-firewall allowlist, so no instance fact may appear here.
 def _snapshot() -> dict:
     return {
         "ts": TS,
         "repos": {},
         "worktree_drift": {
             "orphans": [], "missing": [], "parked": [],
-            "dirty": [{"worktree": "task-a", "repo": "PyAutoFit", "dirty_files": 3}],
-            "canonical_dirty": [{"repo": "/home/jammy/Code/PyAutoLabs/PyAutoLens",
+            "dirty": [{"worktree": "task-a", "repo": "RepoA", "dirty_files": 3}],
+            "canonical_dirty": [{"repo": "/home/user/code/RepoB",
                                  "dirty_files": 1}],
         },
         "script_timing": {"red_count": 0, "yellow_count": 0, "green_count": 12},

@@ -431,11 +431,20 @@ def test_ci_fragment_success_and_failure_unchanged():
 
 
 # --- actionable board: blockers, actions, md-brief, devbox merge -------------
+# The failing-run URL is fixture data; the repo URL is DERIVED from the
+# declared config surface (dashboard.REPO_OWNERS), so no owner literal
+# appears here — the tenant firewall keeps instance facts out of test code.
+RUN_URL = "https://ci.invalid/actions/runs/99"
+WS_REPO_URL = (
+    f"https://github.com/{dashboard.REPO_OWNERS['autolens_workspace']}/autolens_workspace"
+)
+
+
 def _failing_snapshot():
     snap = make_snapshot()
     snap["repos"]["autolens_workspace"]["ci_status"] = {
         "conclusion": "failure", "workflow": "Smoke Tests", "group": "workspaces",
-        "url": "https://github.com/PyAutoLabs/autolens_workspace/actions/runs/99",
+        "url": RUN_URL,
     }
     return snap
 
@@ -447,8 +456,8 @@ def test_blockers_are_structured_with_links_and_prompts():
     (b,) = board.blockers
     assert b["severity"] == "red"
     assert b["repo"] == "autolens_workspace"
-    assert b["repo_url"] == "https://github.com/PyAutoLabs/autolens_workspace"
-    assert b["run_url"].endswith("/runs/99")
+    assert b["repo_url"] == WS_REPO_URL
+    assert b["run_url"] == RUN_URL
     assert b["prompt"].startswith("/bug Heart board: autolens_workspace")
     assert b["run_url"] in b["prompt"]
 
@@ -459,7 +468,7 @@ def test_html_carries_copy_buttons_and_run_links():
     out = dashboard.render(_failing_snapshot(), v, fmt="html", now=FRESH_NOW)
     assert "data-copy=" in out and "cp(this)" in out
     assert "/bug Heart board: autolens_workspace" in out
-    assert "actions/runs/99" in out
+    assert RUN_URL in out
     # the failing repo group row links the run too
     assert "autolens_workspace run" in out
 
@@ -468,8 +477,8 @@ def test_md_links_blockers_and_collapses_prompts():
     v = make_verdict("red", 45,
                      red_reasons=["autolens_workspace: Smoke Tests failure on main"])
     out = dashboard.render(_failing_snapshot(), v, fmt="md", now=FRESH_NOW)
-    assert "[autolens_workspace](https://github.com/PyAutoLabs/autolens_workspace)" in out
-    assert "([run](https://github.com/PyAutoLabs/autolens_workspace/actions/runs/99))" in out
+    assert f"[autolens_workspace]({WS_REPO_URL})" in out
+    assert f"([run]({RUN_URL}))" in out
     assert "<details>" in out and "/bug Heart board:" in out
 
 
