@@ -10,7 +10,8 @@ so the three surfaces *cannot disagree* (the "unify invariant").
     render(snapshot, verdict, validation, *, fmt) -> str
         fmt = "term"     # the full colour board (what `status`/`readiness` show)
             | "oneline"  # compact one-liner for the venv/prompt hook
-            | "md"       # GitHub-flavoured markdown (step summary / issue / README)
+            | "md"       # GitHub-flavoured markdown (step summary / issue)
+            | "md-brief" # the README strip: verdict + linked blockers + board link
             | "html"     # standalone self-contained page (GitHub Pages)
             | "json"     # the machine surface the Health Agent + mobile consume
 
@@ -23,9 +24,18 @@ delegate here so there is exactly one definition of what the board looks like.
 **Cloud-only-honest.** The scheduled cloud job only observes the two API-safe
 checks (ci_status, open_prs); it has no local working tree. Passing the
 local-only check families in ``unobserved`` makes the board mark them
-"not observed here (dev-box only)" instead of silently showing them green. A
-dev-box push of the full snapshot can enrich the SAME page by rendering with an
-empty ``unobserved`` — never a second, competing page.
+"not observed here" instead of silently showing them green. The dev box
+enriches the SAME page — never a second, competing page — via
+``pyauto-heart publish`` (heart/publish.py), which commits a distilled
+``state/devbox_board.json`` this renderer merges in (``devbox=``), each row
+age-stamped "observed Nh ago on the dev box" and falling back to unobserved
+once the observation is older than ``DEVBOX_FRESH_SECONDS``.
+
+**Actionable, not just readable.** Every blocker/warning is also structured
+(``Board.blockers``: text, repo, run url, and a copyable ``/bug`` prompt), and
+sections that need a hand carry an ``action`` — the exact command or Claude
+prompt to copy. The html surface renders these as one-tap 📋 buttons (the
+PyAutoMind dashboard pattern); md links them; json carries them verbatim.
 """
 
 from __future__ import annotations
@@ -71,6 +81,49 @@ LOCAL_ONLY_FAMILIES = (
 # ticks every ~5 min, so an hour without a fresh tick warrants a nudge.
 STALE_AFTER_SECONDS = 3600
 
+# A published dev-box observation older than this renders as unobserved again
+# (with its age) rather than as live data — a two-day-old drift report shown
+# as current would be worse than the honest grey row.
+DEVBOX_FRESH_SECONDS = 48 * 3600
+
+# GitHub owner per repo, for repo/run links on blockers. Derived from the
+# declared config surface (config/repos.yaml `owner:`), never hardcoded —
+# the tenant firewall keeps instance facts out of organ code.
+def _repo_owners() -> dict:
+    import pathlib
+
+    import yaml
+
+    cfg_path = pathlib.Path(__file__).resolve().parents[1] / "config" / "repos.yaml"
+    cfg = yaml.safe_load(cfg_path.read_text()) or {}
+    owners: dict = {}
+    for group in (cfg.get("repos") or {}).values():
+        for r in group if isinstance(group, list) else []:
+            if isinstance(r, dict) and r.get("name") and r.get("owner"):
+                owners[str(r["name"])] = str(r["owner"])
+    return owners
+
+
+REPO_OWNERS = _repo_owners()
+
+# One line per local-only family on WHAT the dev box would observe — shown on
+# the grey rows so "not observed here" is a fact with a remedy, not a shrug.
+UNOBS_WATCHES = {
+    "worktree_drift": "task worktrees vs the active.md ledger (orphans, missing, dirty)",
+    "script_timing": "workspace script runtimes vs their baselines",
+    "import_time": "library import costs vs their baselines",
+    "unit_test_timing": "the slowest unit tests vs their baselines",
+    "profiling_drift": "pinned profiling results vs their baselines",
+    "workspace_testmode_timing": "TEST_MODE workspace script runtimes vs their baselines",
+    "test_run": "the latest full workspace test-run verdict",
+    "version_skew": "workspace version floors vs the newest releases",
+}
+
+# What 📋 on a grey row copies: observe the family locally, then publish the
+# distilled observation so this page fills in.
+OBSERVE_ACTION = {"label": "observe on the dev box",
+                  "payload": "pyauto-heart tick && pyauto-heart publish"}
+
 # Library repos, used to split the per-repo table into libraries vs workspaces
 # when a repo body carries no group label. Derived from the policy file
 # (config/repos.yaml `repos.libraries`) — dashboard cannot import readiness
@@ -92,7 +145,9 @@ GATED_WORKSPACE_GROUPS = frozenset({"workspaces", "workspaces_test", "howto"})
 # that links "the webpage" agrees on the URL.
 PAGES_URL = "https://pyautolabs.github.io/PyAutoHeart/"
 
-SCHEMA_VERSION = 1
+# v2: sections gained links/action/observed_ago; the board gained structured
+# `blockers` ({text, severity, repo, repo_url, run_url, prompt}). Additive.
+SCHEMA_VERSION = 2
 
 
 @dataclass
@@ -104,6 +159,14 @@ class Section:
     state: str
     summary: str
     details: list[str] = field(default_factory=list)
+    # {label, url} — e.g. the failing CI runs behind a red repo group.
+    links: list[dict] = field(default_factory=list)
+    # {label, payload} — what a 📋 button copies for this row (a command or a
+    # Claude prompt), or None when the row needs no hand.
+    action: dict | None = None
+    # "observed 6h ago on the dev box" when this row came from a published
+    # dev-box observation rather than this render's own snapshot.
+    observed_ago: str | None = None
 
 
 @dataclass
@@ -121,6 +184,10 @@ class Board:
     # readiness freshness tier: evidence missing/expired, nothing known-bad
     # (heart/readiness.py) — distinct from the tick-age `stale` bool above.
     stale_reasons: list[str] = field(default_factory=list)
+    # The reasons above, STRUCTURED: {text, severity, repo, repo_url, run_url,
+    # prompt}. The flat lists stay for compatibility; this is what the html
+    # 📋 buttons, the md links, and the json consumers act on.
+    blockers: list[dict] = field(default_factory=list)
 
 
 # --- verdict/state → glyph & colour maps ------------------------------------
@@ -287,6 +354,7 @@ def _repo_section(
     key: str, title: str, repos: dict, want_lib: bool, *, unobserved: Sequence[str]
 ) -> Section | None:
     rows: list[tuple[str, str, str]] = []  # (state, name, label)
+    links: list[dict] = []
     for name, body in sorted(repos.items()):
         if not isinstance(body, dict):
             continue
@@ -297,13 +365,19 @@ def _repo_section(
             continue
         state, label = _lib_row(name, body, unobserved=unobserved)
         rows.append((state, name, label))
+        # The way OUT of a red row: the failing run itself.
+        ci = body.get("ci_status") or {}
+        if (state == FAIL and ci.get("url")
+                and str(ci.get("conclusion") or "") not in ("", "success")):
+            links.append({"label": f"{name} run", "url": str(ci["url"])})
     if not rows:
         return None
     overall = _worst(s for s, _, _ in rows)
     n_bad = sum(1 for s, _, _ in rows if s in (FAIL, WARN))
     summary = f"{len(rows)} repos" + (f", {n_bad} need attention" if n_bad else " nominal")
     details = [f"{name:<26} {label}" for _, name, label in rows]
-    return Section(key=key, title=title, state=overall, summary=summary, details=details)
+    return Section(key=key, title=title, state=overall, summary=summary,
+                   details=details, links=links[:4])
 
 
 def build_board(
@@ -314,6 +388,7 @@ def build_board(
     unobserved: Sequence[str] = (),
     now: datetime.datetime | None = None,
     stale_after: int = STALE_AFTER_SECONDS,
+    devbox: dict | None = None,
 ) -> Board:
     """Assemble the format-agnostic :class:`Board`. Pure; never raises."""
     snapshot = snapshot or {}
@@ -372,7 +447,10 @@ def build_board(
                 f"canonical {d.get('repo')}: {d.get('dirty_files')} dirty"
                 for d in canonical[:5]
             ]
-            sections.append(Section("worktree_drift", "Worktree drift", st, summary, details))
+            action = ({"label": "triage the drift", "payload": "pyauto-heart fix drift"}
+                      if st in (FAIL, WARN) else None)
+            sections.append(Section("worktree_drift", "Worktree drift", st, summary,
+                                    details, action=action))
 
     # Script timing ----------------------------------------------------------
     if "script_timing" in unobserved:
@@ -394,7 +472,15 @@ def build_board(
                 f"{e['latest_seconds']:.1f}s vs {e['baseline_seconds']:.1f}s ({e['ratio']}×)"
                 for e in (timing.get("red") or [])[:5]
             ]
-            sections.append(Section("script_timing", "Script timing", st, summary, details))
+            action = None
+            if st in (FAIL, WARN):
+                top = (timing.get("red") or timing.get("yellow") or [{}])[0]
+                proj = top.get("project")
+                if proj:
+                    action = {"label": "bundle the regression context",
+                              "payload": f"pyauto-heart fix timing {proj}"}
+            sections.append(Section("script_timing", "Script timing", st, summary,
+                                    details, action=action))
 
     # Import timing (advisory; off-tick daily) --------------------------------
     if "import_time" in unobserved:
@@ -627,6 +713,8 @@ def build_board(
             sections.append(Section("url_check", "URL hygiene", OK,
                                     f"{len(uc['repos'])} repos clean (swept {uc.get('ts', '?')})", []))
 
+    sections = _devbox_enrich(sections, devbox, now)
+
     return Board(
         verdict=v,
         score=score,
@@ -637,11 +725,93 @@ def build_board(
         yellow_reasons=yellow,
         sections=sections,
         stale_reasons=stale_reasons,
+        blockers=_structure_reasons(red, yellow, stale_reasons, repos),
     )
 
 
 def _unobs_section(key: str, title: str) -> Section:
-    return Section(key, title, UNOBS, "not observed here (dev-box only)", [])
+    watches = UNOBS_WATCHES.get(key)
+    return Section(
+        key, title, UNOBS,
+        "not observed here — measured on the dev box",
+        [f"watches {watches}"] if watches else [],
+        action=dict(OBSERVE_ACTION),
+    )
+
+
+def _reason_item(text: str, severity: str, repos: dict) -> dict:
+    """Structure one flat reason string into an actionable blocker.
+
+    Reasons follow the ``"<repo>: <problem>"`` convention (readiness.py), so
+    the prefix resolves the repo; the repo's cached ``ci_status.url`` is the
+    failing run when CI is red. The prompt is what 📋 copies — a `/bug` door
+    into the Brain for real problems, a re-run nudge for evidence gaps
+    (STALE's rule: re-run the check, never fix code).
+    """
+    head = text.split(":", 1)[0].strip()
+    body = repos.get(head) if isinstance(repos, dict) else None
+    repo = head if isinstance(body, dict) else None
+    owner = REPO_OWNERS.get(repo) if repo else None
+    repo_url = f"https://github.com/{owner}/{repo}" if owner else None
+    run_url = None
+    if repo:
+        ci = body.get("ci_status") or {}
+        if ci.get("url") and str(ci.get("conclusion") or "") not in ("", "success"):
+            run_url = str(ci["url"])
+    if severity == "stale":
+        prompt = f"/health re-run the stale evidence: {text}"
+    else:
+        prompt = f"/bug Heart board: {text}"
+        if run_url:
+            prompt += f" — failing run: {run_url}"
+    return {"text": text, "severity": severity, "repo": repo,
+            "repo_url": repo_url, "run_url": run_url, "prompt": prompt}
+
+
+def _structure_reasons(red: list, yellow: list, stales: list, repos: dict) -> list[dict]:
+    return [_reason_item(str(t), sev, repos)
+            for sev, texts in (("red", red), ("yellow", yellow), ("stale", stales))
+            for t in texts]
+
+
+def _devbox_enrich(
+    sections: list[Section], devbox: dict | None, now: datetime.datetime | None
+) -> list[Section]:
+    """Fill unobserved rows from a published dev-box observation.
+
+    A fresh (< ``DEVBOX_FRESH_SECONDS``) family renders with its real state and
+    an "observed Nh ago on the dev box" stamp; an expired one stays grey but
+    says when the dev box last looked. Rows this render observed itself are
+    never overridden — the dev-box data only ever fills gaps.
+    """
+    if not isinstance(devbox, dict):
+        return sections
+    dsecs = devbox.get("sections") or {}
+    age = _age_seconds(devbox.get("ts"), now)
+    if age is None or not isinstance(dsecs, dict):
+        return sections
+    ago = format_age(age)
+    out: list[Section] = []
+    for sec in sections:
+        d = dsecs.get(sec.key)
+        if sec.state != UNOBS or not isinstance(d, dict):
+            out.append(sec)
+            continue
+        if age <= DEVBOX_FRESH_SECONDS and d.get("state") in (OK, WARN, FAIL, INFO):
+            out.append(Section(
+                sec.key, sec.title, str(d["state"]),
+                str(d.get("summary") or ""),
+                [str(x) for x in (d.get("details") or [])][:8],
+                links=sec.links, action=sec.action,
+                observed_ago=f"observed {ago} on the dev box",
+            ))
+        else:
+            out.append(Section(
+                sec.key, sec.title, UNOBS,
+                f"not observed here — dev box last looked {ago}",
+                sec.details, links=sec.links, action=sec.action,
+            ))
+    return out
 
 
 # --- readiness header (shared by term + readiness.render_block) --------------
@@ -708,6 +878,42 @@ def _render_oneline(board: Board) -> str:
     return f"PyAuto {dot} {coloured_word}  {tail}  (tick {age})"
 
 
+def _shown_reasons(board: Board) -> tuple[str, list[dict]]:
+    """The one reason tier a surface displays, structured, worst first."""
+    if board.red_reasons:
+        return "Blockers", [b for b in board.blockers if b["severity"] == "red"]
+    if board.yellow_reasons:
+        return "Warnings", [b for b in board.blockers if b["severity"] == "yellow"]
+    if board.stale_reasons:
+        return ("Evidence gaps (re-run, don't fix)",
+                [b for b in board.blockers if b["severity"] == "stale"])
+    return "", []
+
+
+def _md_reason(item: dict) -> str:
+    """One reason as markdown: repo linked, failing run linked."""
+    text = _md_escape(item["text"])
+    if item.get("repo") and item.get("repo_url"):
+        rest = _md_escape(item["text"][len(item["repo"]):])
+        text = f"[{item['repo']}]({item['repo_url']}){rest}"
+    if item.get("run_url"):
+        text += f" ([run]({item['run_url']}))"
+    return text
+
+
+def _md_prompts_block(items: list[dict]) -> list[str]:
+    """A collapsed block of copyable fix prompts (GitHub's fenced-code copy
+    button makes each one one-tap on the web view)."""
+    if not items:
+        return []
+    lines = ["<details>",
+             "<summary>📋 fix prompts — copy one into a Claude Code chat</summary>", ""]
+    for it in items[:6]:
+        lines += ["```", it["prompt"], "```", ""]
+    lines += ["</details>", ""]
+    return lines
+
+
 def _render_md(board: Board) -> str:
     word = _VERDICT_WORD.get(board.verdict, "GREEN")
     emoji = _STATE_MD[_VERDICT_STATE.get(board.verdict, OK)]
@@ -719,27 +925,69 @@ def _render_md(board: Board) -> str:
         + ("  ⚠️ **stale — run `pyauto-heart tick`**" if board.stale else ""),
         "",
     ]
-    if board.red_reasons:
-        lines.append("**Blockers:** " + "; ".join(board.red_reasons[:6]))
+    label, items = _shown_reasons(board)
+    if items:
+        lines.append(f"**{label}:** " + "; ".join(_md_reason(i) for i in items[:6]))
         lines.append("")
-    elif board.yellow_reasons:
-        lines.append("**Warnings:** " + "; ".join(board.yellow_reasons[:6]))
-        lines.append("")
-    elif board.stale_reasons:
-        lines.append("**Evidence gaps (re-run, don't fix):** "
-                     + "; ".join(board.stale_reasons[:6]))
-        lines.append("")
+        lines += _md_prompts_block(items)
     lines += ["| | Check | Status |", "|--|--|--|"]
     for sec in board.sections:
         em = _STATE_MD[sec.state]
-        lines.append(f"| {em} | {sec.title} | {_md_escape(sec.summary)} |")
+        status = _md_escape(sec.summary)
+        if sec.observed_ago:
+            status += f" · _{_md_escape(sec.observed_ago)}_"
+        lines.append(f"| {em} | {sec.title} | {status} |")
     lines.append("")
     lines.append(f"[Full board]({PAGES_URL})")
     return "\n".join(lines)
 
 
+def _render_md_brief(board: Board) -> str:
+    """The README strip: verdict + linked blockers + the board link. The full
+    table lives on the Pages board; the README stays a glance, not a wall."""
+    word = _VERDICT_WORD.get(board.verdict, "GREEN")
+    emoji = _STATE_MD[_VERDICT_STATE.get(board.verdict, OK)]
+    age = format_age(board.age_seconds, stale=board.stale)
+    lines = [
+        f"## {emoji} PyAuto health — **{word}** (score {board.score})",
+        "",
+        f"_snapshot `{board.ts}` · {age}_",
+        "",
+    ]
+    label, items = _shown_reasons(board)
+    if items:
+        lines.append(f"**{label}:** " + "; ".join(_md_reason(i) for i in items[:4]))
+        lines.append("")
+    lines.append(f"**[Full board →]({PAGES_URL})** — live page with one-tap 📋 fix prompts")
+    return "\n".join(lines)
+
+
 def _md_escape(text: str) -> str:
     return text.replace("|", "\\|")
+
+
+def _copy_btn(payload: str, label: str = "copy") -> str:
+    """A one-tap clipboard button (the PyAutoMind dashboard pattern): tap 📋
+    and the payload — a Claude prompt or a command — is ready to paste."""
+    return (f"<button class='copy' type='button' "
+            f"title='{_html.escape(label, quote=True)}' "
+            f"data-copy=\"{_html.escape(payload, quote=True)}\" "
+            f"onclick='cp(this)'>📋</button>")
+
+
+def _html_reason(item: dict) -> str:
+    """One blocker/warning as html: repo linked, run linked, prompt one tap away."""
+    text = _html.escape(item["text"])
+    if item.get("repo") and item.get("repo_url"):
+        rest = _html.escape(item["text"][len(item["repo"]):])
+        text = (f"<a href=\"{_html.escape(item['repo_url'], quote=True)}\">"
+                f"{_html.escape(item['repo'])}</a>{rest}")
+    if item.get("run_url"):
+        text += (f" <a class='out' href=\"{_html.escape(item['run_url'], quote=True)}\">"
+                 f"run ↗</a>")
+    if item.get("prompt"):
+        text += " " + _copy_btn(item["prompt"], "copy the fix prompt for a Claude Code chat")
+    return f"<li>{text}</li>"
 
 
 def _render_html(board: Board) -> str:
@@ -749,6 +997,15 @@ def _render_html(board: Board) -> str:
     rows = []
     for sec in board.sections:
         cls = _STATE_HTML[sec.state]
+        summary = _html.escape(sec.summary)
+        if sec.observed_ago:
+            summary += f" <span class='ago'>· {_html.escape(sec.observed_ago)}</span>"
+        for link in sec.links:
+            summary += (f" <a class='out' href=\"{_html.escape(str(link.get('url', '')), quote=True)}\">"
+                        f"{_html.escape(str(link.get('label', 'link')))} ↗</a>")
+        if sec.action and sec.action.get("payload"):
+            summary += " " + _copy_btn(str(sec.action["payload"]),
+                                       str(sec.action.get("label", "copy")))
         details = ""
         if sec.details:
             items = "".join(f"<li>{_html.escape(d)}</li>" for d in sec.details)
@@ -756,16 +1013,15 @@ def _render_html(board: Board) -> str:
         rows.append(
             f"<tr class='{cls}'><td class='dot'></td>"
             f"<td class='name'>{_html.escape(sec.title)}</td>"
-            f"<td class='sum'>{_html.escape(sec.summary)}{details}</td></tr>"
+            f"<td class='sum'>{summary}{details}</td></tr>"
         )
     reasons_html = ""
-    reasons = board.red_reasons or board.yellow_reasons or board.stale_reasons
-    if reasons:
-        label = ("Blockers" if board.red_reasons
-                 else "Warnings" if board.yellow_reasons
-                 else "Evidence gaps")
-        items = "".join(f"<li>{_html.escape(r)}</li>" for r in reasons[:8])
-        reasons_html = f"<div class='reasons'><h2>{label}</h2><ul>{items}</ul></div>"
+    label, items = _shown_reasons(board)
+    if items:
+        lis = "".join(_html_reason(i) for i in items[:8])
+        hint = ("<p class='hint'>📋 copies a ready-to-paste prompt for a "
+                "Claude Code chat.</p>")
+        reasons_html = f"<div class='reasons'><h2>{label}</h2><ul>{lis}</ul>{hint}</div>"
     stale_html = (
         "<p class='stale'>⚠️ This board is stale — the last tick is older than the "
         "freshness threshold; the numbers may not be current.</p>" if board.stale else ""
@@ -805,8 +1061,26 @@ def _render_html(board: Board) -> str:
            font-size: .85rem; }}
   .reasons {{ margin: 1.5rem 0; }}
   .reasons h2 {{ font-size: 1rem; }}
+  .reasons li {{ margin: .25rem 0; }}
+  a {{ color: #58a6ff; text-decoration: none; }}
+  a:hover {{ text-decoration: underline; }}
+  a.out {{ font-size: .85rem; white-space: nowrap; }}
+  .ago {{ color: #8b949e; font-size: .85rem; }}
+  .hint {{ color: #8b949e; font-size: .8rem; margin: .5rem 0 0; }}
+  button.copy {{ background: #21262d; border: 1px solid #30363d; border-radius: 6px;
+                color: #c9d1d9; cursor: pointer; padding: .05rem .45rem;
+                margin-left: .35rem; font-size: .85rem; line-height: 1.4; }}
+  button.copy:hover {{ background: #30363d; }}
   footer {{ margin-top: 2rem; color: #8b949e; font-size: .8rem; }}
-</style></head>
+</style>
+<script>
+function cp(b){{var t=b.getAttribute('data-copy');
+ if(navigator.clipboard&&navigator.clipboard.writeText){{
+   navigator.clipboard.writeText(t).then(function(){{ok(b)}},function(){{fb(t)}});
+ }}else{{fb(t)}}}}
+function ok(b){{b.textContent='✓';setTimeout(function(){{b.textContent='📋'}},1200)}}
+function fb(t){{window.prompt('Copy this:',t)}}
+</script></head>
 <body><div class="wrap">
   <h1>PyAuto organism health</h1>
   <p><span class="verdict {vstate}">{word} · score {board.score}</span></p>
@@ -815,7 +1089,8 @@ def _render_html(board: Board) -> str:
   {reasons_html}
   <table>{''.join(rows)}</table>
   <footer>Rendered by <code>heart/dashboard.py</code> — one renderer, many surfaces.
-  Observer only: PyAutoHeart never writes outside its own repo/state.</footer>
+  Observer only: PyAutoHeart never writes outside its own repo/state.
+  📋 buttons copy a Claude prompt or command to your clipboard.</footer>
 </div></body></html>
 """
 
@@ -835,6 +1110,9 @@ def to_dict(board: Board) -> dict[str, Any]:
         # read it, and a reason that moves from the red axis to the stale one
         # would otherwise vanish from both rather than being re-classified.
         "stale_reasons": board.stale_reasons,
+        # Structured, actionable reasons — what the 📋 buttons copy and where
+        # they link. The flat lists above stay for v1 consumers.
+        "blockers": board.blockers,
         "pages_url": PAGES_URL,
         "sections": [
             {
@@ -843,6 +1121,9 @@ def to_dict(board: Board) -> dict[str, Any]:
                 "state": s.state,
                 "summary": s.summary,
                 "details": s.details,
+                "links": s.links,
+                "action": s.action,
+                "observed_ago": s.observed_ago,
             }
             for s in board.sections
         ],
@@ -875,11 +1156,12 @@ def render(
     now: datetime.datetime | None = None,
     quiet: bool = False,
     stale_after: int = STALE_AFTER_SECONDS,
+    devbox: dict | None = None,
 ) -> str:
     """Render the unified board in ``fmt``. Pure: snapshot in → string out."""
     board = build_board(
         snapshot, verdict, validation,
-        unobserved=unobserved, now=now, stale_after=stale_after,
+        unobserved=unobserved, now=now, stale_after=stale_after, devbox=devbox,
     )
     if fmt == "term":
         return _render_term(board, verdict or {}, quiet=quiet)
@@ -887,6 +1169,8 @@ def render(
         return _render_oneline(board)
     if fmt == "md":
         return _render_md(board)
+    if fmt == "md-brief":
+        return _render_md_brief(board)
     if fmt == "html":
         return _render_html(board)
     if fmt == "json":
@@ -911,11 +1195,16 @@ def main(argv: list[str] | None = None) -> int:
     g = ap.add_mutually_exclusive_group()
     g.add_argument("--oneline", action="store_true", help="compact one-line summary (venv/prompt)")
     g.add_argument("--md", action="store_true", help="GitHub-flavoured markdown")
+    g.add_argument("--md-brief", action="store_true",
+                   help="the README strip: verdict + linked blockers + board link")
     g.add_argument("--html", action="store_true", help="standalone self-contained HTML page")
     g.add_argument("--json", action="store_true", help="the machine surface (Health Agent / mobile)")
     g.add_argument("--badge", action="store_true", help="emit a shields.io endpoint-badge JSON")
     ap.add_argument("--cloud", action="store_true",
                     help="mark local-only checks as 'not observed here' (cloud job vantage)")
+    ap.add_argument("--devbox", metavar="PATH", default=None,
+                    help="published dev-box board JSON to fill unobserved rows "
+                         "(default under --cloud: state/devbox_board.json if present)")
     ap.add_argument("--quiet", action="store_true", help="suppress drill-down details (term)")
     ap.add_argument("--no-color", action="store_true", help="disable ANSI colours")
     ap.add_argument("--stale-after", type=int, default=STALE_AFTER_SECONDS,
@@ -925,9 +1214,10 @@ def main(argv: list[str] | None = None) -> int:
         os.environ["NO_COLOR"] = "1"
 
     fmt = "term"
-    for name in ("oneline", "md", "html", "json"):
+    for name, label in (("oneline", "oneline"), ("md", "md"),
+                        ("md_brief", "md-brief"), ("html", "html"), ("json", "json")):
         if getattr(ns, name):
-            fmt = name
+            fmt = label
             break
     if ns.badge:
         fmt = "badge"   # so the no-cache fallback below emits an "unknown" badge
@@ -949,6 +1239,22 @@ def main(argv: list[str] | None = None) -> int:
     validation = snapshot.get("validation_report") or {}
     unobserved = LOCAL_ONLY_FAMILIES if ns.cloud else ()
 
+    # The published dev-box observation (heart/publish.py) fills unobserved
+    # rows; on the cloud job it is auto-detected in the checkout.
+    import pathlib
+    devbox = None
+    devbox_path = ns.devbox
+    if devbox_path is None and ns.cloud:
+        default = pathlib.Path(__file__).resolve().parents[1] / "state" / "devbox_board.json"
+        if default.exists():
+            devbox_path = str(default)
+    if devbox_path:
+        try:
+            devbox = json.loads(pathlib.Path(devbox_path).read_text())
+        except (OSError, ValueError) as e:
+            print(f"warning: could not read devbox board {devbox_path}: {e}",
+                  file=sys.stderr)
+
     if ns.badge:
         board = build_board(snapshot, verdict, validation,
                             unobserved=unobserved, stale_after=ns.stale_after)
@@ -956,7 +1262,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     print(render(snapshot, verdict, validation, fmt=fmt, unobserved=unobserved,
-                 quiet=ns.quiet, stale_after=ns.stale_after))
+                 quiet=ns.quiet, stale_after=ns.stale_after, devbox=devbox))
     return 0
 
 

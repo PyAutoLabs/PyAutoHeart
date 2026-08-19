@@ -93,10 +93,15 @@ jobs:
         run: |
           mkdir -p _site
           # --cloud marks the local-only checks as "not observed here"; every
-          # file below is a projection of the same snapshot + verdict.
-          PYTHONPATH="$PWD" python -m heart.dashboard --cloud --html  > _site/index.html
-          PYTHONPATH="$PWD" python -m heart.dashboard --cloud --badge > _site/badge.json
-          PYTHONPATH="$PWD" python -m heart.dashboard --cloud --md    > board.md
+          # file below is a projection of the same snapshot + verdict. A
+          # committed state/devbox_board.json (pyauto-heart publish) is
+          # auto-detected and fills the unobserved rows, age-stamped.
+          PYTHONPATH="$PWD" python -m heart.dashboard --cloud --html     > _site/index.html
+          PYTHONPATH="$PWD" python -m heart.dashboard --cloud --badge    > _site/badge.json
+          PYTHONPATH="$PWD" python -m heart.dashboard --cloud --md       > board.md
+          # The README carries only the brief strip; the full board lives on
+          # the Pages page (one-tap 📋 fix prompts) and the step summary.
+          PYTHONPATH="$PWD" python -m heart.dashboard --cloud --md-brief > readme_strip.md
 
       - name: Write the board to the job step summary
         run: |
@@ -115,7 +120,7 @@ jobs:
           import pathlib, re
           readme = pathlib.Path("README.md")
           text = readme.read_text()
-          board = pathlib.Path("board.md").read_text().strip()
+          board = pathlib.Path("readme_strip.md").read_text().strip()
           begin, end = "<!-- heart:begin -->", "<!-- heart:end -->"
           block = f"{begin}\n{board}\n{end}"
           if begin in text and end in text:
@@ -156,7 +161,10 @@ jobs:
           for f in sorted(state.glob("*.ci_status.json")):
               d = json.loads(f.read_text())
               if d.get("conclusion") not in (None, "", "success"):
-                  red.append(f"- **{d['name']}**: CI {d.get('conclusion')} ({d.get('workflow','?')})")
+                  line = f"- **{d['name']}**: CI {d.get('conclusion')} ({d.get('workflow','?')})"
+                  if d.get("url"):
+                      line += f" — [failing run]({d['url']})"
+                  red.append(line)
           for f in sorted(state.glob("*.open_prs.json")):
               d = json.loads(f.read_text())
               age = d.get("max_age_days", 0)

@@ -96,11 +96,18 @@ def test_html_is_self_contained():
                            red_reasons=["PyAutoLens: CI failure"]), fmt="html", now=FRESH_NOW)
     assert out.lstrip().startswith("<!doctype html>")
     assert "RED" in out
-    # No external assets (strict-CSP / renders anywhere): no scripts, no remote
-    # stylesheets/images, no fetches.
-    assert "<script" not in out.lower()
-    assert "http://" not in out and "https://" not in out
+    # No external ASSETS (renders anywhere, loads nothing remote): no src=, no
+    # <link>, no fetches. Inline <script> is allowed — the one-tap 📋 copy
+    # buttons need the clipboard API — and outbound <a href> links are
+    # navigation, not asset loads.
     assert "src=" not in out and "<link" not in out.lower()
+    assert "fetch(" not in out and "XMLHttpRequest" not in out
+    lowered = out.lower()
+    assert '<script src' not in lowered and "import(" not in out
+    # every http(s) URL sits in an anchor href, never in a loadable attribute
+    for m in re.finditer(r"(?:http|https)://", out):
+        before = out[max(0, m.start() - 30):m.start()]
+        assert 'href="' in before or "href='" in before, f"non-href URL at {m.start()}"
 
 
 # --- the unify invariant -----------------------------------------------------
@@ -421,3 +428,127 @@ def test_ci_fragment_success_and_failure_unchanged():
     assert "Smoke Tests" in dashboard._ci_fragment(
         {"conclusion": "failure", "workflow": "Smoke Tests"}
     )[1]
+
+
+# --- actionable board: blockers, actions, md-brief, devbox merge -------------
+# The failing-run URL is fixture data; the repo URL is DERIVED from the
+# declared config surface (dashboard.REPO_OWNERS), so no owner literal
+# appears here — the tenant firewall keeps instance facts out of test code.
+RUN_URL = "https://ci.invalid/actions/runs/99"
+WS_REPO_URL = (
+    f"https://github.com/{dashboard.REPO_OWNERS['autolens_workspace']}/autolens_workspace"
+)
+
+
+def _failing_snapshot():
+    snap = make_snapshot()
+    snap["repos"]["autolens_workspace"]["ci_status"] = {
+        "conclusion": "failure", "workflow": "Smoke Tests", "group": "workspaces",
+        "url": RUN_URL,
+    }
+    return snap
+
+
+def test_blockers_are_structured_with_links_and_prompts():
+    v = make_verdict("red", 45,
+                     red_reasons=["autolens_workspace: Smoke Tests failure on main"])
+    board = dashboard.build_board(_failing_snapshot(), v, now=FRESH_NOW)
+    (b,) = board.blockers
+    assert b["severity"] == "red"
+    assert b["repo"] == "autolens_workspace"
+    assert b["repo_url"] == WS_REPO_URL
+    assert b["run_url"] == RUN_URL
+    assert b["prompt"].startswith("/bug Heart board: autolens_workspace")
+    assert b["run_url"] in b["prompt"]
+
+
+def test_html_carries_copy_buttons_and_run_links():
+    v = make_verdict("red", 45,
+                     red_reasons=["autolens_workspace: Smoke Tests failure on main"])
+    out = dashboard.render(_failing_snapshot(), v, fmt="html", now=FRESH_NOW)
+    assert "data-copy=" in out and "cp(this)" in out
+    assert "/bug Heart board: autolens_workspace" in out
+    assert RUN_URL in out
+    # the failing repo group row links the run too
+    assert "autolens_workspace run" in out
+
+
+def test_md_links_blockers_and_collapses_prompts():
+    v = make_verdict("red", 45,
+                     red_reasons=["autolens_workspace: Smoke Tests failure on main"])
+    out = dashboard.render(_failing_snapshot(), v, fmt="md", now=FRESH_NOW)
+    assert f"[autolens_workspace]({WS_REPO_URL})" in out
+    assert f"([run]({RUN_URL}))" in out
+    assert "<details>" in out and "/bug Heart board:" in out
+
+
+def test_md_brief_is_a_strip_not_a_table():
+    v = make_verdict("red", 45,
+                     red_reasons=["autolens_workspace: Smoke Tests failure on main"])
+    out = dashboard.render(_failing_snapshot(), v, fmt="md-brief", now=FRESH_NOW)
+    assert "PyAuto health" in out and "RED" in out
+    assert "[autolens_workspace](" in out
+    assert dashboard.PAGES_URL in out
+    assert "| Check |" not in out  # no table — the Pages board carries it
+
+
+def test_unobserved_rows_carry_watch_line_and_observe_action():
+    out = dashboard.build_board(make_snapshot(), make_verdict(),
+                                unobserved=dashboard.LOCAL_ONLY_FAMILIES, now=FRESH_NOW)
+    sec = {s.key: s for s in out.sections}["worktree_drift"]
+    assert "not observed here" in sec.summary
+    assert any("watches" in d for d in sec.details)
+    assert sec.action["payload"] == "pyauto-heart tick && pyauto-heart publish"
+
+
+def _devbox(ts: str) -> dict:
+    return {"schema_version": 1, "ts": ts, "sections": {
+        "worktree_drift": {"state": "warn",
+                           "summary": "2 orphan dir(s) (clean)",
+                           "details": ["wt-a: clean", "wt-b: clean"]}}}
+
+
+def test_devbox_merge_fills_fresh_and_expires_stale():
+    v = make_verdict()
+    fresh = dashboard.build_board(make_snapshot(), v,
+                                  unobserved=dashboard.LOCAL_ONLY_FAMILIES,
+                                  now=FRESH_NOW, devbox=_devbox(TS))
+    sec = {s.key: s for s in fresh.sections}["worktree_drift"]
+    assert sec.state == dashboard.WARN
+    assert sec.summary == "2 orphan dir(s) (clean)"
+    assert "on the dev box" in sec.observed_ago
+
+    old_ts = "2026-05-01T00:00:00+00:00"  # 31 days before FRESH_NOW
+    stale = dashboard.build_board(make_snapshot(), v,
+                                  unobserved=dashboard.LOCAL_ONLY_FAMILIES,
+                                  now=FRESH_NOW, devbox=_devbox(old_ts))
+    sec = {s.key: s for s in stale.sections}["worktree_drift"]
+    assert sec.state == dashboard.UNOBS
+    assert "dev box last looked" in sec.summary
+
+
+def test_devbox_never_overrides_an_observed_row():
+    v = make_verdict()
+    board = dashboard.build_board(make_snapshot(), v, unobserved=(),
+                                  now=FRESH_NOW, devbox=_devbox(TS))
+    by_key = {s.key: s for s in board.sections}
+    # Locally the snapshot has no worktree_drift slice, so that section is
+    # simply absent — the devbox dict must NOT conjure one up...
+    assert "worktree_drift" not in by_key
+    # ...and script_timing IS observed locally and must keep its own summary
+    # even though a devbox dict is present.
+    st = by_key["script_timing"]
+    assert st.observed_ago is None
+    assert "within baseline" in st.summary
+
+
+def test_json_v2_carries_blockers_and_actions():
+    v = make_verdict("red", 45,
+                     red_reasons=["autolens_workspace: Smoke Tests failure on main"])
+    out = dashboard.render(_failing_snapshot(), v, fmt="json",
+                           unobserved=dashboard.LOCAL_ONLY_FAMILIES, now=FRESH_NOW)
+    d = json.loads(out)
+    assert d["schema_version"] == 2
+    assert d["blockers"][0]["prompt"].startswith("/bug ")
+    unobs = [s for s in d["sections"] if s["state"] == "unobserved"]
+    assert unobs and all(s["action"]["payload"].startswith("pyauto-heart") for s in unobs)
