@@ -8,13 +8,6 @@
 
 [![health](https://img.shields.io/endpoint?url=https://pyautolabs.github.io/PyAutoHeart/badge.json)](https://pyautolabs.github.io/PyAutoHeart/)
 
-<!-- The block below is auto-updated by .github/workflows/heart-health.yml (everything -->
-<!-- between the heart:begin/heart:end markers is replaced with the rendered strip). -->
-<!-- Live board: https://pyautolabs.github.io/PyAutoHeart/ -->
-<!-- heart:begin -->
-## 🔵 PyAuto health — **STALE** (score 65) · [full board →](https://pyautolabs.github.io/PyAutoHeart/)
-<!-- heart:end -->
-
 **PyAutoHeart is the Heart of the PyAutoScientist** — the organism's health
 authority. It continuously watches every repository (CI, branches, open PRs,
 version skew, script and test timings, workspace validation) and rolls what it
@@ -27,6 +20,14 @@ traffic-light row, and every red or yellow finding carrying links to the
 failing run and a one-tap 📋 button that copies a ready-made Claude prompt
 (`/bug …`), so going from "something is red" to "an agent is fixing it" is
 copy → paste, on a laptop or a phone.
+
+## Current health
+
+<!-- The line below is auto-updated by .github/workflows/heart-health.yml (everything -->
+<!-- between the heart:begin/heart:end markers is replaced with the rendered strip). -->
+<!-- heart:begin -->
+🔵 **STALE** · score 65 · [full board →](https://pyautolabs.github.io/PyAutoHeart/)
+<!-- heart:end -->
 
 ## How PyAutoHeart works
 
