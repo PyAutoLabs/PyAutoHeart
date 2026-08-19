@@ -11,7 +11,8 @@
 # Runs a suite of independent install-path checks:
 #
 #   A  pip install autolens (default Python) + start_here.py + welcome.py
-#   B  one exact autolens release installs on 3.12/3.13 and rejects on 3.11
+#   B  one exact autolens release installs on 3.12/3.13, and 3.11 refuses it
+#      both pinned (Requires-Python) and unpinned (the tombstone release)
 #   C  conda install flow (python=3.12) + start_here.py + welcome.py
 #   D  pip install "autolens[optional]" resolves
 #   E  pip install autolens==2026.2.26.4 on Python 3.12 by explicit pin
@@ -58,8 +59,9 @@ Usage:
 
 Checks:
   A   pip install autolens (default python3) + start_here.py + welcome.py
-  B   one exact autolens release installs on python3.12 and python3.13,
-      while python3.11 rejects it because Requires-Python is >=3.12
+  B   one exact autolens release installs on python3.12 and python3.13, while
+      python3.11 refuses it both pinned (Requires-Python >=3.12) and unpinned
+      (the 2026.7.29.1.post1 tombstone, so pip cannot backtrack to a stale one)
   C   conda install flow (python=3.12) + start_here.py + welcome.py
   D   pip install "autolens[optional]" resolves and imports
   E   pip install autolens==2026.2.26.4 (yanked) installs on python3.12 by explicit pin
@@ -449,12 +451,53 @@ check_b_rejected() {
     fi
 }
 
+check_b_unpinned_refused() {
+    local pybin="python3.11"
+
+    if ! command -v "$pybin" > /dev/null 2>&1; then
+        step "$pybin not installed — FAIL (required floor-rejection interpreter)"
+        RESULTS+=("B|FAIL|$pybin not installed")
+        return
+    fi
+
+    local venv="/tmp/autolens_verify_B_unpinned_3.11_$TS"
+    ARTEFACTS+=("$venv")
+
+    step "$pybin: creating unpinned-refusal venv at $venv"
+    if ! make_venv "$venv" "$pybin"; then
+        RESULTS+=("B|FAIL|$pybin could not create venv")
+        return
+    fi
+
+    # shellcheck source=/dev/null
+    source "$venv/bin/activate"
+    pip install --upgrade pip > /dev/null 2>&1 || true
+
+    step "$pybin: expecting an UNPINNED install to be refused"
+    local pip_out pip_rc=0
+    pip_out=$(pip install "${PIP_INDEX_ARGS[@]}" autolens 2>&1) || pip_rc=$?
+    deactivate
+
+    if [ "$pip_rc" -eq 0 ]; then
+        RESULTS+=("B|FAIL|$pybin silently installed an unpinned autolens — the sub-floor backtrack is back")
+        tail_log "Check B ($pybin) unpinned install unexpectedly succeeded" "$pip_out"
+        return
+    fi
+    if verify_install_unpinned_refusal "$pip_out" autolens; then
+        RESULTS+=("B|PASS|$pybin refused the unpinned install")
+    else
+        RESULTS+=("B|FAIL|$pybin unpinned install failed without a floor refusal (rc=$pip_rc)")
+        tail_log "Check B ($pybin) unexpected unpinned pip output" "$pip_out"
+    fi
+}
+
 check_b() {
     echo
-    echo "=== Check B: exact release on 3.12/3.13; rejected on 3.11 ==="
+    echo "=== Check B: exact release on 3.12/3.13; pinned and unpinned refused on 3.11 ==="
     check_b_supported python3.12
     check_b_supported python3.13
     check_b_rejected
+    check_b_unpinned_refused
 }
 
 # ----- check C: conda flow -----
