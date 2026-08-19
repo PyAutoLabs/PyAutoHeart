@@ -27,11 +27,12 @@ version skew, script and test timings, workspace validation) and rolls what it
 sees into one authoritative verdict: **GREEN / STALE / YELLOW / RED**. GREEN
 means it is safe to release.
 
-See the live **[health board](https://pyautolabs.github.io/PyAutoHeart/)** for
-the whole picture on one page — every check a traffic-light row, and every red
-or yellow finding carrying links to the failing run and a one-tap 📋 button
-that copies a ready-made Claude prompt (`/bug …`), so going from "something is
-red" to "an agent is fixing it" is copy → paste, on a laptop or a phone.
+See the **[PyAutoHeart Dashboard](https://pyautolabs.github.io/PyAutoHeart/)**
+(mobile phone dashboard) for the whole picture on one page — every check a
+traffic-light row, and every red or yellow finding carrying links to the
+failing run and a one-tap 📋 button that copies a ready-made Claude prompt
+(`/bug …`), so going from "something is red" to "an agent is fixing it" is
+copy → paste, on a laptop or a phone.
 
 ## How PyAutoHeart works
 

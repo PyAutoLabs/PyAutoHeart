@@ -365,11 +365,17 @@ def _repo_section(
             continue
         state, label = _lib_row(name, body, unobserved=unobserved)
         rows.append((state, name, label))
-        # The way OUT of a red row: the failing run itself.
+        # The way OUT of a red row: the failing run itself, plus a ready-made
+        # /bug prompt (rendered as the link's paired 📋 on the html surface).
         ci = body.get("ci_status") or {}
         if (state == FAIL and ci.get("url")
                 and str(ci.get("conclusion") or "") not in ("", "success")):
-            links.append({"label": f"{name} run", "url": str(ci["url"])})
+            wf = ci.get("workflow") or "CI"
+            links.append({
+                "label": f"{name} run", "url": str(ci["url"]),
+                "prompt": (f"/bug Heart board: {name} {wf} failing on main — "
+                           f"failing run: {ci['url']}"),
+            })
     if not rows:
         return None
     overall = _worst(s for s, _, _ in rows)
@@ -943,22 +949,21 @@ def _render_md(board: Board) -> str:
 
 
 def _render_md_brief(board: Board) -> str:
-    """The README strip: verdict + linked blockers + the board link. The full
-    table lives on the Pages board; the README stays a glance, not a wall."""
+    """The README strip: one glance, not a wall. A single verdict line with
+    the board link inline; blockers/warnings appear only when there ARE any
+    (stale evidence gaps and timestamps live on the board, not the README —
+    the strip earns its README lines only when something needs a human)."""
     word = _VERDICT_WORD.get(board.verdict, "GREEN")
     emoji = _STATE_MD[_VERDICT_STATE.get(board.verdict, OK)]
-    age = format_age(board.age_seconds, stale=board.stale)
     lines = [
-        f"## {emoji} PyAuto health — **{word}** (score {board.score})",
-        "",
-        f"_snapshot `{board.ts}` · {age}_",
-        "",
+        f"## {emoji} PyAuto health — **{word}** (score {board.score}) · "
+        f"[full board →]({PAGES_URL})"
     ]
-    label, items = _shown_reasons(board)
-    if items:
-        lines.append(f"**{label}:** " + "; ".join(_md_reason(i) for i in items[:4]))
-        lines.append("")
-    lines.append(f"**[Full board →]({PAGES_URL})** — live page with one-tap 📋 fix prompts")
+    if board.verdict in ("red", "yellow"):
+        label, items = _shown_reasons(board)
+        if items:
+            lines += ["", f"**{label}:** "
+                      + "; ".join(_md_reason(i) for i in items[:4])]
     return "\n".join(lines)
 
 
@@ -1003,6 +1008,9 @@ def _render_html(board: Board) -> str:
         for link in sec.links:
             summary += (f" <a class='out' href=\"{_html.escape(str(link.get('url', '')), quote=True)}\">"
                         f"{_html.escape(str(link.get('label', 'link')))} ↗</a>")
+            if link.get("prompt"):
+                summary += " " + _copy_btn(str(link["prompt"]),
+                                           "copy the fix prompt for a Claude Code chat")
         if sec.action and sec.action.get("payload"):
             summary += " " + _copy_btn(str(sec.action["payload"]),
                                        str(sec.action.get("label", "copy")))
