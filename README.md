@@ -4,9 +4,7 @@
 
 # PyAutoHeart
 
-🧬 **PyAutoScientist → <https://github.com/PyAutoLabs/PyAutoScientist>** — this repo is one organ of the PyAuto organism.
-
-📖 **Full documentation → <https://pyautoscientist.readthedocs.io>** — the whole PyAutoScientist organism, including how to fork and run your own.
+[![PyAutoScientist GitHub](https://img.shields.io/badge/%F0%9F%94%AC%20PyAutoScientist-GitHub-181717?style=for-the-badge)](https://github.com/PyAutoLabs/PyAutoScientist) [![PyAutoScientist ReadTheDocs](https://img.shields.io/badge/%F0%9F%93%96%20PyAutoScientist-ReadTheDocs-8CA1AF?style=for-the-badge)](https://pyautoscientist.readthedocs.io)
 
 [![health](https://img.shields.io/endpoint?url=https://pyautolabs.github.io/PyAutoHeart/badge.json)](https://pyautolabs.github.io/PyAutoHeart/)
 
