@@ -486,11 +486,12 @@ def test_md_brief_is_a_strip_not_a_table():
     v = make_verdict("red", 45,
                      red_reasons=["autolens_workspace: Smoke Tests failure on main"])
     out = dashboard.render(_failing_snapshot(), v, fmt="md-brief", now=FRESH_NOW)
-    assert "PyAuto health" in out and "RED" in out
+    assert "**RED**" in out
     assert "[autolens_workspace](" in out
     assert dashboard.PAGES_URL in out
     assert "| Check |" not in out  # no table — the Pages board carries it
     assert "snapshot" not in out   # no timestamp clutter — the board has it
+    assert not out.startswith("#")  # the README supplies the section heading
 
 
 def test_md_brief_is_one_line_unless_something_is_wrong():

@@ -949,15 +949,16 @@ def _render_md(board: Board) -> str:
 
 
 def _render_md_brief(board: Board) -> str:
-    """The README strip: one glance, not a wall. A single verdict line with
-    the board link inline; blockers/warnings appear only when there ARE any
-    (stale evidence gaps and timestamps live on the board, not the README —
-    the strip earns its README lines only when something needs a human)."""
+    """The README strip: one glance, not a wall. It renders under the README's
+    own "## Current health" heading, so it carries no heading of its own — a
+    single verdict line with the board link inline; blockers/warnings appear
+    only when there ARE any (stale evidence gaps and timestamps live on the
+    board, not the README — the strip earns extra lines only when something
+    needs a human)."""
     word = _VERDICT_WORD.get(board.verdict, "GREEN")
     emoji = _STATE_MD[_VERDICT_STATE.get(board.verdict, OK)]
     lines = [
-        f"## {emoji} PyAuto health — **{word}** (score {board.score}) · "
-        f"[full board →]({PAGES_URL})"
+        f"{emoji} **{word}** · score {board.score} · [full board →]({PAGES_URL})"
     ]
     if board.verdict in ("red", "yellow"):
         label, items = _shown_reasons(board)
