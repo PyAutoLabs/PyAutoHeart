@@ -14,7 +14,7 @@
 # Run on demand. Always exits 0 — informational, the user reads + decides.
 #
 # Usage (normally sourced via ~/.bashrc, run through the `health` dispatcher):
-#   source ~/Code/PyAutoLabs/PyAutoMind/scripts/health_audit.sh
+#   source ~/Code/PyAutoLabs/PyAutoHeart/scripts/health_audit.sh
 #   health audit
 #
 # Override via env vars:

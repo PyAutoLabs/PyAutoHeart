@@ -8,7 +8,7 @@
 # parallelised one background job per repo.
 #
 # Usage (normally sourced via ~/.bashrc, run through the `health` dispatcher):
-#   source ~/Code/PyAutoLabs/PyAutoMind/scripts/health_sync.sh
+#   source ~/Code/PyAutoLabs/PyAutoHeart/scripts/health_sync.sh
 #   health          # (or: health sync)
 #   health --all    # full raw dirty-file listing (noise included)
 #

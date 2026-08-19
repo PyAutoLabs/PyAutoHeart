@@ -14,7 +14,7 @@
 #   - Pointer to triage.md if present (free-form analytical clustering)
 #
 # Usage (normally sourced via ~/.bashrc, run through the `health` dispatcher):
-#   source ~/Code/PyAutoLabs/PyAutoMind/scripts/health_release.sh
+#   source ~/Code/PyAutoLabs/PyAutoHeart/scripts/health_release.sh
 #   health release
 #
 # Override the run path (e.g. to inspect a specific historical run) by passing
