@@ -490,6 +490,33 @@ def test_md_brief_is_a_strip_not_a_table():
     assert "[autolens_workspace](" in out
     assert dashboard.PAGES_URL in out
     assert "| Check |" not in out  # no table — the Pages board carries it
+    assert "snapshot" not in out   # no timestamp clutter — the board has it
+
+
+def test_md_brief_is_one_line_unless_something_is_wrong():
+    # GREEN and STALE both collapse to the single verdict+link line: evidence
+    # gaps are the board's business, not the README's.
+    green = dashboard.render(make_snapshot(), make_verdict(), fmt="md-brief",
+                             now=FRESH_NOW)
+    assert "\n" not in green and dashboard.PAGES_URL in green
+    stale_v = {"verdict": "stale", "score": 65,
+               "stale_reasons": ["install verification not run"], "ts": TS}
+    stale = dashboard.render(make_snapshot(), stale_v, fmt="md-brief", now=FRESH_NOW)
+    assert "\n" not in stale
+    assert "install verification" not in stale
+
+
+def test_failing_repo_row_link_carries_its_own_prompt():
+    v = make_verdict("red", 45,
+                     red_reasons=["autolens_workspace: Smoke Tests failure on main"])
+    board = dashboard.build_board(_failing_snapshot(), v, now=FRESH_NOW)
+    ws = {s.key: s for s in board.sections}["workspaces"]
+    (link,) = ws.links
+    assert link["prompt"].startswith("/bug Heart board: autolens_workspace Smoke Tests")
+    assert RUN_URL in link["prompt"]
+    html = dashboard.render(_failing_snapshot(), v, fmt="html", now=FRESH_NOW)
+    # the row-level 📋 renders beside the run link, not only in the blockers
+    assert html.count("/bug Heart board: autolens_workspace") >= 2
 
 
 def test_unobserved_rows_carry_watch_line_and_observe_action():
