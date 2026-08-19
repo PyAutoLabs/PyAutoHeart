@@ -117,8 +117,15 @@ carries `profile` and `commit_shas`, so the gate can enforce them):
 The integration run also performs `verify_install` A–F against the same wheels.
 Check B reuses that exact TestPyPI version: it must install and import on Python
 3.12 and 3.13, while Python 3.11 must reject it specifically because its
-`Requires-Python` metadata is `>=3.12`. An unpinned install is not sufficient
-evidence because pip may select an older compatible release.
+`Requires-Python` metadata is `>=3.12`. A *pinned* rejection is the only evidence
+that this release holds the floor, because an unpinned install may select an
+older compatible one instead.
+
+Check B then requires the unpinned install to be refused as well. That is a
+separate guarantee, and it was not met until 2026-08-19: `pip install autolens`
+on 3.11 backtracked to `2026.7.29.1` and installed a stale, JAX-less stack
+silently. The `2026.7.29.1.post1` tombstone refuses it, and this leg is what
+stops the backtrack reopening.
 
 That TestPyPI A–F result feeds the install-verification readiness leg (see
 "How the gate enforces these"), tagged `index: testpypi`. It proves the wheels

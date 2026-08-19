@@ -14,7 +14,7 @@ about cleanup if they ran with `--keep`.
 | Check | What it verifies |
 |-------|------------------|
 | A | `pip install autolens` in a venv on default `python3`; `start_here.py` and `welcome.py` both run cleanly. |
-| B | One exact `autolens` version installs and imports cleanly on `python3.12` and `python3.13`, then the same exact version is rejected by `python3.11` specifically because `Requires-Python` is `>=3.12`. An unpinned 3.11 install is not evidence because pip may select an older compatible release. |
+| B | One exact `autolens` version installs and imports cleanly on `python3.12` and `python3.13`, then the same exact version is rejected by `python3.11` specifically because `Requires-Python` is `>=3.12`. An **unpinned** `pip install autolens` on `python3.11` is then required to be refused too — it was not, until 2026-08-19: pip backtracked to `2026.7.29.1` and installed a stale JAX-less stack silently. The `2026.7.29.1.post1` tombstone closes that, and this leg is what stops it reopening. |
 | C | The conda flow from `installation/conda.rst` works end-to-end (`conda create … python=3.12` → `pip install autolens` → clone workspace → run `welcome.py` + `start_here.py`). |
 | D | `pip install "autolens[optional]"` resolves cleanly and imports. |
 | E | `pip install autolens==2026.2.26.4` (a yanked release the docs reference) still installs on `python3.12` by explicit pin. |

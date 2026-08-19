@@ -44,3 +44,32 @@ except InvalidVersion:
 raise SystemExit(0 if equivalent else 1)
 PY
 }
+
+verify_install_unpinned_refusal() {
+    local pip_output="$1"
+    local package="$2"
+
+    # Tombstone path (the live one): releases at or below 2026.7.29.1 declare
+    # Requires-Python >=3.9 and stay valid candidates forever, so an unpinned
+    # install below the floor is refused by 2026.7.29.1.post1 raising during
+    # metadata preparation. That text arrives from the build subprocess, not as
+    # a pip resolver diagnostic, so it needs its own classifier.
+    if printf '%s\n' "$pip_output" | grep -qE \
+            "$package requires Python 3\.[0-9]+ or later" \
+        && printf '%s\n' "$pip_output" | grep -qE \
+            "you are running Python 3\.[0-9]+"; then
+        return 0
+    fi
+
+    # Retraction path: if the sub-floor catalogue is ever withdrawn, pip runs
+    # out of candidates instead and says so. Both shapes mean refused; anything
+    # else (network, resolver, dependency failure) is not floor evidence.
+    if printf '%s\n' "$pip_output" | grep -qi \
+            "Ignored the following versions that require a different python version:" \
+        && printf '%s\n' "$pip_output" | grep -qiE \
+            "No matching distribution found for $package"; then
+        return 0
+    fi
+
+    return 1
+}

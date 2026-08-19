@@ -39,6 +39,23 @@ def classify_rejection(output, version="2026.7.29.1"):
     )
 
 
+def classify_unpinned(output, package="autolens"):
+    return subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; pip_output=$(cat); '
+            'verify_install_unpinned_refusal "$pip_output" "$2"',
+            "classifier",
+            str(HELPERS),
+            package,
+        ],
+        input=output,
+        capture_output=True,
+        text=True,
+    )
+
+
 def test_bash_syntax():
     for path in (SCRIPT, HELPERS):
         result = subprocess.run(
@@ -225,5 +242,59 @@ def test_help_describes_supported_success_and_below_floor_rejection():
 
     assert result.returncode == 0
     assert "installs on python3.12 and python3.13" in result.stdout
-    assert "python3.11 rejects it because Requires-Python is >=3.12" in result.stdout
+    assert "pinned (Requires-Python >=3.12)" in result.stdout
+    # The unpinned leg has to be advertised too, or the help understates what
+    # Check B now guarantees.
+    assert "unpinned" in result.stdout
+    assert "2026.7.29.1.post1 tombstone" in result.stdout
     assert "applies to A, B, C, D" in result.stdout
+
+
+def test_unpinned_classifier_accepts_the_tombstone_and_retraction_forms():
+    """The two shapes that mean "refused below the floor"."""
+    tombstone_output = (
+        "        autolens requires Python 3.12 or later — you are running "
+        "Python 3.11.\n"
+        "ERROR: Failed to build 'autolens' when getting requirements to "
+        "build wheel\n"
+    )
+    retraction_output = (
+        "ERROR: Ignored the following versions that require a different "
+        "python version: 2026.8.17.1 Requires-Python >=3.12\n"
+        "ERROR: No matching distribution found for autolens\n"
+    )
+
+    assert classify_unpinned(tombstone_output).returncode == 0
+    assert classify_unpinned(retraction_output).returncode == 0
+
+
+def test_unpinned_classifier_rejects_unrelated_pip_failures():
+    """A refusal for any other reason is not floor evidence."""
+    network_failure = (
+        "WARNING: Retrying after connection broken by NewConnectionError\n"
+        "ERROR: No matching distribution found for autolens\n"
+    )
+    dependency_conflict = (
+        "ERROR: Cannot install autolens because these package versions have "
+        "conflicting dependencies.\n"
+    )
+    other_package_tombstone = (
+        "        autofit requires Python 3.12 or later — you are running "
+        "Python 3.11.\n"
+    )
+
+    for output in (network_failure, dependency_conflict, other_package_tombstone):
+        assert classify_unpinned(output).returncode != 0
+
+
+def test_check_b_asserts_the_unpinned_install_is_refused():
+    """The gap Check B documented but never tested: until 2026-08-19 an
+    unpinned 3.11 install silently resolved to the stale 2026.7.29.1 stack."""
+    body = SCRIPT.read_text()
+
+    assert "check_b_unpinned_refused" in body
+    # Wired into the runner, not merely defined.
+    assert body.count("check_b_unpinned_refused") >= 2
+    assert "verify_install_unpinned_refusal" in body
+    # A successful unpinned install below the floor is the bug returning.
+    assert "the sub-floor backtrack is back" in body
