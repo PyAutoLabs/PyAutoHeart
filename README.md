@@ -12,6 +12,13 @@
 <!-- between the heart:begin/heart:end markers is replaced with the rendered strip). -->
 <!-- Live board: https://pyautolabs.github.io/PyAutoHeart/ -->
 <!-- heart:begin -->
+## 🔵 PyAuto health — **STALE** (score 65)
+
+_snapshot `2026-08-19T21:03:10.359357+00:00` · just now_
+
+**Evidence gaps (re-run, don't fix):** test run status unknown (no report.json); install verification not run; no release validation for current source
+
+**[Full board →](https://pyautolabs.github.io/PyAutoHeart/)** — live page with one-tap 📋 fix prompts
 <!-- heart:end -->
 
 **PyAutoHeart is the Heart of the PyAutoScientist** — the organism's health
