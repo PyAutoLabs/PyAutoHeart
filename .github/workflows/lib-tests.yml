@@ -125,3 +125,98 @@ jobs:
             {
               "text": "${{ github.repository }}/${{ github.ref_name }} (Python ${{ matrix.python-version }}) build result: ${{ job.status }}\n${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             }
+
+  # JAX is a default dependency of the stack (PyAutoLens#702), so every
+  # ordinary environment — including the [optional] install above — has jax
+  # importable. The NumPy-only path remains fully supported (Intel macOS
+  # resolves to it via environment markers; unit tests are NumPy-only by
+  # policy) but before this job NOTHING exercised the jax-NOT-INSTALLED
+  # environment. This leg installs normally, strips the jax package family,
+  # and re-runs the suite: it proves every module imports and the NumPy path
+  # passes with jax genuinely absent. One Python version only — the jax-absent
+  # surface does not vary across minors.
+  unittest-nojax:
+    if: ${{ inputs.package != 'autoreduce' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Map package → repo + dependency chain
+        id: map
+        run: |
+          case "${{ inputs.package }}" in
+            autoconf|autonerves)   repo=PyAutoNerves;   deps="" ;;
+            autofit)    repo=PyAutoFit;    deps="PyAutoNerves" ;;
+            autoarray)  repo=PyAutoArray;  deps="PyAutoNerves" ;;
+            autogalaxy) repo=PyAutoGalaxy; deps="PyAutoNerves PyAutoFit PyAutoArray" ;;
+            autolens)   repo=PyAutoLens;   deps="PyAutoNerves PyAutoFit PyAutoArray PyAutoGalaxy" ;;
+            autocti)    repo=PyAutoCTI;    deps="PyAutoNerves PyAutoFit PyAutoArray" ;;
+            *) echo "::error::unknown package '${{ inputs.package }}'"; exit 1 ;;
+          esac
+          echo "repo=$repo" >> "$GITHUB_OUTPUT"
+          echo "deps=$deps" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout ${{ steps.map.outputs.repo }} (repo under test, at the PR ref)
+        uses: actions/checkout@v4
+        with:
+          path: ${{ steps.map.outputs.repo }}
+
+      - name: Clone dependency libraries (matching branch if it exists)
+        run: |
+          set -e
+          BRANCH="${{ github.head_ref || github.ref_name }}"
+          for dep in ${{ steps.map.outputs.deps }}; do
+            git clone "https://github.com/PyAutoLabs/$dep" "$dep"
+            if git -C "$dep" ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+              echo "Branch $BRANCH exists in $dep — checking it out"
+              git -C "$dep" checkout "$BRANCH"
+            fi
+          done
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install arcticpy (autocti only — source-only C++ sdist)
+        if: ${{ inputs.package == 'autocti' }}
+        run: |
+          sudo apt-get update && sudo apt-get install -y libgsl-dev
+          pip install --upgrade pip setuptools wheel
+          pip install numpy cython
+          pip install arcticpy==2.6 --no-build-isolation --no-deps
+
+      - name: Install ([optional] extras), then strip the jax package family
+        run: |
+          pip install --upgrade pip setuptools wheel
+          pip install pytest coverage pytest-cov
+          for r in ${{ steps.map.outputs.deps }} ${{ steps.map.outputs.repo }}; do
+            pip install "./$r[optional]"
+          done
+          # Everything that is jax or imports jax at its own import time.
+          # Missing entries are skipped by pip with a warning, not an error.
+          pip uninstall -y jax jaxlib jaxnnls optax chex jax_zero_contour \
+            blackjax nufftax tfp-nightly
+          # Guard the guard: fail loudly here if jax somehow survives, rather
+          # than green-running a suite that never tested the jax-absent path.
+          python -c "import importlib.util, sys; sys.exit(1 if importlib.util.find_spec('jax') else 0)"
+
+      - name: Run tests (jax absent)
+        run: |
+          ROOT="$(pwd)"
+          for r in ${{ steps.map.outputs.deps }} ${{ steps.map.outputs.repo }}; do
+            export PYTHONPATH="$PYTHONPATH:$ROOT/$r"
+          done
+          pushd "${{ steps.map.outputs.repo }}"
+          pytest
+
+      - name: Slack on failure
+        if: ${{ failure() }}
+        uses: slackapi/slack-github-action@v1.21.0
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        with:
+          channel-id: C03S98FEDK2
+          payload: |
+            {
+              "text": "${{ github.repository }}/${{ github.ref_name }} (no-jax leg) build result: ${{ job.status }}\n${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            }
