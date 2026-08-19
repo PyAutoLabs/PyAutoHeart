@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "sections": {
+    "import_time": {
+      "details": [],
+      "state": "ok",
+      "summary": "0 imports within baseline"
+    },
+    "profiling_drift": {
+      "details": [],
+      "state": "ok",
+      "summary": "25 results clean"
+    },
+    "script_timing": {
+      "details": [],
+      "state": "ok",
+      "summary": "646 within baseline"
+    },
+    "test_run": {
+      "details": [],
+      "state": "ok",
+      "summary": "ready \u2014 1333p / 0f / 142s @ cloud#32277952488"
+    },
+    "version_skew": {
+      "details": [],
+      "state": "ok",
+      "summary": "all floors satisfiable"
+    },
+    "worktree_drift": {
+      "details": [
+        "point-source-defaults-campaign/autolens_profiling: 4 dirty",
+        "canonical PyAutoMemory: 1 dirty",
+        "canonical admin_jammy: 3 dirty",
+        "canonical autolens_assistant: 1 dirty",
+        "canonical autolens_profiling: 5 dirty",
+        "canonical autolens_workspace_test: 1 dirty"
+      ],
+      "state": "fail",
+      "summary": "4 orphan / 0 missing / 1 dirty"
+    }
+  },
+  "ts": "2026-08-19T17:44:39.969764+00:00"
+}
