@@ -99,6 +99,7 @@ jobs:
           PYTHONPATH="$PWD" python -m heart.dashboard --cloud --html     > _site/index.html
           PYTHONPATH="$PWD" python -m heart.dashboard --cloud --badge    > _site/badge.json
           PYTHONPATH="$PWD" python -m heart.dashboard --cloud --md       > board.md
+          cp board.md _site/dashboard.md
           # The README carries only the brief strip; the full board lives on
           # the Pages page (one-tap 📋 fix prompts) and the step summary.
           PYTHONPATH="$PWD" python -m heart.dashboard --cloud --md-brief > readme_strip.md
