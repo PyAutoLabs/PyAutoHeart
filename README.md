@@ -15,7 +15,7 @@ sees into one authoritative verdict: **GREEN / STALE / YELLOW / RED**. GREEN
 means it is safe to release.
 
 See the **[PyAutoHeart Dashboard](https://pyautolabs.github.io/PyAutoHeart/)**
-(mobile phone dashboard) for the whole picture on one page — every check a
+for the whole picture on one page — every check a
 traffic-light row, and every red or yellow finding carrying links to the
 failing run and a one-tap 📋 button that copies a ready-made Claude prompt
 (`/bug …`), so going from "something is red" to "an agent is fixing it" is
@@ -26,7 +26,7 @@ copy → paste, on a laptop or a phone.
 <!-- The line below is auto-updated by .github/workflows/heart-health.yml (everything -->
 <!-- between the heart:begin/heart:end markers is replaced with the rendered strip). -->
 <!-- heart:begin -->
-🔵 **STALE** · score 65 · [full board →](https://pyautolabs.github.io/PyAutoHeart/)
+🔵 **STALE** · score 65 · [dashboard →](https://pyautolabs.github.io/PyAutoHeart/)
 <!-- heart:end -->
 
 ## How PyAutoHeart works

@@ -925,7 +925,7 @@ def _render_md(board: Board) -> str:
     emoji = _STATE_MD[_VERDICT_STATE.get(board.verdict, OK)]
     age = format_age(board.age_seconds, stale=board.stale)
     lines = [
-        f"## {emoji} PyAuto health — **{word}** (score {board.score})",
+        f"## {emoji} PyAutoHeart Dashboard — **{word}** (score {board.score})",
         "",
         f"_snapshot `{board.ts}` · {age}_"
         + ("  ⚠️ **stale — run `pyauto-heart tick`**" if board.stale else ""),
@@ -944,7 +944,7 @@ def _render_md(board: Board) -> str:
             status += f" · _{_md_escape(sec.observed_ago)}_"
         lines.append(f"| {em} | {sec.title} | {status} |")
     lines.append("")
-    lines.append(f"[Full board]({PAGES_URL})")
+    lines.append(f"[Dashboard]({PAGES_URL})")
     return "\n".join(lines)
 
 
@@ -958,7 +958,7 @@ def _render_md_brief(board: Board) -> str:
     word = _VERDICT_WORD.get(board.verdict, "GREEN")
     emoji = _STATE_MD[_VERDICT_STATE.get(board.verdict, OK)]
     lines = [
-        f"{emoji} **{word}** · score {board.score} · [full board →]({PAGES_URL})"
+        f"{emoji} **{word}** · score {board.score} · [dashboard →]({PAGES_URL})"
     ]
     if board.verdict in ("red", "yellow"):
         label, items = _shown_reasons(board)
@@ -1091,9 +1091,9 @@ function ok(b){{b.textContent='✓';setTimeout(function(){{b.textContent='📋'}
 function fb(t){{window.prompt('Copy this:',t)}}
 </script></head>
 <body><div class="wrap">
-  <h1>PyAuto organism health</h1>
+  <h1>PyAutoHeart Dashboard</h1>
   <p><span class="verdict {vstate}">{word} · score {board.score}</span></p>
-  <p class="meta">snapshot {_html.escape(board.ts)} · {age}</p>
+  <p class="meta">snapshot {_html.escape(board.ts)} · {age} · <a href="dashboard.md">markdown version</a></p>
   {stale_html}
   {reasons_html}
   <table>{''.join(rows)}</table>
