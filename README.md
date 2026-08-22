@@ -26,9 +26,7 @@ copy → paste, on a laptop or a phone.
 <!-- The line below is auto-updated by .github/workflows/heart-health.yml (everything -->
 <!-- between the heart:begin/heart:end markers is replaced with the rendered strip). -->
 <!-- heart:begin -->
-🔴 **RED** · score 45 · [dashboard →](https://pyautolabs.github.io/PyAutoHeart/)
-
-**Blockers:** [HowToLens](https://github.com/PyAutoLabs/HowToLens): Smoke Tests failure on main ([run](https://api.github.com/repos/PyAutoLabs/HowToLens/actions/runs/32425255161))
+🔵 **STALE** · score 65 · [dashboard →](https://pyautolabs.github.io/PyAutoHeart/)
 <!-- heart:end -->
 
 ## How PyAutoHeart works
