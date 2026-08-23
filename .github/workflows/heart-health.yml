@@ -98,6 +98,11 @@ jobs:
           # auto-detected and fills the unobserved rows, age-stamped.
           PYTHONPATH="$PWD" python -m heart.dashboard --cloud --html     > _site/index.html
           PYTHONPATH="$PWD" python -m heart.dashboard --cloud --badge    > _site/badge.json
+          # The machine surface, published beside the badge so sibling boards
+          # (the Brain's morning board) can render the structured blockers —
+          # each already carrying its own /bug prompt — without re-deriving
+          # anything (schema v2; the same JSON the Health Agent consumes).
+          PYTHONPATH="$PWD" python -m heart.dashboard --cloud --json     > _site/board.json
           PYTHONPATH="$PWD" python -m heart.dashboard --cloud --md       > board.md
           cp board.md _site/dashboard.md
           # The README carries only the brief strip; the full board lives on
