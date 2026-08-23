@@ -299,7 +299,7 @@ jobs:
           # --only-binary=:all:` — no matching distribution) — pinning down to
           # it would force an unnecessary, needlessly slow source rebuild for
           # zero benefit on a version this job's own wheels already reject.
-          pip install pynufft==2025.1.1 numba
+          pip install numba
           # Belt-and-braces JAX install — the [optional] -> [jax] chain
           # occasionally silently drops jax from test.pypi resolution.
           pip install "jax>=0.7,<0.11" "jaxlib>=0.7,<0.11"
