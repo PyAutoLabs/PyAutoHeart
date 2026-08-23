@@ -145,6 +145,19 @@ GATED_WORKSPACE_GROUPS = frozenset({"workspaces", "workspaces_test", "howto"})
 # that links "the webpage" agrees on the URL.
 PAGES_URL = "https://pyautolabs.github.io/PyAutoHeart/"
 
+# The one-tap board family — the cross-board footer nav every board carries,
+# each board skipping its own entry. The base comes from PAGES_URL so the
+# owner is named exactly once in this file.
+BOARD_FAMILY = (("mind", "PyAutoMind"), ("brain", "PyAutoBrain"),
+                ("hands", "PyAutoHands"), ("memory", "PyAutoMemory"),
+                ("organism", "PyAutoScientist"))
+
+
+def _boards_nav_html() -> str:
+    base = PAGES_URL.rsplit("/", 2)[0]
+    return " · ".join(f'<a href="{base}/{repo}/">{name}</a>'
+                      for name, repo in BOARD_FAMILY)
+
 # v2: sections gained links/action/observed_ago; the board gained structured
 # `blockers` ({text, severity, repo, repo_url, run_url, prompt}). Additive.
 SCHEMA_VERSION = 2
@@ -1100,6 +1113,7 @@ function fb(t){{window.prompt('Copy this:',t)}}
   <footer>Rendered by <code>heart/dashboard.py</code> — one renderer, many surfaces.
   Observer only: PyAutoHeart never writes outside its own repo/state.
   📋 buttons copy a Claude prompt or command to your clipboard.</footer>
+  <p class="meta">Boards: {_boards_nav_html()}</p>
 </div></body></html>
 """
 
