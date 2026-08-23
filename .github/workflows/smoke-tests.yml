@@ -14,7 +14,16 @@ name: Smoke Tests (reusable)
 # .github/scripts/run_smoke.py, Slack on failure); everything that differs
 # per workspace stays IN the workspace: the install epilogue
 # (.github/scripts/smoke_install.sh, receiving PYTHON_VERSION — extras,
-# pins, version conditionals) and the smoke runner itself. The dependency
+# pins, version conditionals) and the smoke runner itself.
+#
+# `runner` lets a caller point that same ceremony at a DIFFERENT workspace
+# script — a re-timing harness, a one-off diagnostic sweep — instead of
+# copying the chain-checkout/install steps into a second workflow. The copy is
+# the thing to avoid: run_smoke.py's own docstring records what happened the
+# last time this ceremony was duplicated, when a local copy of the env resolver
+# silently drifted and left the PR gate unable to read the release profile.
+# Callers reach it with their own workflow_dispatch and pass `runner:` through;
+# the default keeps every existing caller byte-identical. The dependency
 # chain is an input and checkouts use the calling owner, so forks of the
 # organism reuse this workflow without modification.
 #
@@ -37,6 +46,21 @@ on:
         required: false
         type: string
         default: "C03S98FEDK2"
+      runner:
+        description: "Workspace-relative runner script to execute (default: the smoke runner)"
+        required: false
+        type: string
+        default: ".github/scripts/run_smoke.py"
+      runner-args:
+        description: "Extra arguments appended to the runner invocation (word-split)"
+        required: false
+        type: string
+        default: ""
+      script-timeout:
+        description: "Per-script wall-clock cap in seconds (BUILD_SCRIPT_TIMEOUT). Empty leaves it unset, so the runner's own default and any profile override apply unchanged."
+        required: false
+        type: string
+        default: ""
 
 jobs:
   # Docs-only gate: skip the matrix when the diff touches nothing but prose.
@@ -155,15 +179,27 @@ jobs:
             echo "No config/build/profile_smoke.yaml — profile validation skipped."
           fi
 
-      - name: Run smoke tests
+      - name: Run the workspace runner (the smoke runner by default)
         env:
           JAX_ENABLE_X64: "True"
           NUMBA_CACHE_DIR: /tmp/numba_cache
           MPLCONFIGDIR: /tmp/matplotlib
           PYTHONPATH: ${{ github.workspace }}/PyAutoHands/autohands
+          # Via env, never interpolated into the script body: these inputs reach
+          # here from a caller's workflow_dispatch, and `${{ }}` inside `run:`
+          # would splice their text straight into the shell.
+          RUNNER: ${{ inputs.runner }}
+          RUNNER_ARGS: ${{ inputs.runner-args }}
+          SCRIPT_TIMEOUT: ${{ inputs.script-timeout }}
         run: |
           cd workspace
-          python .github/scripts/run_smoke.py
+          # Exported only when the caller asked for a cap. Setting it
+          # unconditionally would hand run_smoke.py an empty string to int(),
+          # and would also state a process-wide cap where today there is none.
+          if [ -n "$SCRIPT_TIMEOUT" ]; then
+            export BUILD_SCRIPT_TIMEOUT="$SCRIPT_TIMEOUT"
+          fi
+          python "$RUNNER" $RUNNER_ARGS
 
       - name: Slack notify on failure
         if: ${{ failure() }}
