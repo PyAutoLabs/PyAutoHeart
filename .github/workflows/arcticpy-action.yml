@@ -50,7 +50,12 @@ jobs:
         id: arctic
         uses: ./.github/actions/install-arcticpy
         with:
-          version: ${{ inputs.version || '2.6' }}
+          # Pass the dispatch input straight through. It used to fall back to a
+          # literal '2.6', which was a second copy of the pin: bumping the pin
+          # would not have changed what this self-test built, so the test would
+          # have gone on proving the OLD version worked. Empty means "use the
+          # action's own default", i.e. the one pin in install_arcticpy.sh.
+          version: ${{ inputs.version }}
 
       - name: Report the version the action installed
         run: echo "action reported arcticpy ${{ steps.arctic.outputs.version }}"

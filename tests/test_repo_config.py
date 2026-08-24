@@ -99,3 +99,58 @@ def test_required_workflows_block(config):
     assert "Navigator Check" in rw["workspaces"]
     for workflows in rw.values():
         assert not any("url" in w.lower() for w in workflows)
+
+
+def test_smoke_block_covers_every_cti_workspace(config):
+    """Both CTI smoke surfaces must be runnable through the local runner.
+
+    Until PyAutoHeart#172 the `smoke:` block had no autocti entry at all and
+    `import_names` had no PyAutoCTI, so neither CTI suite could be exercised
+    without pushing and waiting for CI.
+    """
+    smoke = config["smoke"]
+    assert smoke["import_names"]["PyAutoCTI"] == "autocti"
+
+    workspaces = smoke["workspaces"]
+    for key, directory in (
+        ("autocti", "autocti_workspace"),
+        ("autocti_test", "autocti_workspace_test"),
+    ):
+        spec = workspaces[key]
+        assert spec["directory"] == directory
+        # Asserted through import_names rather than as repo-name literals: the
+        # tenant firewall (PyAutoMind/scripts/repos_sync.py) treats a satellite
+        # repo name in organ code as an instance fact, and this says the same
+        # thing while additionally proving every chain repo resolves in the map.
+        chain_packages = [smoke["import_names"][repo] for repo in spec["chain"]]
+        assert chain_packages == ["autonerves", "autofit", "autoarray", "autocti"]
+        # The CTI stack does NOT sit on the galaxy/lens libraries — the lens
+        # stack does. This mirrors what both repos' CI callers declare.
+        assert "autogalaxy" not in chain_packages
+        assert "autolens" not in chain_packages
+        # `import autocti` hard-requires arcticpy, which is not a pip
+        # dependency; the flag mirrors the `arcticpy: true` input those same
+        # CI callers pass to the reusable smoke-tests.yml.
+        assert spec["arcticpy"] is True
+
+
+def test_only_cti_workspaces_request_arcticpy(config):
+    """Every other workspace must be untouched by the arcticpy leg."""
+    for key, spec in config["smoke"]["workspaces"].items():
+        if key.startswith("autocti"):
+            continue
+        assert "arcticpy" not in spec, f"{key} should not request arcticpy"
+
+
+def test_every_smoke_chain_repo_has_an_import_name(config):
+    """A chain repo missing from import_names is invisible to the preflight.
+
+    The preflight proves each chain library imports from local source; it skips
+    any repo absent from the map, so an omission silently weakens the check
+    rather than failing it. That is how PyAutoCTI went unnoticed.
+    """
+    smoke = config["smoke"]
+    known = set(smoke["import_names"])
+    for key, spec in smoke["workspaces"].items():
+        missing = [repo for repo in spec["chain"] if repo not in known]
+        assert not missing, f"{key} chain has no import name for {missing}"
