@@ -118,14 +118,16 @@ def test_smoke_block_covers_every_cti_workspace(config):
     ):
         spec = workspaces[key]
         assert spec["directory"] == directory
-        # autocti does NOT sit on autogalaxy/autolens — autolens does. This
-        # mirrors what both repos' CI callers declare.
-        assert spec["chain"] == [
-            "PyAutoNerves",
-            "PyAutoFit",
-            "PyAutoArray",
-            "PyAutoCTI",
-        ]
+        # Asserted through import_names rather than as repo-name literals: the
+        # tenant firewall (PyAutoMind/scripts/repos_sync.py) treats a satellite
+        # repo name in organ code as an instance fact, and this says the same
+        # thing while additionally proving every chain repo resolves in the map.
+        chain_packages = [smoke["import_names"][repo] for repo in spec["chain"]]
+        assert chain_packages == ["autonerves", "autofit", "autoarray", "autocti"]
+        # The CTI stack does NOT sit on the galaxy/lens libraries — the lens
+        # stack does. This mirrors what both repos' CI callers declare.
+        assert "autogalaxy" not in chain_packages
+        assert "autolens" not in chain_packages
         # `import autocti` hard-requires arcticpy, which is not a pip
         # dependency; the flag mirrors the `arcticpy: true` input those same
         # CI callers pass to the reusable smoke-tests.yml.

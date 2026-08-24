@@ -47,7 +47,7 @@ class WorkspaceSpec:
     #: Build arcticpy into this workspace's environment before running its
     #: install epilogue. Mirrors the ``arcticpy: true`` input the CTI repos'
     #: CI callers already pass to the reusable ``smoke-tests.yml`` — declared
-    #: rather than inferred from ``PyAutoCTI in chain``, so the local runner
+    #: rather than inferred from the chain's contents, so the local runner
     #: and CI are configured by the same explicit statement.
     arcticpy: bool = False
 

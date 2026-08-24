@@ -63,8 +63,8 @@
 #                         apt leg is skipped. Default covers Debian/Ubuntu,
 #                         /usr/local and Homebrew-on-Apple-Silicon. Override it
 #                         for the no-root workaround where GSL headers are
-#                         extracted somewhere unprivileged (PyAutoCTI/AGENTS.md
-#                         section arcticpy).
+#                         extracted somewhere unprivileged (see the CTI
+#                         library's AGENTS.md, section arcticpy).
 #   PYTHON                Interpreter to install into. Default `python`, which
 #                         is correct both on a runner and inside an activated
 #                         venv; heart/smoke.py passes its isolated venv's
