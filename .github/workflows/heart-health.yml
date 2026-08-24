@@ -4,8 +4,9 @@ name: Heart Health
 # the ONE unified health dashboard (heart/dashboard.py) alongside the existing
 # alerting.
 #
-# It runs the two checks that need only the GitHub API (no local working tree) —
-# CI status and open PRs — across every polled repo, then:
+# It runs the four checks that need only the GitHub API (no local working tree) —
+# CI status, open PRs, CI wall-clock timing and the NO_RUN census — across every
+# polled repo, then:
 #   1. renders the unified board (one renderer, many formats) and publishes it
 #      three ways, all from the SAME snapshot so they cannot disagree:
 #        * GitHub Pages   — self-contained fmt="html" + a shields badge.json
@@ -72,13 +73,21 @@ jobs:
       - name: Install PyYAML
         run: pip install --quiet pyyaml
 
-      - name: Run cloud-safe checks (ci_status, open_prs)
+      - name: Run cloud-safe checks (ci_status, open_prs, ci_timing, no_run_census)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Four API-only checks: CI conclusions and open PRs (health), then CI
+          # wall-clock and the NO_RUN census (the ⏱ performance surface).
+          # ci_timing's aggregate step re-reads the board.json published by the
+          # previous run to carry its own per-gate history forward; a fetch
+          # failure there costs a sparkline, never the render. `set +e` keeps a
+          # single broken check from aborting the board.
           set +e
           bash heart/checks/ci_status.sh
           bash heart/checks/open_prs.sh
+          bash heart/checks/ci_timing.sh
+          bash heart/checks/no_run_census.sh
           exit 0
 
       - name: Aggregate snapshot + compute readiness verdict

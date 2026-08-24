@@ -100,6 +100,22 @@ required_workflows:
   workspaces_test: ["Smoke Tests"]                  # smoke_tests.yml
   howto: ["Smoke Tests", "Navigator Check"]         # smoke_tests.yml + navigator_check.yml
 
+# Performance policy: the extra workflows `ci_timing` times BEYOND each group's
+# `required_workflows` above. Those required gates are timed automatically (the
+# speed row and the health row must be about the same workflows); this block is
+# for the scheduled, full-surface drivers that gate nothing per-PR but whose
+# wall-clock is exactly what a slow-down would show up in first — the weekly
+# full workspace smoke sweep and the nightly release driver.
+#
+# Keyed by workflow *display name* (the `name:` field), same convention as
+# `required_workflows`, matched against the run's `name` in the Actions API.
+performance:
+  extra_workflows:
+    - repo: PyAutoHeart
+      workflow: "Workspace Smoke"
+    - repo: PyAutoBrain
+      workflow: "Nightly Release"
+
 # Version-skew policy: workspace pin vs installed library. Iterated directly
 # by heart/checks/version_skew.py — independent of polling (includes unpolled
 # repos like the assistant). An adopter replaces this with their own map.
@@ -205,6 +221,17 @@ thresholds:
   ci_status:
     failure_red: true     # any latest=failure → red
     in_progress_yellow: true
+  # CI wall-clock drift (heart/checks/ci_timing.py). A gate is flagged only when
+  # today's median is BOTH >= yellow_factor x its own recent history AND at
+  # least min_delta_s slower in absolute terms. Both gates, deliberately: the
+  # ratio alone screams at jitter (host load alone has produced 7x errors in
+  # this corpus, and an alarm that cries wolf gets ignored), while the absolute
+  # floor alone would miss a large relative drift on a cheap gate. Advisory —
+  # a slowed gate never reds the readiness verdict.
+  ci_timing:
+    yellow_factor: 1.5    # median / recent-history median >= this, AND
+    min_delta_s: 120      # ... at least this many seconds slower
+    history_cap: 30       # days of self-carried per-gate history
   worktree_drift:
     orphan_red: true      # orphan WT with uncommitted work → red
     orphan_yellow: true   # orphan WT (clean) → yellow

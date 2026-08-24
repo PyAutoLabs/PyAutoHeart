@@ -580,3 +580,250 @@ def test_json_v2_carries_blockers_and_actions():
     assert d["blockers"][0]["prompt"].startswith("/bug ")
     unobs = [s for s in d["sections"] if s["state"] == "unobserved"]
     assert unobs and all(s["action"]["payload"].startswith("pyauto-heart") for s in unobs)
+
+
+# --- the ⏱ performance surface: CI wall-clock + the NO_RUN census ------------
+# Fake repo/workflow names (the tenant firewall): the real ones live in
+# config/repos.yaml, which is the declared surface, never in test data.
+EVENT_URL = "https://ci.invalid/actions/runs/9"
+GATE_URL = "https://ci.invalid/RepoA/actions"
+EVENT_PROMPT = (
+    "/bug kill timer: RepoA Gate One timed_out after 18000s on main "
+    f"— {EVENT_URL}"
+)
+GATE_PROMPT = (
+    "/bug smoke gate RepoA: Gate One median wall-clock rose 600s → 900s vs its "
+    f"recent history — {GATE_URL}"
+)
+ROW_PROMPT = (
+    "/bug no_run: RepoA imaging/x.py SLOW since 2026-07-14 with no measurement — "
+    "retime against the real cap, then fix it or delete the marker"
+)
+
+
+def _ci_timing_slice(*, events=True, warn=True):
+    return {
+        "ts": TS,
+        "gates": [
+            {"repo": "RepoA", "workflow": "Gate One", "median_s": 900.0,
+             "pr_median_s": 960.0, "queue_median_s": 12.0, "max_s": 1200.0,
+             "runs_counted": 17, "conclusions": {"success": 17}, "superseded": 2,
+             "actions_url": GATE_URL, "baseline_s": 600.0, "ratio": 1.5,
+             "delta_s": 300.0, "state": "warn" if warn else "ok",
+             "prompt": GATE_PROMPT if warn else None},
+            {"repo": "RepoB", "workflow": "Gate Two", "median_s": 45.0,
+             "pr_median_s": None, "queue_median_s": 3.0, "max_s": 60.0,
+             "runs_counted": 4, "conclusions": {"success": 4}, "superseded": 0,
+             "actions_url": "https://ci.invalid/RepoB/actions", "baseline_s": None,
+             "ratio": None, "delta_s": None, "state": "ok", "prompt": None},
+        ],
+        "history": [
+            {"date": "2026-08-22", "gates": {"RepoA/Gate One": {"p50_s": 600.0, "runs": 10}}},
+            {"date": "2026-08-23", "gates": {"RepoA/Gate One": {"p50_s": 700.0, "runs": 12}}},
+            {"date": "2026-08-24", "gates": {"RepoA/Gate One": {"p50_s": 900.0, "runs": 17}}},
+        ],
+        "events": ([{"kind": "timed_out", "repo": "RepoA", "workflow": "Gate One",
+                     "run_url": EVENT_URL, "duration_s": 18000.0,
+                     "head_branch": "main", "at": TS, "prompt": EVENT_PROMPT}]
+                   if events else []),
+        "errors": [],
+    }
+
+
+def _no_run_slice():
+    return {
+        "ts": TS,
+        "totals": {"slow": 21, "needs_fix": 4, "permanent": 46,
+                   "unmeasured_slow": 7, "repos": 11, "repos_present": 10},
+        "repos": [
+            {"repo": "RepoA", "present": True, "slow": 3, "needs_fix": 1,
+             "permanent": 5, "unmeasured_slow": 2},
+            {"repo": "RepoB", "present": False, "slow": 0, "needs_fix": 0,
+             "permanent": 0, "unmeasured_slow": 0},
+        ],
+        "rows": [
+            {"repo": "RepoA", "entry": "imaging/x.py", "marker": "SLOW",
+             "date": "2026-07-14", "reason": "too slow", "measured": False,
+             "prompt": ROW_PROMPT},
+            {"repo": "RepoA", "entry": "imaging/y.py", "marker": "NEEDS_FIX",
+             "date": "", "reason": "raises", "measured": False,
+             "prompt": "/bug no_run: RepoA imaging/y.py NEEDS_FIX since unknown date"},
+        ],
+    }
+
+
+def _perf_snapshot(**kw):
+    return make_snapshot(ci_timing=_ci_timing_slice(**kw), no_run_census=_no_run_slice())
+
+
+def test_sparkline_is_pure_and_needs_two_points():
+    assert dashboard.sparkline([]) == ""
+    assert dashboard.sparkline([5]) == ""              # one point is not a trend
+    assert dashboard.sparkline([1, 2, 3, 4]) == "▁▃▆█"
+    assert dashboard.sparkline([7, 7, 7]) == "▅▅▅"     # flat, never a div-by-zero
+    assert dashboard.sparkline([1, "x", 3]) == "▁█"    # garbage dropped
+
+
+def test_both_performance_sections_render_in_every_fmt():
+    snap = _perf_snapshot()
+    v = make_verdict()
+    board = dashboard.build_board(snap, v, now=FRESH_NOW)
+    keys = [s.key for s in board.sections]
+    assert "ci_timing" in keys and "no_run_census" in keys
+    # ...and they sit after the Test run row, where the spec puts them.
+    assert keys.index("ci_timing") > keys.index("test_run")
+    for fmt in ("term", "md", "html", "json"):
+        # term upper-cases its row titles, so compare case-insensitively.
+        out = dashboard.render(snap, v, fmt=fmt, now=FRESH_NOW).lower()
+        assert "ci wall-clock" in out and "no_run census" in out
+
+
+def test_ci_timing_section_states_and_summary():
+    sec = _section(dashboard.build_board(_perf_snapshot(), make_verdict(), now=FRESH_NOW),
+                   "ci_timing")
+    assert sec.state == dashboard.FAIL          # an event is a hard row
+    assert "2 gates" in sec.summary
+    assert "slowest RepoA Gate One 15m" in sec.summary
+    assert "1 slowed" in sec.summary and "1 hang event" in sec.summary
+    # coverage beside time, always — and the gate's own history as a sparkline
+    assert sec.details[0].startswith("RepoA Gate One  p50 15m  max 20m  (17 runs)")
+    assert sec.details[0].rstrip().endswith("▁▃█")
+
+
+def test_ci_timing_without_events_is_warn_when_a_gate_slowed():
+    sec = _section(dashboard.build_board(_perf_snapshot(events=False), make_verdict(),
+                                         now=FRESH_NOW), "ci_timing")
+    assert sec.state == dashboard.WARN
+    # exactly one slowed gate has no run URL of its own → its prompt rides the row
+    assert sec.action["payload"] == GATE_PROMPT
+
+
+def test_ci_timing_all_quiet_is_ok():
+    sec = _section(dashboard.build_board(_perf_snapshot(events=False, warn=False),
+                                         make_verdict(), now=FRESH_NOW), "ci_timing")
+    assert sec.state == dashboard.OK
+    assert sec.action is None and sec.links == []
+
+
+def test_ci_timing_errors_are_warn_not_silence():
+    slice_ = _ci_timing_slice(events=False, warn=False)
+    slice_["errors"] = [{"repo": "RepoC", "error": "gh api exited 1"}]
+    board = dashboard.build_board(make_snapshot(ci_timing=slice_), make_verdict(),
+                                  now=FRESH_NOW)
+    sec = _section(board, "ci_timing")
+    assert sec.state == dashboard.WARN
+    assert "1 unavailable" in sec.summary
+
+
+def test_ci_timing_links_are_events_with_their_own_prompts():
+    sec = _section(dashboard.build_board(_perf_snapshot(), make_verdict(), now=FRESH_NOW),
+                   "ci_timing")
+    (link,) = sec.links
+    assert link["label"] == "RepoA timed_out"
+    assert link["url"] == EVENT_URL
+    assert link["prompt"] == EVENT_PROMPT
+
+
+def test_no_run_section_summary_details_and_action():
+    sec = _section(dashboard.build_board(_perf_snapshot(), make_verdict(), now=FRESH_NOW),
+                   "no_run_census")
+    assert sec.state == dashboard.WARN
+    assert sec.summary == ("21 SLOW (7 unmeasured) / 4 NEEDS_FIX / 46 permanent "
+                           "across 10 workspaces")
+    assert sec.details[0] == "RepoA: imaging/x.py SLOW 2026-07-14"
+    assert any("no no_run.yaml: RepoB" in d for d in sec.details)
+    assert sec.links == []
+    assert sec.action == {"label": "copy the fix prompt", "payload": ROW_PROMPT}
+
+
+def test_no_run_only_permanent_is_info_not_a_todo():
+    slice_ = {"ts": TS,
+              "totals": {"slow": 0, "needs_fix": 0, "permanent": 46,
+                         "unmeasured_slow": 0, "repos": 10, "repos_present": 10},
+              "repos": [], "rows": []}
+    sec = _section(dashboard.build_board(make_snapshot(no_run_census=slice_),
+                                         make_verdict(), now=FRESH_NOW), "no_run_census")
+    assert sec.state == dashboard.INFO
+    assert sec.action is None
+
+
+def test_no_run_measured_slow_only_is_ok():
+    slice_ = {"ts": TS,
+              "totals": {"slow": 3, "needs_fix": 0, "permanent": 5,
+                         "unmeasured_slow": 0, "repos": 2, "repos_present": 2},
+              "repos": [], "rows": []}
+    sec = _section(dashboard.build_board(make_snapshot(no_run_census=slice_),
+                                         make_verdict(), now=FRESH_NOW), "no_run_census")
+    assert sec.state == dashboard.OK
+
+
+def test_performance_rows_are_cloud_observed_not_local_only():
+    """Both slices come from the GitHub API, so the cloud job measures them
+    first-hand — marking them "not observed here" would be a lie."""
+    assert "ci_timing" not in dashboard.LOCAL_ONLY_FAMILIES
+    assert "no_run_census" not in dashboard.LOCAL_ONLY_FAMILIES
+    board = dashboard.build_board(_perf_snapshot(), make_verdict(),
+                                  unobserved=dashboard.LOCAL_ONLY_FAMILIES, now=FRESH_NOW)
+    assert _section(board, "ci_timing").state == dashboard.FAIL
+    assert _section(board, "no_run_census").state == dashboard.WARN
+
+
+def test_board_json_carries_the_performance_block_with_prompts_verbatim():
+    """The contract the Brain board consumes: every actionable row carries its
+    own ready-to-paste prompt, written by the producer, never re-derived."""
+    d = json.loads(dashboard.render(_perf_snapshot(), make_verdict(), fmt="json",
+                                    now=FRESH_NOW))
+    perf = d["performance"]
+    assert perf["schema"] == 1
+    gate = next(g for g in perf["gates"] if g["state"] == "warn")
+    assert {"repo", "workflow", "median_s", "pr_median_s", "max_s", "runs_counted",
+            "state", "prompt", "actions_url", "spark"} == set(gate)
+    assert gate["prompt"] == GATE_PROMPT          # verbatim, not re-derived
+    assert gate["spark"] == "▁▃█"
+    (event,) = perf["events"]
+    assert event["prompt"] == EVENT_PROMPT
+    assert event["run_url"] == EVENT_URL and event["repo"] == "RepoA"
+    assert perf["no_run"]["totals"]["unmeasured_slow"] == 7
+    assert perf["no_run"]["rows"][0]["prompt"] == ROW_PROMPT
+    assert len(perf["history"]) == 3
+    # schema v2 stays v2 — the performance block is purely additive.
+    assert d["schema_version"] == 2
+
+
+def test_performance_no_run_rows_are_capped_at_ten():
+    slice_ = _no_run_slice()
+    slice_["rows"] = [dict(slice_["rows"][0], entry=f"s{i}.py") for i in range(25)]
+    board = dashboard.build_board(make_snapshot(no_run_census=slice_), make_verdict(),
+                                  now=FRESH_NOW)
+    assert len(board.performance["no_run"]["rows"]) == 10
+
+
+def test_html_carries_the_event_prompt_in_a_data_copy_attribute():
+    out = dashboard.render(_perf_snapshot(), make_verdict(), fmt="html", now=FRESH_NOW)
+    assert f'data-copy="{_html_escape(EVENT_PROMPT)}"' in out
+    assert EVENT_URL in out
+
+
+def _html_escape(text: str) -> str:
+    import html as _h
+    return _h.escape(text, quote=True)
+
+
+def test_empty_slices_mean_no_sections_and_no_performance_block():
+    """An ABSENT block is honest; an empty one would imply "measured, nothing
+    there" — the distinction a consumer needs."""
+    board = dashboard.build_board(make_snapshot(), make_verdict(), now=FRESH_NOW)
+    keys = [s.key for s in board.sections]
+    assert "ci_timing" not in keys and "no_run_census" not in keys
+    assert board.performance is None
+    assert "performance" not in json.loads(
+        dashboard.render(make_snapshot(), make_verdict(), fmt="json", now=FRESH_NOW))
+
+
+def test_malformed_performance_slices_never_break_the_board():
+    for snap in (make_snapshot(ci_timing="nope", no_run_census=[]),
+                 make_snapshot(ci_timing={"gates": "nope", "events": None}),
+                 make_snapshot(no_run_census={"rows": [None, "x"], "totals": None})):
+        for fmt in ("term", "md", "html", "json"):
+            assert isinstance(dashboard.render(snap, make_verdict(), fmt=fmt,
+                                               now=FRESH_NOW), str)

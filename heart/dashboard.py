@@ -201,6 +201,13 @@ class Board:
     # prompt}. The flat lists stay for compatibility; this is what the html
     # 📋 buttons, the md links, and the json consumers act on.
     blockers: list[dict] = field(default_factory=list)
+    # The ⏱ performance surface: CI wall-clock gates + their history, hang/kill
+    # events, and the NO_RUN census — the block the Brain board consumes
+    # verbatim. Every actionable row inside carries its own ready-to-paste
+    # prompt; the consumer never re-derives one. None when neither timing slice
+    # was observed (an absent block is honest; an empty one implies "measured,
+    # nothing there").
+    performance: dict | None = None
 
 
 # --- verdict/state → glyph & colour maps ------------------------------------
@@ -233,6 +240,54 @@ def _glyph(state: str) -> str:
     if state == UNOBS:
         return c_meta("·")
     return glyph_info()
+
+
+# The sparkline ramp. Eight levels is enough resolution for a 30-point daily
+# history and narrow enough to sit inside a table cell on a phone.
+SPARK_CHARS = "▁▂▃▄▅▆▇█"
+
+
+def sparkline(values: Sequence[Any]) -> str:
+    """A unicode sparkline over ``values``; "" under two points.
+
+    Pure and defensive: non-numeric entries are dropped, and a flat series
+    renders mid-ramp rather than dividing by zero. One point is not a trend —
+    the empty string keeps the board from drawing a shape that means nothing
+    (the "every stored history is one value repeated seven times" lesson).
+    """
+    nums = [float(v) for v in (values or []) if isinstance(v, (int, float))]
+    if len(nums) < 2:
+        return ""
+    lo, hi = min(nums), max(nums)
+    if hi <= lo:
+        return SPARK_CHARS[len(SPARK_CHARS) // 2] * len(nums)
+    span = hi - lo
+    last = len(SPARK_CHARS) - 1
+    return "".join(
+        SPARK_CHARS[min(last, int((n - lo) / span * len(SPARK_CHARS)))] for n in nums
+    )
+
+
+def _dur(seconds: Any) -> str:
+    """Compact wall-clock: minutes above a minute, seconds below it."""
+    if not isinstance(seconds, (int, float)) or seconds <= 0:
+        return "?"
+    if seconds < 60:
+        return f"{int(round(seconds))}s"
+    return f"{int(round(seconds / 60))}m"
+
+
+def _gate_spark(history: Sequence[Any], key: str) -> str:
+    """The sparkline of one gate's daily p50s, oldest first."""
+    values: list[float] = []
+    for entry in sorted(
+        (e for e in (history or []) if isinstance(e, dict)),
+        key=lambda e: str(e.get("date") or ""),
+    ):
+        row = (entry.get("gates") or {}).get(key) if isinstance(entry.get("gates"), dict) else None
+        if isinstance(row, dict) and isinstance(row.get("p50_s"), (int, float)):
+            values.append(float(row["p50_s"]))
+    return sparkline(values)
 
 
 def _worst(states: Iterable[str]) -> str:
@@ -631,6 +686,13 @@ def build_board(
                 details.append(f"{stale_n} stale parked script(s)")
             sections.append(Section("test_run", "Test run", st, summary, details))
 
+    # CI wall-clock + the NO_RUN census (the ⏱ performance surface) -----------
+    # Both are CLOUD-observed (the Actions API + the contents API), so they are
+    # deliberately NOT in LOCAL_ONLY_FAMILIES: the scheduled job measures them
+    # first-hand and must not mark them "not observed here". Timing rows are
+    # advisory — they never move the readiness verdict.
+    performance = _performance_sections(snapshot, sections)
+
     # Version skew -----------------------------------------------------------
     if "version_skew" in unobserved:
         sections.append(_unobs_section("version_skew", "Version skew"))
@@ -745,7 +807,150 @@ def build_board(
         sections=sections,
         stale_reasons=stale_reasons,
         blockers=_structure_reasons(red, yellow, stale_reasons, repos),
+        performance=performance,
     )
+
+
+def _ci_timing_section(ct: dict, gates: list[dict], events: list[dict],
+                       errors: list, history: list[dict]) -> Section:
+    """The CI wall-clock row: how long the gates a change must pass now take."""
+    timed = [g for g in gates if _as_int(g.get("runs_counted"))]
+    warned = [g for g in gates if g.get("state") == "warn"]
+    # Events (a hang, a kill-timer suspect) are the only hard rows here; a
+    # slowed gate is advisory by construction — an alarm that cries wolf on
+    # timing jitter gets ignored, and then so does the real one.
+    if events:
+        st = FAIL
+    elif warned or errors:
+        st = WARN
+    else:
+        st = OK
+
+    bits = [f"{len(timed)} gates"]
+    slowest = max(timed, key=lambda g: g.get("median_s") or 0, default=None)
+    if slowest:
+        bits.append(f"slowest {slowest.get('repo')} {slowest.get('workflow')} "
+                    f"{_dur(slowest.get('median_s'))}")
+    if warned:
+        bits.append(f"{len(warned)} slowed")
+    if events:
+        bits.append(f"{len(events)} hang event" + ("" if len(events) == 1 else "s"))
+    if errors:
+        bits.append(f"{len(errors)} unavailable")
+
+    details = []
+    for g in sorted(timed, key=lambda g: g.get("median_s") or 0, reverse=True)[:5]:
+        # Coverage beside time, always: a speed row without the run count
+        # rewards a gate that got faster by running less.
+        line = (f"{g.get('repo')} {g.get('workflow')}  p50 {_dur(g.get('median_s'))}  "
+                f"max {_dur(g.get('max_s'))}  ({_as_int(g.get('runs_counted'))} runs)")
+        spark = _gate_spark(history, f"{g.get('repo')}/{g.get('workflow')}")
+        details.append(f"{line}  {spark}" if spark else line)
+
+    links = [
+        {"label": f"{e.get('repo')} {e.get('kind')}", "url": str(e.get("run_url")),
+         "prompt": str(e.get("prompt") or "")}
+        for e in events if e.get("run_url")
+    ][:4]
+
+    # A slowed gate has no run URL of its own (it is a distribution, not a run),
+    # so its prompt rides the row's 📋 when exactly one gate slowed. More than
+    # one and the board would have to pick a favourite — they all stay in the
+    # `performance` block instead, where each carries its own prompt.
+    action = None
+    if len(warned) == 1 and warned[0].get("prompt"):
+        action = {"label": "copy the slowdown prompt", "payload": str(warned[0]["prompt"])}
+
+    return Section("ci_timing", "CI wall-clock", st, " · ".join(bits), details,
+                   links=links, action=action)
+
+
+def _no_run_section(totals: dict, rows: list[dict], repo_rows: list[dict]) -> Section:
+    """The NO_RUN census row: what the release run is not running, and why."""
+    slow = _as_int(totals.get("slow"))
+    needs_fix = _as_int(totals.get("needs_fix"))
+    permanent = _as_int(totals.get("permanent"))
+    unmeasured = _as_int(totals.get("unmeasured_slow"))
+    present = _as_int(totals.get("repos_present"))
+
+    if unmeasured or needs_fix:
+        st = WARN
+    elif not slow and not needs_fix and permanent:
+        st = INFO           # only correct-by-design skips: a fact, not a to-do
+    else:
+        st = OK
+    summary = (f"{slow} SLOW ({unmeasured} unmeasured) / {needs_fix} NEEDS_FIX / "
+               f"{permanent} permanent across {present} workspaces")
+
+    details = [
+        f"{r.get('repo')}: {r.get('entry')} {r.get('marker')} {r.get('date') or 'undated'}"
+        for r in rows[:5]
+    ]
+    absent = [str(r.get("repo")) for r in repo_rows if not r.get("present")]
+    if absent:
+        # Honest data, not an error — some repos genuinely have no no_run.yaml.
+        details.append(f"no no_run.yaml: {', '.join(absent[:4])}")
+
+    action = None
+    if rows and rows[0].get("prompt"):
+        action = {"label": "copy the fix prompt", "payload": str(rows[0]["prompt"])}
+    return Section("no_run_census", "NO_RUN census", st, summary, details, action=action)
+
+
+def _performance_sections(snapshot: dict, sections: list[Section]) -> dict | None:
+    """Append the two ⏱ rows (when observed) and return the `performance` block.
+
+    The block is the contract the Brain board consumes verbatim: every
+    actionable row inside it — a slowed gate, a hang event, a marker row —
+    carries its own ready-to-paste prompt string, written by the producer and
+    never re-derived by a renderer.
+    """
+    ct = snapshot.get("ci_timing")
+    ct = ct if isinstance(ct, dict) else {}
+    nr = snapshot.get("no_run_census")
+    nr = nr if isinstance(nr, dict) else {}
+    if not ct and not nr:
+        return None
+
+    gates = [g for g in (ct.get("gates") or []) if isinstance(g, dict)]
+    events = [e for e in (ct.get("events") or []) if isinstance(e, dict)]
+    history = [h for h in (ct.get("history") or []) if isinstance(h, dict)]
+    errors = list(ct.get("errors") or [])
+    totals = nr.get("totals") if isinstance(nr.get("totals"), dict) else {}
+    rows = [r for r in (nr.get("rows") or []) if isinstance(r, dict)]
+    repo_rows = [r for r in (nr.get("repos") or []) if isinstance(r, dict)]
+
+    if ct:
+        sections.append(_ci_timing_section(ct, gates, events, errors, history))
+    if nr:
+        sections.append(_no_run_section(totals, rows, repo_rows))
+
+    return {
+        "schema": 1,
+        "gates": [
+            {
+                "repo": g.get("repo"),
+                "workflow": g.get("workflow"),
+                "median_s": g.get("median_s"),
+                "pr_median_s": g.get("pr_median_s"),
+                "max_s": g.get("max_s"),
+                "runs_counted": _as_int(g.get("runs_counted")),
+                "state": g.get("state") or OK,
+                "prompt": g.get("prompt"),
+                "actions_url": g.get("actions_url") or "",
+                "spark": _gate_spark(history, f"{g.get('repo')}/{g.get('workflow')}"),
+            }
+            for g in gates
+        ],
+        "history": history,
+        "events": events,
+        "errors": errors,
+        "no_run": {
+            "totals": totals,
+            "repos": repo_rows,
+            "rows": rows[:10],
+        },
+    }
 
 
 def _unobs_section(key: str, title: str) -> Section:
@@ -1120,7 +1325,7 @@ function fb(t){{window.prompt('Copy this:',t)}}
 
 def to_dict(board: Board) -> dict[str, Any]:
     """The machine surface (fmt='json') the Health Agent + mobile consume."""
-    return {
+    payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "verdict": board.verdict,
         "score": board.score,
@@ -1151,6 +1356,13 @@ def to_dict(board: Board) -> dict[str, Any]:
             for s in board.sections
         ],
     }
+    # The ⏱ performance block, additive (schema v2 stays v2). Emitted only when
+    # something was actually measured — a consumer must be able to tell "no
+    # timing observed" from "timing observed, nothing to report", and this is
+    # also the block the NEXT render reads back as its own history.
+    if board.performance is not None:
+        payload["performance"] = board.performance
+    return payload
 
 
 def badge_endpoint(board: Board) -> dict[str, Any]:

@@ -78,6 +78,8 @@ def aggregate() -> dict[str, Any]:
         "unit_test_timing": _read_json_or_default(HEART_STATE_DIR / "unit_test_timing.json", {}),
         "profiling_drift": _read_json_or_default(HEART_STATE_DIR / "profiling_drift.json", {}),
         "test_run": _read_json_or_default(HEART_STATE_DIR / "test_run.json", {}),
+        "ci_timing": _read_json_or_default(HEART_STATE_DIR / "ci_timing.json", {}),
+        "no_run_census": _read_json_or_default(HEART_STATE_DIR / "no_run_census.json", {}),
         "workspace_testmode_timing": _read_json_or_default(HEART_STATE_DIR / "workspace_testmode_timing.json", {}),
         "version_skew": _read_json_or_default(HEART_STATE_DIR / "version_skew.json", {}),
         "version_skew_pypi": _read_json_or_default(HEART_STATE_DIR / "version_skew_pypi.json", {}),
