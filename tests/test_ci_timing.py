@@ -424,10 +424,10 @@ def test_main_writes_sidecar_then_aggregates(tmp_path, monkeypatch, capsys):
         _run("Tests", "success", updated="2026-08-20T09:10:00Z"),
     ]})
     monkeypatch.setattr("sys.stdin", __import__("io").StringIO(payload))
-    rc = ct.main(["--name", "PyAutoFit", "--group", "libraries", "--owner", "OwnerX",
-                  "--ts", "T", "--out", str(per_repo / "PyAutoFit.ci_timing.json")])
+    rc = ct.main(["--name", "LibA", "--group", "libraries", "--owner", "OwnerX",
+                  "--ts", "T", "--out", str(per_repo / "LibA.ci_timing.json")])
     assert rc == 0
-    side = json.loads((per_repo / "PyAutoFit.ci_timing.json").read_text())
+    side = json.loads((per_repo / "LibA.ci_timing.json").read_text())
     # Uses the real config/repos.yaml: libraries gate on "Tests".
     assert side["workflows"]["Tests"]["median_s"] == 600.0
 
@@ -436,7 +436,7 @@ def test_main_writes_sidecar_then_aggregates(tmp_path, monkeypatch, capsys):
                   "--today", "2026-08-24", "--out", str(out)])
     assert rc == 0
     roll = json.loads(out.read_text())
-    assert roll["gates"][0]["repo"] == "PyAutoFit"
+    assert roll["gates"][0]["repo"] == "LibA"
     assert roll["history"][-1]["date"] == "2026-08-24"
     assert "gates timed" in capsys.readouterr().out
 
