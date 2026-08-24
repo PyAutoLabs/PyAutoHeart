@@ -201,6 +201,41 @@ jobs:
           fi
           python "$RUNNER" $RUNNER_ARGS
 
+      - name: Upload the smoke report dir (per-script timings)
+        # PyAutoHands#264. The runner writes a consolidated smoke_timings.json
+        # into its report dir on every report write — one row per executed
+        # script/notebook with the runner's OWN measured duration, the cap in
+        # force, and the exit code. In the job log that data evaporates with
+        # the ~90-day log retention and is only recovered by hand-scraping;
+        # as an artifact it becomes a standing dataset the Heart board can
+        # ingest, for every gate run across all ten workspaces at once.
+        #
+        # WHY A GLOB and not one literal path: this workflow does not pass
+        # `--report-dir` — each workspace's own `.github/scripts/run_smoke.py`
+        # does, and the runner script is deliberately left in the workspace
+        # (see the header). `test-results/` is the house name, used by
+        # workspace-validation.yml's own run_python.py invocations; the second
+        # pattern catches a workspace that named its report dir something else,
+        # so no repo needs editing for its timings to land here.
+        #
+        # No retention-days: the dataset is the point, so it keeps the repo's
+        # full default artifact retention rather than a shortened window.
+        #
+        # if: always() + if-no-files-found: ignore are both load-bearing. A
+        # docs-only change skips the matrix entirely; a crash before the first
+        # report write (a failed install, a missing script list) leaves no
+        # report dir at all. Neither is a reason to fail a gate — and an upload
+        # that failed closed would turn "we collected no timings" into "the PR
+        # is red", which is exactly backwards.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-timings-${{ matrix.python-version }}
+          path: |
+            workspace/test-results/
+            workspace/**/smoke_timings.json
+          if-no-files-found: ignore
+
       - name: Slack notify on failure
         if: ${{ failure() }}
         uses: slackapi/slack-github-action@v1.21.0

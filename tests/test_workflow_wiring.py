@@ -71,3 +71,55 @@ def test_smoke_reusable_docs_only_gate_is_wired_fail_closed():
     smoke = jobs["smoke"]
     assert smoke["needs"] == "changes"
     assert smoke["if"] == "needs.changes.outputs.docs_only != 'true'"
+
+
+def _step(job, name_fragment):
+    for step in job["steps"]:
+        if name_fragment in step.get("name", ""):
+            return step
+    raise AssertionError(f"no step named like {name_fragment!r}")
+
+
+def test_smoke_reusable_uploads_the_timing_dataset():
+    """The per-script timing dataset leaves the job as an artifact.
+
+    PyAutoHands#264: the runner writes smoke_timings.json into its report dir,
+    but a report dir dies with the runner unless something uploads it. The
+    artifact name carries the matrix python version so the two legs do not
+    collide.
+    """
+    smoke = _load("smoke-tests.yml")["jobs"]["smoke"]
+    step = _step(smoke, "Upload the smoke report dir")
+
+    assert step["uses"].startswith("actions/upload-artifact@v4")
+    assert step["with"]["name"] == "smoke-timings-${{ matrix.python-version }}"
+    assert "test-results/" in step["with"]["path"]
+    assert "smoke_timings.json" in step["with"]["path"]
+
+
+def test_smoke_timings_upload_cannot_fail_the_gate():
+    """A run with no timings is not a red PR.
+
+    Both guards matter: `always()` so a failing script still yields its
+    timings, and `if-no-files-found: ignore` so a pre-report crash (or a
+    workspace whose runner wrote nothing) does not turn a missing dataset into
+    a failed job.
+    """
+    smoke = _load("smoke-tests.yml")["jobs"]["smoke"]
+    step = _step(smoke, "Upload the smoke report dir")
+
+    assert step["if"] == "always()"
+    assert step["with"]["if-no-files-found"] == "ignore"
+
+
+def test_smoke_timings_upload_runs_before_the_slack_notifier():
+    """Ordering is the reason the artifact survives a failing run.
+
+    The Slack step is the job's terminal `failure()` hook; the upload has to
+    sit ahead of it so the timings for the run that just failed are collected
+    rather than skipped.
+    """
+    names = [s.get("name", "") for s in _load("smoke-tests.yml")["jobs"]["smoke"]["steps"]]
+    upload = next(i for i, n in enumerate(names) if "Upload the smoke report dir" in n)
+    slack = next(i for i, n in enumerate(names) if "Slack notify" in n)
+    assert upload < slack
