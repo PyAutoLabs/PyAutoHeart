@@ -1,0 +1,125 @@
+name: Install arcticpy
+description: >-
+  Build and install arcticpy, the C++ arctic clocking code that `import autocti`
+  hard-requires. The canonical recipe for the whole organism — every CTI repo's
+  CI consumes this action rather than carrying its own copy.
+
+# WHY THIS EXISTS
+#
+# arcticpy is deliberately NOT a pip dependency of autocti:
+#
+#   * its PyPI distribution is a source-only C++ sdist — it needs libgsl-dev
+#     headers and a toolchain to build, and there is no wheel;
+#   * its own requirements downgrade numpy below 2.0, which breaks a modern
+#     PyAuto stack.
+#
+# So it is built with --no-build-isolation (reusing the numpy already present
+# instead of resolving its own) and --no-deps (so it cannot drag numpy back
+# down). Those two flags are what make the recipe fiddly, and each one costs
+# something that has to be paid back explicitly:
+#
+#   --no-build-isolation  pip does NOT create an isolated build environment and
+#                         does NOT read pyproject's build-system.requires, so
+#                         every BUILD dependency must already be installed.
+#                         arcticpy declares none of them.
+#   --no-deps             pip installs no RUNTIME dependencies either, so the
+#                         packages arcticpy imports at import time must also be
+#                         installed by hand.
+#
+# Both sets are installed below, and the step ends by proving the result
+# actually imports.
+#
+# Verified 2026-08-24 in a clean container against a bare venv: each missing
+# build dependency failed the build naming the next one. Without setuptools the
+# build dies at `BackendUnavailable: Cannot import 'setuptools.build_meta'` —
+# and Python 3.12+ venvs no longer ship setuptools by default, which is why the
+# recipe that omitted it was a real hazard rather than a style nit.
+#
+# This step is intentionally SELF-CONTAINED: it upgrades pip/setuptools/wheel
+# itself rather than relying on a caller having done so in a preceding step.
+# The previous arrangement had autocti_workspace_test's smoke_install.sh
+# depending on a `pip install --upgrade pip setuptools wheel` line living in a
+# different repository's workflow, with nothing stating the dependency.
+
+inputs:
+  version:
+    description: "arcticpy version to build. THE single pin for the organism — bump it here."
+    required: false
+    default: "2.6"
+  sudo:
+    description: >-
+      Use sudo for the apt-get leg. GitHub-hosted runners need it; a container
+      already running as root does not have it. Set to 'false' there.
+    required: false
+    default: "true"
+  install-gsl:
+    description: >-
+      Install libgsl-dev via apt. Set to 'false' when GSL headers are already
+      present (a prepared image, or a no-root local extraction).
+    required: false
+    default: "true"
+
+outputs:
+  version:
+    description: "The arcticpy version actually installed, per importlib.metadata."
+    value: ${{ steps.verify.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install GSL headers
+      if: ${{ inputs.install-gsl == 'true' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        SUDO=""
+        if [ "${{ inputs.sudo }}" = "true" ]; then SUDO="sudo"; fi
+        $SUDO apt-get update
+        $SUDO apt-get install -y libgsl-dev
+
+    - name: Install arcticpy build dependencies
+      shell: bash
+      run: |
+        set -euo pipefail
+        # --no-build-isolation reads NOTHING from arcticpy's build-system
+        # requires, so these must be present before the build starts.
+        python -m pip install --upgrade pip setuptools wheel
+        python -m pip install numpy cython
+
+    - name: Install arcticpy runtime dependencies
+      shell: bash
+      run: |
+        set -euo pipefail
+        # --no-deps suppresses these, but arcticpy/read_noise.py imports both at
+        # import time (`from scipy.optimize import curve_fit`, `import
+        # matplotlib as mpl`) and __init__.py imports read_noise. So `import
+        # arcticpy` fails without them — which is why the verify step below,
+        # and every downstream `import autocti`, needs them present.
+        #
+        # The CTI stack installs scipy and matplotlib anyway as ordinary
+        # dependencies; naming them here is what makes this step verifiable on
+        # its own rather than only inside an already-built stack.
+        python -m pip install scipy matplotlib
+
+    - name: Build and install arcticpy ${{ inputs.version }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        python -m pip install "arcticpy==${{ inputs.version }}" \
+          --no-build-isolation --no-deps
+
+    - name: Verify arcticpy imports
+      id: verify
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Assert here rather than letting a broken build surface much later as a
+        # confusing `import autocti` failure in an unrelated job.
+        #
+        # NOTE: arcticpy exposes no __version__ attribute — the obvious
+        # `import arcticpy; print(arcticpy.__version__)` raises AttributeError
+        # even on a perfectly good install. The distribution metadata is the
+        # supported way to ask.
+        VERSION="$(python -c 'import arcticpy; from importlib.metadata import version; print(version("arcticpy"))')"
+        echo "arcticpy $VERSION imported successfully"
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
