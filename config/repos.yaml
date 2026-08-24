@@ -142,6 +142,7 @@ smoke:
     PyAutoArray: autoarray
     PyAutoGalaxy: autogalaxy
     PyAutoLens: autolens
+    PyAutoCTI: autocti
   workspaces:
     autofit:
       directory: autofit_workspace
@@ -161,6 +162,26 @@ smoke:
     howtolens:
       directory: HowToLens
       chain: [PyAutoNerves, PyAutoFit, PyAutoArray, PyAutoGalaxy, PyAutoLens]
+    # The CTI chain does NOT include autogalaxy/autolens — autolens sits on
+    # autogalaxy, autocti does not. It matches what both repos' CI callers
+    # declare.
+    #
+    # `arcticpy: true` mirrors the input those same CI callers pass to Heart's
+    # reusable smoke-tests.yml. `import autocti` hard-requires arcticpy, which is
+    # not a pip dependency (source-only C++ sdist, needs libgsl-dev, and its own
+    # requirements downgrade numpy below 2.0). CI gets it from the
+    # install-arcticpy composite action; a composite action cannot be invoked
+    # from smoke.py, so the local runner executes the same underlying script,
+    # `.github/actions/install-arcticpy/install_arcticpy.sh`. One recipe, one
+    # pin, both consumers — see PyAutoHeart#170/#172.
+    autocti:
+      directory: autocti_workspace
+      chain: [PyAutoNerves, PyAutoFit, PyAutoArray, PyAutoCTI]
+      arcticpy: true
+    autocti_test:
+      directory: autocti_workspace_test
+      chain: [PyAutoNerves, PyAutoFit, PyAutoArray, PyAutoCTI]
+      arcticpy: true
 
 # Excluded — not polled. Listed here for documentation only.
 excluded:

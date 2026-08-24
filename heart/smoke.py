@@ -19,6 +19,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shlex
 import shutil
 import subprocess
@@ -43,6 +44,22 @@ class WorkspaceSpec:
     key: str
     directory: str
     chain: tuple[str, ...]
+    #: Build arcticpy into this workspace's environment before running its
+    #: install epilogue. Mirrors the ``arcticpy: true`` input the CTI repos'
+    #: CI callers already pass to the reusable ``smoke-tests.yml`` — declared
+    #: rather than inferred from ``PyAutoCTI in chain``, so the local runner
+    #: and CI are configured by the same explicit statement.
+    arcticpy: bool = False
+
+
+#: The one place the arcticpy recipe lives, shared with the CI composite action
+#: that wraps it (``.github/actions/install-arcticpy/action.yml``). A composite
+#: action cannot be invoked from Python, so the *script* is what the two
+#: consumers have in common; duplicating the recipe here in Python would
+#: re-create the divergence PyAutoHeart#170 removed.
+ARCTICPY_INSTALLER = (
+    HEART_HOME / ".github" / "actions" / "install-arcticpy" / "install_arcticpy.sh"
+)
 
 
 def load_smoke_config(
@@ -57,7 +74,12 @@ def load_smoke_config(
     cfg = yaml.safe_load(Path(config_path).read_text()) or {}
     block = cfg["smoke"]
     workspaces = {
-        key: WorkspaceSpec(key, spec["directory"], tuple(spec["chain"]))
+        key: WorkspaceSpec(
+            key,
+            spec["directory"],
+            tuple(spec["chain"]),
+            bool(spec.get("arcticpy", False)),
+        )
         for key, spec in block["workspaces"].items()
     }
     return workspaces, dict(block["import_names"])
@@ -119,6 +141,13 @@ def environment_fingerprint(
         for path in watched
         if path.is_file()
     }
+    if spec.arcticpy and ARCTICPY_INSTALLER.is_file():
+        # Keyed by a fixed label rather than a path relative to organism_root:
+        # the installer lives in the Heart checkout, which is not required to
+        # sit under the organism root at all. Hashing it means editing the
+        # recipe -- or bumping the arcticpy pin -- invalidates the cached
+        # environment, instead of silently reusing one built from the old one.
+        files["PyAutoHeart:install_arcticpy.sh"] = _sha256(ARCTICPY_INSTALLER)
     return {
         "schema": FINGERPRINT_SCHEMA,
         "workspace": spec.key,
@@ -234,6 +263,36 @@ def _optional_local_targets(organism_root: Path, chain: Iterable[str]) -> list[s
     return targets
 
 
+def _install_arcticpy(python: Path, env: dict[str, str]) -> None:
+    """Build arcticpy into ``python``'s environment via the shared recipe.
+
+    Runs the very script the CI composite action runs, so there is exactly one
+    recipe, and one pin, in the organism. The GSL leg is disabled: a local
+    ``pyauto-heart smoke`` must not mutate system packages
+    (and ``apt-get`` does not exist on macOS), so the script proves the headers
+    are present and fails with the install line rather than reaching for sudo.
+
+    ``PYTHON`` is passed explicitly rather than relying on the venv being first
+    on PATH -- this environment is prepared, not activated, and a bare
+    ``python`` resolving to the wrong interpreter would install arcticpy
+    somewhere the smoke run never looks.
+    """
+    if not ARCTICPY_INSTALLER.is_file():
+        raise SmokeEnvironmentError(
+            f"arcticpy installer missing: {ARCTICPY_INSTALLER}. This workspace "
+            "declares `arcticpy: true` in the `smoke:` block of "
+            "config/repos.yaml, which requires the shared recipe."
+        )
+    _run(
+        ["bash", str(ARCTICPY_INSTALLER)],
+        env={
+            **env,
+            "PYTHON": str(python),
+            "ARCTICPY_INSTALL_GSL": "false",
+        },
+    )
+
+
 def _install_environment(
     environment: Path,
     organism_root: Path,
@@ -247,6 +306,9 @@ def _install_environment(
         env=env,
     )
     _run([python, "-m", "pip", "install", "pyyaml"], env=env)
+
+    if spec.arcticpy:
+        _install_arcticpy(python, env)
 
     workspace = organism_root / spec.directory
     installer = workspace / ".github" / "scripts" / "smoke_install.sh"
@@ -282,6 +344,49 @@ def _install_environment(
         )
 
 
+#: `pip check` lines that a CTI environment ALWAYS produces, and must.
+#:
+#: arcticpy declares ``numpy~=1.21`` but is installed with ``--no-deps`` on
+#: purpose: honouring that requirement downgrades numpy below 2.0 and breaks the
+#: rest of the PyAuto stack. The dependency metadata therefore stays permanently
+#: unsatisfied, and ``pip check`` reports it every single time:
+#:
+#:     arcticpy 2.6 has requirement numpy~=1.21, but you have numpy 2.5.2.
+#:
+#: Without this exception the preflight kills every CTI environment immediately
+#: after building it, which would make `arcticpy: true` useless. The exception is
+#: deliberately narrow -- one package, one requirement -- so a real conflict, in
+#: arcticpy or anything else, still fails the preflight.
+_ARCTICPY_EXPECTED_CONFLICT = re.compile(
+    r"^arcticpy \S+ has requirement numpy\S+, but you have numpy \S+\.?$"
+)
+
+
+def _pip_check(python: Path, env: Mapping[str, str], spec: WorkspaceSpec) -> None:
+    """Run ``pip check``, tolerating only the CTI stack's designed-in conflict."""
+    # Goes through _run (not subprocess directly) so it stays consistent with
+    # every other command here -- same env handling, same mockability.
+    try:
+        _run([python, "-m", "pip", "check"], env=env, capture_output=True)
+        return
+    except subprocess.CalledProcessError as exc:
+        output = (exc.stdout or "") + (exc.stderr or "")
+
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    if spec.arcticpy:
+        lines = [
+            line
+            for line in lines
+            if not _ARCTICPY_EXPECTED_CONFLICT.match(line)
+            and line != "No broken requirements found."
+        ]
+    if lines:
+        raise SmokeEnvironmentError(
+            "pip check reported broken requirements in "
+            f"{python}:\n  " + "\n  ".join(lines)
+        )
+
+
 def _preflight(
     environment: Path,
     organism_root: Path,
@@ -307,7 +412,7 @@ def _preflight(
         raise SmokeEnvironmentError(
             f"interpreter leak: expected {python}, subprocess used {executable}"
         )
-    _run([python, "-m", "pip", "check"], env=env, capture_output=True)
+    _pip_check(python, env, spec)
 
     expected = {
         IMPORT_NAMES[repo]: str((organism_root / repo).resolve())
