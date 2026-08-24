@@ -16,6 +16,13 @@ name: Smoke Tests (reusable)
 # (.github/scripts/smoke_install.sh, receiving PYTHON_VERSION — extras,
 # pins, version conditionals) and the smoke runner itself.
 #
+# One deliberate exception: `arcticpy: true`. arcticpy is a stack-level system
+# dependency (source-only C++ sdist, GSL headers, a numpy-downgrade trap) whose
+# recipe had drifted into four separate copies across the CTI repos. That is
+# not workspace-specific variation, it is one recipe with no owner — so Heart
+# owns it, in .github/actions/install-arcticpy, and the CTI workspace asks for
+# it with a flag instead of carrying a copy in its epilogue.
+#
 # `runner` lets a caller point that same ceremony at a DIFFERENT workspace
 # script — a re-timing harness, a one-off diagnostic sweep — instead of
 # copying the chain-checkout/install steps into a second workflow. The copy is
@@ -61,6 +68,13 @@ on:
         required: false
         type: string
         default: ""
+      arcticpy:
+        description: >-
+          Install arcticpy (the C++ arctic clocking code `import autocti`
+          requires) before the workspace epilogue. CTI workspaces only.
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   # Docs-only gate: skip the matrix when the diff touches nothing but prose.
@@ -140,6 +154,15 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+
+      # arcticpy is a stack-level system dependency with a fiddly, easy-to-drift
+      # build recipe — it belongs to Heart, not to each workspace's epilogue.
+      # Gated the same way lib-tests.yml gates its own arcticpy step, so every
+      # non-CTI caller is unaffected. This runs BEFORE the epilogue: the
+      # epilogue installs autocti, and `import autocti` needs arcticpy present.
+      - name: Install arcticpy (CTI workspaces only — source-only C++ sdist)
+        if: ${{ inputs.arcticpy }}
+        uses: PyAutoLabs/PyAutoHeart/.github/actions/install-arcticpy@main
 
       - name: Install (base + the workspace's own epilogue)
         env:

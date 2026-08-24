@@ -78,16 +78,13 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
+      # The canonical arcticpy install for the whole organism, including its
+      # version pin, lives in the action — not in this file and not in any
+      # consumer repo. Referenced at @main rather than by local path because
+      # this is a REUSABLE workflow: it runs in the caller's context.
       - name: Install arcticpy (autocti only — source-only C++ sdist)
         if: ${{ inputs.package == 'autocti' }}
-        run: |
-          # arcticpy needs GSL headers to compile, and installing it with its
-          # own requirements downgrades numpy below 2.0 — so numpy is installed
-          # first and arcticpy is built without deps or build isolation.
-          sudo apt-get update && sudo apt-get install -y libgsl-dev
-          pip install --upgrade pip setuptools wheel
-          pip install numpy cython
-          pip install arcticpy==2.6 --no-build-isolation --no-deps
+        uses: PyAutoLabs/PyAutoHeart/.github/actions/install-arcticpy@main
 
       - name: Install (deps + package from source, [optional] extras)
         run: |
@@ -177,13 +174,13 @@ jobs:
           python-version: "3.13"
           cache: pip
 
+      # The canonical arcticpy install for the whole organism, including its
+      # version pin, lives in the action — not in this file and not in any
+      # consumer repo. Referenced at @main rather than by local path because
+      # this is a REUSABLE workflow: it runs in the caller's context.
       - name: Install arcticpy (autocti only — source-only C++ sdist)
         if: ${{ inputs.package == 'autocti' }}
-        run: |
-          sudo apt-get update && sudo apt-get install -y libgsl-dev
-          pip install --upgrade pip setuptools wheel
-          pip install numpy cython
-          pip install arcticpy==2.6 --no-build-isolation --no-deps
+        uses: PyAutoLabs/PyAutoHeart/.github/actions/install-arcticpy@main
 
       - name: Install ([optional] extras), then strip the jax package family
         run: |

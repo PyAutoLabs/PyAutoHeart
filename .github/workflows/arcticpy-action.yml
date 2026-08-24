@@ -1,0 +1,59 @@
+name: arcticpy Action Self-Test
+
+# The install-arcticpy composite action is consumed cross-repo at
+# `PyAutoLabs/PyAutoHeart/.github/actions/install-arcticpy@main`, so a change to
+# the recipe only reaches its consumers once it is ON main — which means nothing
+# would exercise it before merge, and a broken recipe would land red in four
+# repos at once (PyAutoHeart lib-tests, PyAutoCTI, autocti_workspace_test smoke,
+# autocti_assistant wiki-currency).
+#
+# This job closes that window. It references the action by LOCAL path, so it
+# builds the version on the branch under review, and it does not stop at
+# "pip exited 0": it clocks a single bright pixel through arctic and asserts the
+# result is a real CTI trail. That is the property the CTI repos actually
+# depend on.
+
+on:
+  pull_request:
+    paths:
+      - ".github/actions/install-arcticpy/**"
+      - ".github/workflows/arcticpy-action.yml"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "arcticpy version to test (default: the action's own pin)"
+        required: false
+        type: string
+
+concurrency:
+  group: arcticpy-action-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The build depends on the interpreter (3.12+ venvs no longer ship
+        # setuptools), so both supported minors are exercised.
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install arcticpy (the action under test, from this branch)
+        id: arctic
+        uses: ./.github/actions/install-arcticpy
+        with:
+          version: ${{ inputs.version || '2.6' }}
+
+      - name: Report the version the action installed
+        run: echo "action reported arcticpy ${{ steps.arctic.outputs.version }}"
+
+      - name: Clock a bright pixel and assert a CTI trail
+        run: python .github/scripts/arcticpy_smoke.py
