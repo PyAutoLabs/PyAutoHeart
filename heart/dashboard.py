@@ -157,6 +157,16 @@ HEART_HOME = pathlib.Path(__file__).resolve().parents[1]
 BOARD_KEY = "heart"  # this board's entry in the Brain's palette table
 
 
+def _workspace_root() -> pathlib.Path:
+    """Where the sibling PyAuto checkouts live: `$PYAUTO_ROOT`, else `~/Code`.
+
+    The org's own directory name is an instance fact, so it is never written
+    here — a workspace that does not follow the default sets `$PYAUTO_ROOT`
+    (the same variable the dev-flow doors read).
+    """
+    return pathlib.Path(os.environ.get("PYAUTO_ROOT") or pathlib.Path.home() / "Code")
+
+
 def theme():
     """The shared theme module, or a RuntimeError naming the fix.
 
@@ -165,7 +175,7 @@ def theme():
     """
     for cand in (os.environ.get("PYAUTO_BRAIN"), HEART_HOME / "PyAutoBrain",
                  HEART_HOME.parent / "PyAutoBrain",
-                 pathlib.Path.home() / "Code" / "PyAutoLabs" / "PyAutoBrain"):
+                 _workspace_root() / "PyAutoBrain"):
         if not cand:
             continue
         board_dir = pathlib.Path(cand) / "board"
