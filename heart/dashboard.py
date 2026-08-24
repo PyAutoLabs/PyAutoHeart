@@ -1284,7 +1284,15 @@ table.board tr.unobs td.name,table.board tr.unobs td.sum{color:var(--muted)}
 ul.det{margin:.35rem 0 0;padding-left:1.1rem;color:var(--muted);
  font-size:.85rem}
 .ago{color:var(--muted)}
-a.out{font-size:.85rem;white-space:nowrap}
+/* The out-links carry DATA in their labels — `<repo> run`, and this org's
+   longest repo name is 36 characters. `nowrap` made one of those a single
+   unbreakable 500px word, which set the summary column's min-content width
+   and pushed the whole page sideways on a phone (measured: a 375px viewport
+   scrolling to 521px). Nothing is lost by letting them wrap: a short label
+   like `run ↗` has no wrap opportunity to take, and a long one should break
+   rather than break the page. The shared theme's `overflow-wrap` does the
+   rest. */
+a.out{font-size:.85rem}
 .stale{background:var(--btn);border:1px solid var(--warn);color:var(--warn);
  padding:.55rem .75rem;border-radius:8px}
 .reasons{margin:1.5rem 0}
