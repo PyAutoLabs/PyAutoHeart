@@ -43,6 +43,8 @@ from __future__ import annotations
 import datetime
 import html as _html
 import json
+import os
+import pathlib
 import sys
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Sequence
@@ -145,6 +147,37 @@ GATED_WORKSPACE_GROUPS = frozenset({"workspaces", "workspaces_test", "howto"})
 # that links "the webpage" agrees on the URL.
 PAGES_URL = "https://pyautolabs.github.io/PyAutoHeart/"
 
+# The family look lives once, in the Brain (``board/_theme.py``): the
+# stylesheet, the hero that redraws this organ's logo as a mark, and the
+# cross-board footer. Imported rather than copied, so the look moves for the
+# whole family at once — heart-health.yml checks PyAutoBrain out beside this
+# repo, and a local run finds the sibling checkout the way the other PyAuto
+# tools resolve each other.
+HEART_HOME = pathlib.Path(__file__).resolve().parents[1]
+BOARD_KEY = "heart"  # this board's entry in the Brain's palette table
+
+
+def theme():
+    """The shared theme module, or a RuntimeError naming the fix.
+
+    Only the html surface needs it; the md/json/badge surfaces never call
+    here, so the Health Agent keeps working with no PyAutoBrain in reach.
+    """
+    for cand in (os.environ.get("PYAUTO_BRAIN"), HEART_HOME / "PyAutoBrain",
+                 HEART_HOME.parent / "PyAutoBrain",
+                 pathlib.Path.home() / "Code" / "PyAutoLabs" / "PyAutoBrain"):
+        if not cand:
+            continue
+        board_dir = pathlib.Path(cand) / "board"
+        if (board_dir / "_theme.py").is_file():
+            if str(board_dir) not in sys.path:
+                sys.path.insert(0, str(board_dir))
+            import _theme
+            return _theme
+    raise RuntimeError(
+        "the shared board theme (PyAutoBrain/board/_theme.py) is not in reach "
+        "— check PyAutoBrain out beside this repo or set PYAUTO_BRAIN")
+
 # The one-tap board family — the cross-board footer nav every board carries,
 # each board skipping its own entry. The base comes from PAGES_URL so the
 # owner is named exactly once in this file.
@@ -154,9 +187,11 @@ BOARD_FAMILY = (("mind", "PyAutoMind"), ("brain", "PyAutoBrain"),
 
 
 def _boards_nav_html() -> str:
+    """The cross-board footer — one chip per sibling, each in its own organ's
+    colour (the theme owns the chip palette; this board owns the URLs)."""
     base = PAGES_URL.rsplit("/", 2)[0]
-    return " · ".join(f'<a href="{base}/{repo}/">{name}</a>'
-                      for name, repo in BOARD_FAMILY)
+    links = {key: f"{base}/{repo}/" for key, repo in BOARD_FAMILY}
+    return theme().boards_footer(links, BOARD_KEY)
 
 # v2: sections gained links/action/observed_ago; the board gained structured
 # `blockers` ({text, severity, repo, repo_url, run_url, prompt}). Additive.
@@ -1195,8 +1230,7 @@ def _copy_btn(payload: str, label: str = "copy") -> str:
     and the payload — a Claude prompt or a command — is ready to paste."""
     return (f"<button class='copy' type='button' "
             f"title='{_html.escape(label, quote=True)}' "
-            f"data-copy=\"{_html.escape(payload, quote=True)}\" "
-            f"onclick='cp(this)'>📋</button>")
+            f"data-cmd=\"{_html.escape(payload, quote=True)}\">📋</button>")
 
 
 def _html_reason(item: dict) -> str:
@@ -1212,6 +1246,42 @@ def _html_reason(item: dict) -> str:
     if item.get("prompt"):
         text += " " + _copy_btn(item["prompt"], "copy the fix prompt for a Claude Code chat")
     return f"<li>{text}</li>"
+
+
+# The Heart's verdict in the theme's tone vocabulary. The board's own
+# `_VERDICT_STATE` stays the internal truth; this is only how it is painted.
+_VERDICT_TONE = {"red": "bad", "yellow": "warn", "stale": "warn",
+                 "green": "ok"}
+
+_LEDE = ("Is it safe to release? Every check the Heart observes, with the "
+         "evidence behind each verdict. \U0001f4cb copies a ready-to-paste prompt "
+         "or command for a Claude Code chat.")
+
+# The page-specific shapes the shared sheet has no opinion on: the per-row
+# state dot, the evidence list, the stale banner. Written against the theme's
+# variables, so this board follows the family accent rather than setting a
+# second palette.
+_EXTRA_CSS = """
+table.board td.dot{width:1.15rem;padding-right:.35rem}
+table.board td.dot::before{content:"";display:inline-block;width:10px;
+ height:10px;border-radius:50%;margin-top:.35rem;background:var(--muted)}
+table.board tr.ok td.dot::before{background:var(--ok)}
+table.board tr.warn td.dot::before{background:var(--warn)}
+table.board tr.fail td.dot::before{background:var(--bad)}
+table.board tr.info td.dot::before{background:var(--accent)}
+table.board td.name{font-weight:600;white-space:nowrap}
+table.board tr.unobs td.name,table.board tr.unobs td.sum{color:var(--muted)}
+ul.det{margin:.35rem 0 0;padding-left:1.1rem;color:var(--muted);
+ font-size:.85rem}
+.ago{color:var(--muted)}
+a.out{font-size:.85rem;white-space:nowrap}
+.stale{background:var(--btn);border:1px solid var(--warn);color:var(--warn);
+ padding:.55rem .75rem;border-radius:8px}
+.reasons{margin:1.5rem 0}
+.reasons li{margin:.3rem 0}
+.hint{color:var(--muted);font-size:.85em;margin:.5rem 0 0}
+footer{margin-top:2rem;color:var(--muted);font-size:.82em}
+"""
 
 
 def _render_html(board: Board) -> str:
@@ -1253,73 +1323,28 @@ def _render_html(board: Board) -> str:
         "<p class='stale'>⚠️ This board is stale — the last tick is older than the "
         "freshness threshold; the numbers may not be current.</p>" if board.stale else ""
     )
+    t_ = theme()
+    hero = t_.hero(BOARD_KEY, "Dashboard", _LEDE)
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PyAuto health — {word}</title>
-<style>
-  :root {{ color-scheme: light dark; }}
-  * {{ box-sizing: border-box; }}
-  body {{ font: 15px/1.5 -apple-system, Segoe UI, Roboto, sans-serif;
-         margin: 0; padding: 2rem 1rem; background: #0d1117; color: #c9d1d9; }}
-  .wrap {{ max-width: 760px; margin: 0 auto; }}
-  h1 {{ font-size: 1.3rem; margin: 0 0 .25rem; }}
-  .verdict {{ display: inline-block; padding: .3rem .9rem; border-radius: 999px;
-             font-weight: 700; letter-spacing: .04em; }}
-  .verdict.ok {{ background: #1a7f37; color: #fff; }}
-  .verdict.warn {{ background: #9e6a03; color: #fff; }}
-  .verdict.fail {{ background: #b62324; color: #fff; }}
-  .meta {{ color: #8b949e; margin: .5rem 0 1.25rem; font-size: .9rem; }}
-  .stale {{ background: #341a00; color: #e3b341; padding: .5rem .75rem;
-           border-radius: 6px; }}
-  table {{ width: 100%; border-collapse: collapse; }}
-  td {{ padding: .55rem .5rem; border-top: 1px solid #21262d; vertical-align: top; }}
-  td.dot {{ width: 10px; }}
-  td.dot::before {{ content: ""; display: inline-block; width: 10px; height: 10px;
-                   border-radius: 50%; margin-top: .35rem; }}
-  tr.ok td.dot::before {{ background: #3fb950; }}
-  tr.warn td.dot::before {{ background: #d29922; }}
-  tr.fail td.dot::before {{ background: #f85149; }}
-  tr.unobs td.dot::before {{ background: #6e7681; }}
-  tr.info td.dot::before {{ background: #58a6ff; }}
-  td.name {{ font-weight: 600; white-space: nowrap; }}
-  tr.unobs td.name, tr.unobs td.sum {{ color: #8b949e; }}
-  ul.det {{ margin: .35rem 0 0; padding-left: 1.1rem; color: #8b949e;
-           font-size: .85rem; }}
-  .reasons {{ margin: 1.5rem 0; }}
-  .reasons h2 {{ font-size: 1rem; }}
-  .reasons li {{ margin: .25rem 0; }}
-  a {{ color: #58a6ff; text-decoration: none; }}
-  a:hover {{ text-decoration: underline; }}
-  a.out {{ font-size: .85rem; white-space: nowrap; }}
-  .ago {{ color: #8b949e; font-size: .85rem; }}
-  .hint {{ color: #8b949e; font-size: .8rem; margin: .5rem 0 0; }}
-  button.copy {{ background: #21262d; border: 1px solid #30363d; border-radius: 6px;
-                color: #c9d1d9; cursor: pointer; padding: .05rem .45rem;
-                margin-left: .35rem; font-size: .85rem; line-height: 1.4; }}
-  button.copy:hover {{ background: #30363d; }}
-  footer {{ margin-top: 2rem; color: #8b949e; font-size: .8rem; }}
-</style>
-<script>
-function cp(b){{var t=b.getAttribute('data-copy');
- if(navigator.clipboard&&navigator.clipboard.writeText){{
-   navigator.clipboard.writeText(t).then(function(){{ok(b)}},function(){{fb(t)}});
- }}else{{fb(t)}}}}
-function ok(b){{b.textContent='✓';setTimeout(function(){{b.textContent='📋'}},1200)}}
-function fb(t){{window.prompt('Copy this:',t)}}
-</script></head>
-<body><div class="wrap">
-  <h1>PyAutoHeart Dashboard</h1>
-  <p><span class="verdict {vstate}">{word} · score {board.score}</span></p>
-  <p class="meta">snapshot {_html.escape(board.ts)} · {age} · <a href="dashboard.md">markdown version</a></p>
-  {stale_html}
-  {reasons_html}
-  <table>{''.join(rows)}</table>
-  <footer>Rendered by <code>heart/dashboard.py</code> — one renderer, many surfaces.
-  Observer only: PyAutoHeart never writes outside its own repo/state.
-  📋 buttons copy a Claude prompt or command to your clipboard.</footer>
-  <p class="meta">Boards: {_boards_nav_html()}</p>
-</div></body></html>
+<title>PyAutoHeart Dashboard — {word}</title>
+<style>{t_.css(BOARD_KEY)}{_EXTRA_CSS}</style>
+</head>
+<body>
+{hero}
+<p class="verdict {_VERDICT_TONE.get(board.verdict, '')}"><b>{word} · score
+ {board.score}</b><span class="muted">snapshot {_html.escape(board.ts)} ·
+ {age} · <a href="dashboard.md">markdown version</a></span></p>
+{stale_html}
+{reasons_html}
+<table class="recent board">{''.join(rows)}</table>
+{_boards_nav_html()}
+<footer>Rendered by <code>heart/dashboard.py</code> — one renderer, many
+surfaces. Observer only: PyAutoHeart never writes outside its own repo/state.
+\U0001f4cb buttons copy a Claude prompt or command to your clipboard.</footer>
+<script>{t_.JS}</script>
+</body></html>
 """
 
 
