@@ -1299,6 +1299,20 @@ a.out{font-size:.85rem}
 .reasons li{margin:.3rem 0}
 .hint{color:var(--muted);font-size:.85em;margin:.5rem 0 0}
 footer{margin-top:2rem;color:var(--muted);font-size:.82em}
+/* Narrow screens: the shared theme turns a table row into a stacked card
+   (`table.recent` under its own breakpoint); these three lines say how THIS
+   board's cells fall into it. Measured at a 390px viewport before: the name
+   column held 127px for one short line while the summary was squeezed into
+   213px and ran 472px down the screen — the text bunched to the right with
+   the name column left as empty height beside it. Now the dot and the name
+   read as one header line and the summary takes the full width beneath. */
+@media(max-width:34rem){
+ table.board td.dot{width:auto;padding-right:.4rem}
+ table.board td.dot::before{margin-top:0}
+ table.board td.name{white-space:normal}
+ table.board td.sum{flex:1 0 100%;margin-top:.15rem}
+ table.board ul.det{padding-left:.9rem}
+}
 """
 
 
