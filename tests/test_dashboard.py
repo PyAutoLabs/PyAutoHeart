@@ -466,7 +466,7 @@ def test_html_carries_copy_buttons_and_run_links():
     v = make_verdict("red", 45,
                      red_reasons=["autolens_workspace: Smoke Tests failure on main"])
     out = dashboard.render(_failing_snapshot(), v, fmt="html", now=FRESH_NOW)
-    assert "data-copy=" in out and "cp(this)" in out
+    assert "data-cmd=" in out  # the shared copy handler's payload hook
     assert "/bug Heart board: autolens_workspace" in out
     assert RUN_URL in out
     # the failing repo group row links the run too
@@ -800,7 +800,7 @@ def test_performance_no_run_rows_are_capped_at_ten():
 
 def test_html_carries_the_event_prompt_in_a_data_copy_attribute():
     out = dashboard.render(_perf_snapshot(), make_verdict(), fmt="html", now=FRESH_NOW)
-    assert f'data-copy="{_html_escape(EVENT_PROMPT)}"' in out
+    assert f'data-cmd="{_html_escape(EVENT_PROMPT)}"' in out
     assert EVENT_URL in out
 
 
@@ -827,3 +827,16 @@ def test_malformed_performance_slices_never_break_the_board():
         for fmt in ("term", "md", "html", "json"):
             assert isinstance(dashboard.render(snap, make_verdict(), fmt=fmt,
                                                now=FRESH_NOW), str)
+
+
+def test_html_wears_the_shared_family_theme():
+    # The look is the Brain's `board/_theme.py`, not a stylesheet copied in
+    # here: the page must carry this board's hero (mark, wordmark, tagline)
+    # and its accent, or it has silently fallen out of the family.
+    t = dashboard.theme()
+    out = dashboard.render(_failing_snapshot(), make_verdict("red", 45),
+                           fmt="html", now=FRESH_NOW)
+    assert t.MARKS[dashboard.BOARD_KEY] in out
+    assert t.ORGANS[dashboard.BOARD_KEY]["tagline"] in out
+    assert t.ORGANS[dashboard.BOARD_KEY]["ink_dark"] in out
+    assert "#58a6ff" not in out  # the old hard-coded GitHub blue
