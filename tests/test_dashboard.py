@@ -840,3 +840,18 @@ def test_html_wears_the_shared_family_theme():
     assert t.ORGANS[dashboard.BOARD_KEY]["tagline"] in out
     assert t.ORGANS[dashboard.BOARD_KEY]["ink_dark"] in out
     assert "#58a6ff" not in out  # the old hard-coded GitHub blue
+
+
+def test_a_long_out_link_label_cannot_push_the_page_sideways():
+    """The out-links carry DATA in their labels (`<repo> run`), and this org's
+    longest repo name is 36 characters. Under `white-space:nowrap` that was a
+    single unbreakable ~500px word: it set the summary column's min-content
+    width and scrolled the whole board sideways on a phone (a 375px viewport
+    measured 521px). Short labels have no wrap opportunity to take, so nothing
+    is lost by letting them break."""
+    out = dashboard.render(
+        _failing_snapshot() if "_failing_snapshot" in globals() else make_snapshot(),
+        make_verdict("red", 40, red_reasons=["RepoA: CI failure"]),
+        fmt="html", now=FRESH_NOW)
+    rule = re.search(r"a\.out\{[^}]*\}", out).group(0)
+    assert "nowrap" not in rule
