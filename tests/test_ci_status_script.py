@@ -28,7 +28,10 @@ def write_stub(bin_dir: Path, name: str, body: str) -> None:
     path.chmod(0o755)
 
 
-def call_ci_head_sha(bin_dir: Path, repo: str = "PyAutoLabs/PyAutoFit", env=None):
+# The repo name is deliberately generic: `gh` and `git` are both stubbed here,
+# so it is never resolved. A real owner/name would be an instance fact in organ
+# code — see the tenant firewall in PyAutoMind's repos_sync.py.
+def call_ci_head_sha(bin_dir: Path, repo: str = "ExampleOrg/ExampleRepo", env=None):
     """Source ci_status.sh in a shell whose PATH starts with the stubs."""
     environ = {
         # A PATH holding only the stub dir plus the system dirs the script's own
