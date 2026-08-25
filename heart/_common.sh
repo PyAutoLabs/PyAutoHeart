@@ -6,6 +6,7 @@
 #   HEART_HOME           — repo root (PyAutoHeart/)
 #   HEART_STATE_DIR      — ~/.pyauto-heart/ (created on first call)
 #   HEART_PER_REPO_DIR   — per-repo JSON caches
+#   HEART_CLOUD_CI_DIR   — agent/MCP-supplied CI run payloads (no-gh sessions)
 #   HEART_TIMINGS_DIR    — rolling script timing baselines
 #   HEART_LOG_DIR        — daemon log files
 #   HEART_PID_FILE       — daemon pidfile
@@ -32,18 +33,22 @@ export PYAUTO_ROOT
 
 HEART_STATE_DIR="${HEART_STATE_DIR:-$HOME/.pyauto-heart}"
 HEART_PER_REPO_DIR="$HEART_STATE_DIR/per-repo"
+# Agent/MCP-supplied CI run payloads, one per repo — the mobile/cloud path
+# for a session with no `gh`. See heart/checks/ci_status.py.
+HEART_CLOUD_CI_DIR="$HEART_STATE_DIR/cloud_ci"
 HEART_TIMINGS_DIR="$HEART_STATE_DIR/timings"
 HEART_LOG_DIR="$HEART_STATE_DIR/logs"
 HEART_PID_FILE="$HEART_STATE_DIR/heart.pid"
 HEART_STATE_FILE="$HEART_STATE_DIR/state.json"
 HEART_TICK_LOG="$HEART_LOG_DIR/heart.log"
-export HEART_STATE_DIR HEART_PER_REPO_DIR HEART_TIMINGS_DIR HEART_LOG_DIR
+export HEART_STATE_DIR HEART_PER_REPO_DIR HEART_CLOUD_CI_DIR HEART_TIMINGS_DIR HEART_LOG_DIR
 export HEART_PID_FILE HEART_STATE_FILE HEART_TICK_LOG
 
 source "$HEART_HOME/heart/_color.sh"
 
 heart_state_dir() {
-  mkdir -p "$HEART_STATE_DIR" "$HEART_PER_REPO_DIR" "$HEART_TIMINGS_DIR" "$HEART_LOG_DIR"
+  mkdir -p "$HEART_STATE_DIR" "$HEART_PER_REPO_DIR" "$HEART_CLOUD_CI_DIR" \
+           "$HEART_TIMINGS_DIR" "$HEART_LOG_DIR"
 }
 
 # Live-mode detection. Live (clear-screen, redraw, countdown) when stdout is a
