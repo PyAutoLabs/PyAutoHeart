@@ -339,6 +339,8 @@ Topics:
   dirty <repo>           — clean up a dirty working tree (real vs generated)
   drift                  — current worktree drift entries
   timing <project>       — script timing regressions for that project
+  stale                  — the evidence gaps + the check that closes each,
+                           and the ONE plan that closes them all
 EOF
 }
 cmd_fix() {
@@ -348,7 +350,7 @@ cmd_fix() {
   fi
   local topic="$1"; shift
   case "$topic" in
-    ci|dirty|drift|timing)
+    ci|dirty|drift|timing|stale)
       env PYTHONPATH="$HEART_HOME" python3 -m heart.fix "$topic" "$@"
       ;;
     *)

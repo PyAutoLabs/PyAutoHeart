@@ -34,7 +34,11 @@ once the observation is older than ``DEVBOX_FRESH_SECONDS``.
 **Actionable, not just readable.** Every blocker/warning is also structured
 (``Board.blockers``: text, repo, run url, and a copyable ``/bug`` prompt), and
 sections that need a hand carry an ``action`` — the exact command or Claude
-prompt to copy. The html surface renders these as one-tap 📋 buttons (the
+prompt to copy. An evidence gap carries more: the ``command`` that re-runs the
+check behind it (looked up from ``STALE_REMEDIES`` by the readiness gate key,
+never guessed from the sentence), and the whole stale tier carries one
+``stale_plan`` — a single prompt, and where possible a single command chain,
+that closes every current gap at once. The html surface renders these as one-tap 📋 buttons (the
 PyAutoMind dashboard pattern); md links them; json carries them verbatim.
 """
 
@@ -205,7 +209,10 @@ def _boards_nav_html() -> str:
 
 # v2: sections gained links/action/observed_ago; the board gained structured
 # `blockers` ({text, severity, repo, repo_url, run_url, prompt}). Additive.
-SCHEMA_VERSION = 2
+# v3: a blocker gained `command` (the shell remedy behind a stale row, None
+# when the gap needs a conversation) and the board gained `stale_plan` — the
+# ONE payload that closes every current evidence gap. Additive.
+SCHEMA_VERSION = 3
 
 
 @dataclass
@@ -253,6 +260,10 @@ class Board:
     # was observed (an absent block is honest; an empty one implies "measured,
     # nothing there").
     performance: dict | None = None
+    # {count, command, prompt}: one copyable plan that closes EVERY current
+    # evidence gap, so a STALE board is one tap from being cleared instead of
+    # N. None when nothing is stale, or when no gap has a known remedy.
+    stale_plan: dict | None = None
 
 
 # --- verdict/state → glyph & colour maps ------------------------------------
@@ -523,6 +534,17 @@ def build_board(
     red = list(verdict.get("red_reasons") or [])
     yellow = list(verdict.get("yellow_reasons") or [])
     stale_reasons = list(verdict.get("stale_reasons") or [])
+    # The gate key behind each stale reason (readiness.py `stale_details`),
+    # index for index — the identity a remedy is looked up by. A verdict from
+    # an older Heart carries no such key; the rows then fall back to the
+    # generic re-run nudge and no plan is offered (never a guessed remedy).
+    stale_keys = [
+        str(d.get("key") or "")
+        for d in (verdict.get("stale_details") or [])
+        if isinstance(d, dict)
+    ]
+    if len(stale_keys) != len(stale_reasons):
+        stale_keys = []
 
     sections: list[Section] = []
 
@@ -851,8 +873,9 @@ def build_board(
         yellow_reasons=yellow,
         sections=sections,
         stale_reasons=stale_reasons,
-        blockers=_structure_reasons(red, yellow, stale_reasons, repos),
+        blockers=_structure_reasons(red, yellow, stale_reasons, repos, stale_keys),
         performance=performance,
+        stale_plan=build_stale_plan(stale_reasons, stale_keys),
     )
 
 
@@ -1008,14 +1031,136 @@ def _unobs_section(key: str, title: str) -> Section:
     )
 
 
-def _reason_item(text: str, severity: str, repos: dict) -> dict:
+# --- what closes an evidence gap -------------------------------------------
+#
+# gate key (heart/readiness.py `stale_details`) -> the check that closes it.
+# STALE's rule is the whole design here: every remedy RE-RUNS a check and none
+# of them touches code — that is what separates the tier from yellow. `command`
+# is what a terminal copies; it is None where the remedy genuinely needs a
+# conversation (a release rehearsal is dispatched by the Brain's Release Agent,
+# never by the Heart). `step` is the imperative phrase both the per-row prompt
+# and the all-in-one plan are written from, so the two can never disagree.
+TICK_CMD = "pyauto-heart tick"
+VERIFY_INSTALL_CMD = "pyauto-heart verify_install --report-json"
+REHEARSE_STEP = ("dispatch a release rehearsal with `/release rehearse`, then "
+                 "`pyauto-heart validate --ingest <artifacts>`")
+
+STALE_REMEDIES: dict[str, dict] = {
+    # install verification — the deep pip/conda install-path check
+    "install_unknown": {"command": VERIFY_INSTALL_CMD,
+                        "step": f"run `{VERIFY_INSTALL_CMD}`"},
+    "install_stale": {"command": VERIFY_INSTALL_CMD,
+                      "step": f"re-run `{VERIFY_INSTALL_CMD}` (the evidence expired)"},
+    "install_non_release": {
+        "command": VERIFY_INSTALL_CMD,
+        "step": (f"re-run `{VERIFY_INSTALL_CMD}` against PyPI/TestPyPI "
+                 "(find-links evidence cannot satisfy a release gate)")},
+    # the workspace validation surface — PyAutoHands writes the report, the
+    # tick reads it, so the remedy names both halves.
+    "test_unknown": {
+        "command": TICK_CMD,
+        "step": (f"re-read the latest workspace validation run with `{TICK_CMD}` "
+                 "(run the suite first if PyAutoHands has no "
+                 "`run_logs/latest/report.json`)")},
+    "test_stale": {
+        "command": TICK_CMD,
+        "step": (f"re-run the workspace validation suite, then `{TICK_CMD}` "
+                 "(the last report aged out)")},
+    # the release-validation rehearsal — Brain-dispatched, so no command
+    "validation_absent": {"command": None, "step": REHEARSE_STEP},
+    "validation_stale": {"command": None,
+                         "step": REHEARSE_STEP + " (the last rehearsal aged out)"},
+    "validation_stale_sha": {
+        "command": None,
+        "step": REHEARSE_STEP + " (main moved since the last rehearsal)"},
+    "validation_profile": {"command": None,
+                           "step": REHEARSE_STEP + " under the `release` profile"},
+    "validation_unknown": {"command": None,
+                           "step": REHEARSE_STEP + " so the shipped source is confirmed"},
+    # repo/CI evidence the tick re-polls
+    "lib_unknown": {"command": TICK_CMD,
+                    "step": f"re-poll the repo with `{TICK_CMD}`"},
+    "lib_ci_unavailable": {
+        "command": TICK_CMD,
+        "step": f"re-poll CI with `{TICK_CMD}` (the query failed, not the CI)"},
+    "skew_unknown": {"command": TICK_CMD,
+                     "step": f"re-read the version floors with `{TICK_CMD}`"},
+    "skew_pypi_unknown": {
+        "command": None,
+        "step": ("re-run the deep PyPI leg "
+                 "(`python3 -m heart.checks.version_skew --pypi` from the Heart "
+                 "checkout) once PyPI answers again")},
+}
+
+# What a stale row copies when its key has no entry here (a gap added since
+# this table, or a verdict from an older Heart that carries no keys at all).
+GENERIC_STALE_PROMPT = "/health re-run the stale evidence: {text}"
+
+
+def stale_remedy(key: str) -> dict | None:
+    """The remedy for one gate key, or None when this board has none."""
+    remedy = STALE_REMEDIES.get(key or "")
+    return dict(remedy) if remedy else None
+
+
+def _stale_prompt(text: str, remedy: dict | None) -> str:
+    """One gap's Claude prompt: what to re-run, on which gap, and the rule."""
+    if not remedy:
+        return GENERIC_STALE_PROMPT.format(text=text)
+    return (f"/health {remedy['step']} — the Heart's evidence gap: \"{text}\". "
+            "Re-run the check only, never change code to clear it; then "
+            f"`{TICK_CMD}` and re-read `pyauto-heart readiness`.")
+
+
+def build_stale_plan(stale_reasons: list, stale_keys: list) -> dict | None:
+    """The ONE payload that clears the whole tier.
+
+    A STALE board is normally several gaps at once, and closing them one chip
+    at a time is exactly the friction that leaves a board stale for weeks. So
+    the gaps are also published as a single ordered plan: ``prompt`` names every
+    gap with the check that closes it, and ``command`` is the shell chain that
+    does the same — offered ONLY when every gap has a command, because a chain
+    that silently skips a gap reads as "that cleared it" when it did not.
+
+    None when nothing is stale, or when no gap has a known remedy.
+    """
+    if not stale_reasons:
+        return None
+    keys = list(stale_keys) + [""] * (len(stale_reasons) - len(stale_keys))
+    remedies = [stale_remedy(k) for k in keys[:len(stale_reasons)]]
+    if not any(remedies):
+        return None
+    steps, commands = [], []
+    for n, (text, remedy) in enumerate(zip(stale_reasons, remedies), 1):
+        step = remedy["step"] if remedy else "re-run the check behind it"
+        steps.append(f"{n}. {text} → {step}")
+        cmd = (remedy or {}).get("command")
+        if cmd and cmd not in commands:
+            commands.append(cmd)
+    prompt = (
+        f"/health clear the Heart's {len(stale_reasons)} evidence gap(s) — re-run "
+        "the checks named below; never change code to clear one:\n"
+        + "\n".join(steps)
+        + f"\nThen run `{TICK_CMD} && pyauto-heart readiness` and report the new verdict."
+    )
+    command = None
+    if all(r and r.get("command") for r in remedies):
+        chain = commands + [c for c in (TICK_CMD, "pyauto-heart readiness")
+                            if c not in commands]
+        command = " && ".join(chain)
+    return {"count": len(stale_reasons), "command": command, "prompt": prompt}
+
+
+def _reason_item(text: str, severity: str, repos: dict, key: str = "") -> dict:
     """Structure one flat reason string into an actionable blocker.
 
     Reasons follow the ``"<repo>: <problem>"`` convention (readiness.py), so
     the prefix resolves the repo; the repo's cached ``ci_status.url`` is the
     failing run when CI is red. The prompt is what 📋 copies — a `/bug` door
-    into the Brain for real problems, a re-run nudge for evidence gaps
-    (STALE's rule: re-run the check, never fix code).
+    into the Brain for real problems, and for an evidence gap the check that
+    actually closes it, looked up by its gate ``key`` (STALE's rule: re-run the
+    check, never fix code). A stale row also carries ``command`` — the shell
+    remedy — or None where the remedy needs a conversation.
     """
     head = text.split(":", 1)[0].strip()
     body = repos.get(head) if isinstance(repos, dict) else None
@@ -1027,20 +1172,31 @@ def _reason_item(text: str, severity: str, repos: dict) -> dict:
         ci = body.get("ci_status") or {}
         if ci.get("url") and str(ci.get("conclusion") or "") not in ("", "success"):
             run_url = str(ci["url"])
+    command = None
     if severity == "stale":
-        prompt = f"/health re-run the stale evidence: {text}"
+        remedy = stale_remedy(key)
+        command = (remedy or {}).get("command")
+        prompt = _stale_prompt(text, remedy)
     else:
         prompt = f"/bug Heart board: {text}"
         if run_url:
             prompt += f" — failing run: {run_url}"
     return {"text": text, "severity": severity, "repo": repo,
-            "repo_url": repo_url, "run_url": run_url, "prompt": prompt}
+            "repo_url": repo_url, "run_url": run_url, "prompt": prompt,
+            "command": command}
 
 
-def _structure_reasons(red: list, yellow: list, stales: list, repos: dict) -> list[dict]:
-    return [_reason_item(str(t), sev, repos)
-            for sev, texts in (("red", red), ("yellow", yellow), ("stale", stales))
-            for t in texts]
+def _structure_reasons(red: list, yellow: list, stales: list, repos: dict,
+                       stale_keys: list | None = None) -> list[dict]:
+    """Every reason as an actionable item. ``stale_keys`` rides index for index
+    with ``stales`` (empty when the verdict predates them)."""
+    keys = list(stale_keys or [])
+    keys += [""] * (len(stales) - len(keys))
+    items = [_reason_item(str(t), sev, repos)
+             for sev, texts in (("red", red), ("yellow", yellow))
+             for t in texts]
+    items += [_reason_item(str(t), "stale", repos, k) for t, k in zip(stales, keys)]
+    return items
 
 
 def _devbox_enrich(
@@ -1108,6 +1264,11 @@ def render_readiness_block(verdict: dict[str, Any], *, quiet: bool = False) -> l
     if shown < limit:
         for s in stales[: limit - shown]:
             lines.append("  " + c_info(f"? {s}"))
+    # A terminal reading STALE gets the door out of it, not just the diagnosis:
+    # `fix stale` prints each gap's command and the one plan that clears them
+    # all. Suppressed in quiet mode — that line is a shell prompt, not a board.
+    if stales and not quiet:
+        lines.append("  " + c_meta("→ clear them: pyauto-heart fix stale"))
     return lines
 
 
@@ -1170,14 +1331,24 @@ def _md_reason(item: dict) -> str:
     return text
 
 
-def _md_prompts_block(items: list[dict]) -> list[str]:
+def _md_prompts_block(items: list[dict], plan: dict | None = None) -> list[str]:
     """A collapsed block of copyable fix prompts (GitHub's fenced-code copy
-    button makes each one one-tap on the web view)."""
+    button makes each one one-tap on the web view).
+
+    When the gaps carry a whole-tier ``plan``, it leads: one prompt (and, where
+    every gap has one, one command chain) that closes all of them.
+    """
     if not items:
         return []
     lines = ["<details>",
              "<summary>📋 fix prompts — copy one into a Claude Code chat</summary>", ""]
+    if plan and items[0].get("severity") == "stale":
+        lines += ["**Clear every gap in one go:**", "", "```", plan["prompt"], "```", ""]
+        if plan.get("command"):
+            lines += ["```", plan["command"], "```", ""]
     for it in items[:6]:
+        if it.get("command"):
+            lines += ["```", it["command"], "```", ""]
         lines += ["```", it["prompt"], "```", ""]
     lines += ["</details>", ""]
     return lines
@@ -1198,7 +1369,7 @@ def _render_md(board: Board) -> str:
     if items:
         lines.append(f"**{label}:** " + "; ".join(_md_reason(i) for i in items[:6]))
         lines.append("")
-        lines += _md_prompts_block(items)
+        lines += _md_prompts_block(items, board.stale_plan)
     lines += ["| | Check | Status |", "|--|--|--|"]
     for sec in board.sections:
         em = _STATE_MD[sec.state]
@@ -1235,12 +1406,17 @@ def _md_escape(text: str) -> str:
     return text.replace("|", "\\|")
 
 
-def _copy_btn(payload: str, label: str = "copy") -> str:
-    """A one-tap clipboard button (the PyAutoMind dashboard pattern): tap 📋
-    and the payload — a Claude prompt or a command — is ready to paste."""
+def _copy_btn(payload: str, label: str = "copy", face: str = "📋") -> str:
+    """A one-tap clipboard button (the PyAutoMind dashboard pattern): tap it
+    and the payload — a Claude prompt or a command — is ready to paste.
+
+    ``face`` is what the button shows: the bare 📋 for a chip beside a row, a
+    short worded face (⌨ command chain) where the board offers more than one
+    payload and the reader has to choose between them.
+    """
     return (f"<button class='copy' type='button' "
             f"title='{_html.escape(label, quote=True)}' "
-            f"data-cmd=\"{_html.escape(payload, quote=True)}\">📋</button>")
+            f"data-cmd=\"{_html.escape(payload, quote=True)}\">{_html.escape(face)}</button>")
 
 
 def _html_reason(item: dict) -> str:
@@ -1253,9 +1429,32 @@ def _html_reason(item: dict) -> str:
     if item.get("run_url"):
         text += (f" <a class='out' href=\"{_html.escape(item['run_url'], quote=True)}\">"
                  f"run ↗</a>")
+    if item.get("command"):
+        text += " " + _copy_btn(item["command"],
+                                "copy the command that re-runs this check",
+                                "⌨")
     if item.get("prompt"):
         text += " " + _copy_btn(item["prompt"], "copy the fix prompt for a Claude Code chat")
     return f"<li>{text}</li>"
+
+
+def _html_stale_plan(board: Board, items: list[dict]) -> str:
+    """The one-tap "clear them all" line above the evidence gaps.
+
+    Rendered only when the gaps are the tier on show — the board displays one
+    tier at a time, and a plan for reasons the reader cannot see is noise.
+    """
+    plan = board.stale_plan
+    if not plan or not items or items[0].get("severity") != "stale":
+        return ""
+    chips = _copy_btn(plan["prompt"],
+                      "copy one prompt that clears every gap, for a Claude Code chat",
+                      "📋 clear them all")
+    if plan.get("command"):
+        chips += " " + _copy_btn(plan["command"],
+                                 "copy the command chain that re-runs every check",
+                                 "⌨ command chain")
+    return f"<p class='plan'>{chips}</p>"
 
 
 # The Heart's verdict in the theme's tone vocabulary. The board's own
@@ -1264,8 +1463,8 @@ _VERDICT_TONE = {"red": "bad", "yellow": "warn", "stale": "warn",
                  "green": "ok"}
 
 _LEDE = ("Is it safe to release? Every check the Heart observes, with the "
-         "evidence behind each verdict. \U0001f4cb copies a ready-to-paste prompt "
-         "or command for a Claude Code chat.")
+         "evidence behind each verdict. \u2328 copies the command that re-runs a "
+         "check; \U0001f4cb copies a ready-to-paste prompt for a Claude Code chat.")
 
 # The page-specific shapes the shared sheet has no opinion on: the per-row
 # state dot, the evidence list, the stale banner. Written against the theme's
@@ -1296,6 +1495,10 @@ a.out{font-size:.85rem}
 .stale{background:var(--btn);border:1px solid var(--warn);color:var(--warn);
  padding:.55rem .75rem;border-radius:8px}
 .reasons{margin:1.5rem 0}
+/* The whole-tier fix line sits between the heading and the gaps it closes, so
+   the reader meets it before the per-row ones. */
+.plan{margin:.4rem 0 .8rem}
+.plan .copy{margin-right:.4rem}
 .reasons li{margin:.3rem 0}
 .hint{color:var(--muted);font-size:.85em;margin:.5rem 0 0}
 footer{margin-top:2rem;color:var(--muted);font-size:.82em}
@@ -1348,9 +1551,10 @@ def _render_html(board: Board) -> str:
     label, items = _shown_reasons(board)
     if items:
         lis = "".join(_html_reason(i) for i in items[:8])
-        hint = ("<p class='hint'>📋 copies a ready-to-paste prompt for a "
-                "Claude Code chat.</p>")
-        reasons_html = f"<div class='reasons'><h2>{label}</h2><ul>{lis}</ul>{hint}</div>"
+        hint = ("<p class='hint'>⌨ copies the command that re-runs a check; "
+                "📋 copies a ready-to-paste prompt for a Claude Code chat.</p>")
+        reasons_html = (f"<div class='reasons'><h2>{label}</h2>"
+                        f"{_html_stale_plan(board, items)}<ul>{lis}</ul>{hint}</div>")
     stale_html = (
         "<p class='stale'>⚠️ This board is stale — the last tick is older than the "
         "freshness threshold; the numbers may not be current.</p>" if board.stale else ""
@@ -1374,7 +1578,7 @@ def _render_html(board: Board) -> str:
 {_boards_nav_html()}
 <footer>Rendered by <code>heart/dashboard.py</code> — one renderer, many
 surfaces. Observer only: PyAutoHeart never writes outside its own repo/state.
-\U0001f4cb buttons copy a Claude prompt or command to your clipboard.</footer>
+\U0001f4cb and \u2328 buttons copy a Claude prompt or a command to your clipboard.</footer>
 <script>{t_.JS}</script>
 </body></html>
 """
@@ -1398,6 +1602,9 @@ def to_dict(board: Board) -> dict[str, Any]:
         # Structured, actionable reasons — what the 📋 buttons copy and where
         # they link. The flat lists above stay for v1 consumers.
         "blockers": board.blockers,
+        # One payload that closes every current evidence gap (v3). None when
+        # nothing is stale — a sibling board renders it, never re-derives it.
+        "stale_plan": board.stale_plan,
         "pages_url": PAGES_URL,
         "sections": [
             {
