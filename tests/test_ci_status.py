@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import datetime
+import io
 import json
 
 from heart.checks import ci_status as ci
 
 HEAD = "a" * 40
 OLD = "b" * 40
+
+
+def _now_iso():
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
 def _run(workflow, conclusion, status="completed", sha=HEAD, created="2026-06-29T00:00:00Z",
@@ -316,3 +322,160 @@ def test_main_reads_real_rest_payload(tmp_path, monkeypatch, capsys):
     assert side["conclusion"] == "failure"
     assert side["workflow"] == "Smoke Tests"
     assert "FAILURE" in capsys.readouterr().out
+
+
+class TestCloudRuns:
+    """The mobile/cloud drop point: agent/MCP-supplied runs when `gh` cannot run.
+
+    Freshness is the whole point of this leg. A CI conclusion is a claim about
+    *now*, so every rejection path below must degrade to "we could not ask"
+    rather than let an aged payload read as a current verdict.
+    """
+
+    PAYLOAD = {"workflow_runs": [{"name": "Tests", "head_branch": "main"}]}
+
+    def write(self, tmp_path, data, name="PyAutoFit.json"):
+        p = tmp_path / name
+        p.write_text(json.dumps(data))
+        return p
+
+    def test_reads_a_fresh_payload(self, tmp_path):
+        p = self.write(tmp_path, {"ts": _now_iso(), "runs": self.PAYLOAD})
+
+        runs, reason = ci.cloud_runs(p)
+
+        assert runs == self.PAYLOAD
+        assert reason == ""
+
+    def test_accepts_a_bare_rest_payload(self, tmp_path):
+        """No wrapper: the MCP response dropped in as-is, dated by file mtime."""
+        p = self.write(tmp_path, self.PAYLOAD)
+
+        runs, reason = ci.cloud_runs(p)
+
+        assert runs == self.PAYLOAD
+        assert reason == ""
+
+    def test_rejects_a_stale_payload(self, tmp_path):
+        old = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=5)
+        p = self.write(tmp_path, {"ts": old.isoformat(), "runs": self.PAYLOAD})
+
+        runs, reason = ci.cloud_runs(p, max_age_s=3600)
+
+        assert runs is None
+        assert "stale" in reason
+
+    def test_missing_file_is_not_an_error(self, tmp_path):
+        runs, reason = ci.cloud_runs(tmp_path / "absent.json")
+
+        assert runs is None
+        assert reason == "no cloud runs payload"
+
+    def test_unreadable_payload_fails_closed(self, tmp_path):
+        p = tmp_path / "bad.json"
+        p.write_text("{not json")
+
+        runs, reason = ci.cloud_runs(p)
+
+        assert runs is None
+        assert "unreadable" in reason
+
+    def test_empty_payload_fails_closed(self, tmp_path):
+        p = self.write(tmp_path, {"ts": _now_iso(), "runs": {}})
+
+        runs, reason = ci.cloud_runs(p)
+
+        assert runs is None
+        assert "empty" in reason
+
+    def test_unparseable_ts_falls_back_to_mtime(self, tmp_path):
+        """A malformed stamp must not be trusted, but mtime still dates it."""
+        p = self.write(tmp_path, {"ts": "not-a-date", "runs": self.PAYLOAD})
+
+        runs, reason = ci.cloud_runs(p)
+
+        assert runs == self.PAYLOAD
+        assert reason == ""
+
+    def test_naive_ts_is_treated_as_utc(self, tmp_path):
+        naive = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+        p = self.write(tmp_path, {"ts": naive.isoformat(), "runs": self.PAYLOAD})
+
+        runs, reason = ci.cloud_runs(p)
+
+        assert runs == self.PAYLOAD
+        assert reason == ""
+
+
+class TestMainCloudFallback:
+    """`main`'s ordering: the live fetch wins; the drop point is the fallback."""
+
+    PAYLOAD = {"workflow_runs": [
+        {"name": "Tests", "head_branch": "main", "status": "completed",
+         "conclusion": "success", "head_sha": "a" * 40, "created_at": "2026-08-25T00:00:00Z"},
+    ]}
+
+    def run_main(self, tmp_path, stdin, fetch_error, cloud=None, monkeypatch=None):
+        out = tmp_path / "out.json"
+        argv = ["--name", "PyAutoFit", "--group", "libraries",
+                "--head-sha", "a" * 40, "--ts", _now_iso(), "--out", str(out),
+                "--fetch-error", fetch_error]
+        if cloud is not None:
+            drop = tmp_path / "cloud.json"
+            drop.write_text(json.dumps({"ts": _now_iso(), "runs": cloud}))
+            argv += ["--cloud-runs", str(drop)]
+        monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(stdin)))
+        ci.main(argv)
+        return json.loads(out.read_text())
+
+    def test_live_fetch_is_never_second_guessed(self, tmp_path, monkeypatch):
+        """A successful gh fetch must ignore the drop point entirely."""
+        live = {"workflow_runs": [
+            {"name": "Tests", "head_branch": "main", "status": "completed",
+             "conclusion": "failure", "head_sha": "a" * 40,
+             "created_at": "2026-08-25T00:00:00Z"},
+        ]}
+
+        sidecar = self.run_main(
+            tmp_path, live, "", cloud=self.PAYLOAD, monkeypatch=monkeypatch
+        )
+
+        assert sidecar["source"] == "gh"
+        assert sidecar["conclusion"] == "failure"
+
+    def test_failed_fetch_uses_the_drop_point(self, tmp_path, monkeypatch):
+        sidecar = self.run_main(
+            tmp_path, {}, "gh: command not found",
+            cloud=self.PAYLOAD, monkeypatch=monkeypatch,
+        )
+
+        assert sidecar["source"] == "cloud"
+        assert sidecar["error"] == ""
+        assert sidecar["conclusion"] == "success"
+
+    def test_failed_fetch_without_a_drop_point_is_unchanged(self, tmp_path, monkeypatch):
+        sidecar = self.run_main(
+            tmp_path, {}, "gh: command not found", monkeypatch=monkeypatch
+        )
+
+        assert sidecar["source"] == "gh"
+        assert sidecar["status"] == "unavailable"
+
+    def test_stale_drop_point_keeps_the_original_error(self, tmp_path, monkeypatch):
+        """Both failures are readable: no gh, AND the fallback did not save it."""
+        out = tmp_path / "out.json"
+        drop = tmp_path / "cloud.json"
+        old = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=2)
+        drop.write_text(json.dumps({"ts": old.isoformat(), "runs": self.PAYLOAD}))
+        monkeypatch.setattr("sys.stdin", io.StringIO("{}"))
+
+        ci.main([
+            "--name", "PyAutoFit", "--group", "libraries", "--head-sha", "a" * 40,
+            "--ts", _now_iso(), "--out", str(out),
+            "--fetch-error", "gh: command not found", "--cloud-runs", str(drop),
+        ])
+        sidecar = json.loads(out.read_text())
+
+        assert sidecar["status"] == "unavailable"
+        assert "gh: command not found" in sidecar["error"]
+        assert "stale" in sidecar["error"]

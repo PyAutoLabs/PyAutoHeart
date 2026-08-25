@@ -113,6 +113,7 @@ check_one_repo_ci() {
   printf '%s' "$runs" | PYTHONPATH="$HEART_HOME" python3 -m heart.checks.ci_status \
     --name "$name" --group "$group" --head-sha "$head_sha" --ts "$ts" \
     --fetch-error "$fetch_error" \
+    --cloud-runs "$HEART_CLOUD_CI_DIR/$name.json" \
     --out "$HEART_PER_REPO_DIR/$name.ci_status.json"
 }
 

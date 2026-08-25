@@ -39,6 +39,7 @@ Sidecar schema written to ``<name>.ci_status.json``::
       "conclusion": "failure",        # rolled-up over required workflows (back-compat)
       "status": "completed",          # rolled-up status (back-compat)
       "error": "",                    # non-empty => the runs fetch itself failed
+      "source": "gh",                 # "gh" (live fetch) | "cloud" (agent/MCP-supplied)
       "sha": "abc1234",               # short HEAD sha (back-compat with old sidecar)
       "workflow": "Smoke Tests",      # the failing/representative workflow, for the summary
       "url": "https://github.com/.../actions/runs/123",
@@ -60,13 +61,22 @@ workspace-CI readiness gate consumes.
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
 
 HEART_HOME = Path(__file__).resolve().parents[2]
 CONFIG_PATH = HEART_HOME / "config" / "repos.yaml"
+
+# How old an agent/MCP-supplied runs payload may be before it stops counting.
+# A CI conclusion is a claim about *now*; past this bound the honest answer is
+# the same "unavailable" the failed fetch already produced, never a stale green.
+# One hour: long enough to span a mobile session's refresh-then-tick, short
+# enough that nobody reads yesterday's CI as today's.
+CLOUD_RUNS_MAX_AGE_S = int(os.environ.get("HEART_CLOUD_CI_MAX_AGE", "3600"))
 
 # Conclusions that count as a hard failure for gating. Deliberately a denylist
 # of genuine failures rather than "anything != success": ``skipped`` /
@@ -102,6 +112,70 @@ def load_required_workflows(config_path: Path | str = CONFIG_PATH) -> dict[str, 
 def required_for(group: str, config_path: Path | str = CONFIG_PATH) -> list[str]:
     """Required gating workflows for ``group`` ([] if the group is advisory)."""
     return load_required_workflows(config_path).get(group, [])
+
+
+def cloud_runs(
+    path: Path | str,
+    max_age_s: int = CLOUD_RUNS_MAX_AGE_S,
+    now: datetime.datetime | None = None,
+) -> tuple[Any | None, str]:
+    """Read an agent/MCP-supplied runs payload, or explain why it was rejected.
+
+    The mobile/cloud path. There is no ``gh`` in a Claude web/mobile session, so
+    the live fetch in ``ci_status.sh`` fails outright; Brain queries the runs via
+    its MCP GitHub tools and drops the REST response here instead. This is the
+    same hand-off ``test_run.py`` uses for the workspace-validation verdict — the
+    MCP ``list_workflow_runs`` response is already the exact
+    ``{"workflow_runs": [...]}`` shape :func:`normalize_runs` expects, so nothing
+    is reshaped on the way in.
+
+    File shape (``ts`` optional; the file's mtime is used when it is absent)::
+
+        {"ts": "2026-08-25T12:00:00+00:00", "runs": {"workflow_runs": [...]}}
+
+    Returns ``(runs, "")`` when usable, else ``(None, reason)``. Fails closed at
+    every step: unreadable, malformed, undated *and* un-stat-able, or simply too
+    old all return ``None`` with the reason, so the caller reports "we could not
+    ask" rather than dressing up stale evidence as current.
+    """
+    p = Path(path)
+    try:
+        data = json.loads(p.read_text())
+    except FileNotFoundError:
+        return None, "no cloud runs payload"
+    except (OSError, json.JSONDecodeError, ValueError):
+        return None, "cloud runs payload unreadable"
+
+    if not isinstance(data, dict):
+        return None, "cloud runs payload malformed"
+
+    runs = data.get("runs", data)
+    if not isinstance(runs, (dict, list)) or not runs:
+        return None, "cloud runs payload empty"
+
+    stamped = data.get("ts")
+    ts: datetime.datetime | None = None
+    if stamped:
+        try:
+            ts = datetime.datetime.fromisoformat(str(stamped).replace("Z", "+00:00"))
+        except ValueError:
+            ts = None
+    if ts is None:
+        try:
+            ts = datetime.datetime.fromtimestamp(
+                p.stat().st_mtime, datetime.timezone.utc
+            )
+        except OSError:
+            return None, "cloud runs payload undated"
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=datetime.timezone.utc)
+
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    age = (now - ts).total_seconds()
+    if age > max_age_s:
+        return None, f"cloud runs payload stale ({int(age)}s > {max_age_s}s)"
+
+    return runs, ""
 
 
 def normalize_runs(payload: Any, branch: str = "main") -> list[dict[str, Any]]:
@@ -246,6 +320,7 @@ def build_sidecar(
     ts: str,
     config_path: Path | str = CONFIG_PATH,
     error: str = "",
+    source: str = "gh",
 ) -> dict[str, Any]:
     """Construct the full ci_status sidecar dict for one repo.
 
@@ -253,6 +328,11 @@ def build_sidecar(
     reports ``status="unavailable"`` rather than the ``in_progress`` that an
     empty run list would otherwise roll up to, so "we could not ask" is
     readable as itself instead of impersonating "CI is still running".
+
+    ``source`` records where the runs came from — ``"gh"`` for the live fetch,
+    ``"cloud"`` for an agent/MCP-supplied payload. Provenance is part of the
+    evidence, not decoration: a reader must be able to tell a conclusion Heart
+    fetched itself from one an agent handed it.
     """
     required = required_for(group, config_path)
     latest = latest_per_workflow(normalize_runs(runs))
@@ -278,6 +358,7 @@ def build_sidecar(
         "status": roll["status"],
         "workflow": roll["workflow"],
         "error": error,
+        "source": source,
         "url": (rep or {}).get("url", ""),
         "workflows": workflows,
         "ts": ts,
@@ -321,8 +402,9 @@ def write_and_summarise(
     out_path: Path,
     config_path: Path | str = CONFIG_PATH,
     error: str = "",
+    source: str = "gh",
 ) -> dict[str, Any]:
-    sidecar = build_sidecar(name, group, runs, head_sha, ts, config_path, error)
+    sidecar = build_sidecar(name, group, runs, head_sha, ts, config_path, error, source)
     sys.path.insert(0, str(HEART_HOME))
     from heart import state
 
@@ -342,6 +424,11 @@ def main(argv: list[str] | None = None) -> int:
         default="",
         help="reason the runs fetch failed; recorded instead of a bogus pending state",
     )
+    ap.add_argument(
+        "--cloud-runs",
+        default="",
+        help="agent/MCP-supplied runs payload, consulted only when the live fetch failed",
+    )
     ns = ap.parse_args(argv)
 
     error = ns.fetch_error
@@ -353,8 +440,25 @@ def main(argv: list[str] | None = None) -> int:
         runs = []
         error = error or "runs payload was not valid JSON"
 
+    # The live fetch is authoritative and is never second-guessed: the drop
+    # point is consulted only once `gh` has already failed (or is absent, which
+    # is the same thing from here). That ordering is what keeps the dev box's
+    # behaviour byte-for-byte unchanged — there, `error` is empty and this never
+    # runs — while giving the no-gh session real evidence instead of a blank.
+    source = "gh"
+    if error and ns.cloud_runs:
+        supplied, reason = cloud_runs(ns.cloud_runs)
+        if supplied is not None:
+            runs, error, source = supplied, "", "cloud"
+        else:
+            # Keep the original fetch failure as the headline and append why the
+            # fallback did not save it, so "no gh AND the payload was stale" is
+            # one readable string rather than a silently unchanged error.
+            error = f"{error} ({reason})"
+
     sidecar = write_and_summarise(
-        ns.name, ns.group, runs, ns.head_sha, ns.ts, Path(ns.out), error=error
+        ns.name, ns.group, runs, ns.head_sha, ns.ts, Path(ns.out),
+        error=error, source=source,
     )
     print(summary_line(sidecar))
     return 0
