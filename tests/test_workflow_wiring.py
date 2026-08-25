@@ -123,3 +123,88 @@ def test_smoke_timings_upload_runs_before_the_slack_notifier():
     upload = next(i for i, n in enumerate(names) if "Upload the smoke report dir" in n)
     slack = next(i for i, n in enumerate(names) if "Slack notify" in n)
     assert upload < slack
+
+
+# --- the weekly sweep's timings need a name too (PyAutoHeart, follow-on to #167) ---
+#
+# smoke-tests.yml is the PR gate. The WEEKLY sweep runs through
+# workspace-validation.yml, which had no named timing upload at all — its
+# smoke_timings.json survived only inside the per-leg `results-*` zips, under no
+# name a consumer could glob for. These tests pin the fix in both directions:
+# the timings are published as `smoke-timings-*`, and they stay OUT of the
+# `results-*` namespace the aggregate consumer reads.
+
+TIMING_LEGS = (("run_scripts", "scripts"), ("run_notebooks", "notebooks"))
+
+
+def _timing_step(job_name):
+    jobs = _load("workspace-validation.yml")["jobs"]
+    return _step(jobs[job_name], "Upload the per-script timings")
+
+
+def test_validation_body_publishes_the_timing_dataset():
+    """Both weekly legs upload smoke_timings.json under a `smoke-timings-*` name."""
+    for job_name, _leg in TIMING_LEGS:
+        step = _timing_step(job_name)
+        assert step["uses"].startswith("actions/upload-artifact@v4")
+        assert step["with"]["name"].startswith("smoke-timings-")
+        assert "smoke_timings.json" in step["with"]["path"]
+
+
+def test_validation_timing_artifact_names_carry_the_leg():
+    """A fixed name is safe on the PR gate and fatal here.
+
+    The gate has one leg per python version; this body runs ~50 legs in one
+    weekly run, so the name has to carry the (project, directory) pair the
+    script matrix keeps unique — exactly as the sibling `results-*` upload does.
+    """
+    for job_name, leg in TIMING_LEGS:
+        name = _timing_step(job_name)["with"]["name"]
+        assert name == (
+            f"smoke-timings-{leg}-"
+            "${{ matrix.project.name }}-${{ matrix.project.directory }}"
+        )
+
+
+def test_validation_timing_upload_cannot_fail_the_weekly_sweep():
+    """No timings is not a red sweep — same reasoning as the PR gate's copy."""
+    for job_name, _leg in TIMING_LEGS:
+        step = _timing_step(job_name)
+        assert step["if"].startswith("always()")
+        assert step["with"]["if-no-files-found"] == "ignore"
+
+
+def test_validation_notebook_timing_upload_keeps_the_no_notebooks_gate():
+    """The *_test workspaces publish no notebooks — that leg never executes."""
+    assert _timing_step("run_notebooks")["if"] == (
+        "always() && steps.gate.outputs.run == 'true'"
+    )
+
+
+def test_validation_timing_dataset_keeps_full_default_retention():
+    """The dataset is the point.
+
+    The sibling `results-*` uploads expire at 30 days; the timings deliberately
+    carry no retention-days so they keep the repo's full default window and
+    outlive the report dirs they were extracted from (the PR gate's upload
+    omits it for the same reason).
+    """
+    for job_name, _leg in TIMING_LEGS:
+        assert "retention-days" not in _timing_step(job_name)["with"]
+
+
+def test_timing_artifacts_stay_out_of_the_aggregate_namespace():
+    """`results-*` and `smoke-timings-*` are two different contracts.
+
+    `analyze` downloads `results-*` and hands it to aggregate_results.py, which
+    globs `**/*.json` and skips the timing sidecar BY NAME. Naming the timing
+    artifacts into that pattern would aim them at the one consumer that
+    deliberately excludes them.
+    """
+    analyze = _load("workspace-validation.yml")["jobs"]["analyze"]
+    pattern = _step(analyze, "Download all result artifacts")["with"]["pattern"]
+    assert pattern == "results-*"
+
+    prefix = pattern.rstrip("*")
+    for job_name, _leg in TIMING_LEGS:
+        assert not _timing_step(job_name)["with"]["name"].startswith(prefix)
