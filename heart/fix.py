@@ -8,6 +8,8 @@ Topics:
                   dirty.
   timing <proj> — script-timing regressions for a project: emit the
                   red/yellow list with baselines, ready for paste.
+  stale         — the current evidence gaps and the check that closes each
+                  one, plus the ONE plan that closes them all.
 
 Output is plain text (color helpers applied for stderr framing, content
 stripped so the user can pipe / paste safely).
@@ -200,6 +202,52 @@ def fix_timing(project: str) -> int:
     return 0
 
 
+def fix_stale() -> int:
+    """The evidence gaps and what re-runs each — the terminal's copy of the
+    board's Evidence-gaps block.
+
+    Same source as the board (the persisted verdict + ``dashboard``'s remedy
+    table), so the two surfaces cannot prescribe different things. Read-only,
+    like every other topic here: it prints what to run, it never runs it.
+    """
+    from heart import dashboard, readiness
+
+    verdict = readiness.load_verdict()
+    reasons = [str(r) for r in (verdict.get("stale_reasons") or [])]
+    if not reasons:
+        print(c_ok("no evidence gaps — nothing to re-run"), file=sys.stderr)
+        return 0
+    keys = [str(d.get("key") or "") for d in (verdict.get("stale_details") or [])
+            if isinstance(d, dict)]
+    if len(keys) != len(reasons):
+        keys = [""] * len(reasons)
+    plan = dashboard.build_stale_plan(reasons, keys)
+
+    print(c_bold(f"Topic: {len(reasons)} evidence gap(s) "
+                 f"(verdict {str(verdict.get('verdict', '?')).upper()}, "
+                 f"score {verdict.get('score', '?')})"), file=sys.stderr)
+    print(c_meta("  re-run the checks below; never change code to clear a gap"),
+          file=sys.stderr)
+    print(file=sys.stderr)
+
+    for text, key in zip(reasons, keys):
+        remedy = dashboard.stale_remedy(key)
+        print(f"# {text}")
+        command = (remedy or {}).get("command")
+        print(f"  {command}" if command
+              else f"  ({remedy['step'] if remedy else 'no remedy on record'})")
+    print()
+    if not plan:
+        return 0
+    if plan.get("command"):
+        print(c_info("# Clear every gap (run this):"), file=sys.stderr)
+        print(plan["command"])
+        print()
+    print(c_info("# Or paste this into a fresh Claude Code session:"), file=sys.stderr)
+    print(plan["prompt"])
+    return 0
+
+
 def main(argv: list[str]) -> int:
     if len(argv) < 2:
         print("usage: pyauto-heart fix <topic> [...]", file=sys.stderr)
@@ -218,6 +266,8 @@ def main(argv: list[str]) -> int:
         return fix_dirty(args[0])
     if topic == "drift":
         return fix_drift()
+    if topic == "stale":
+        return fix_stale()
     if topic == "timing":
         if not args:
             print("usage: pyauto-heart fix timing <project>", file=sys.stderr)

@@ -1047,3 +1047,38 @@ def test_library_ci_fetch_error_is_not_counted_as_red():
     }
     v = compute(snap)
     assert not any("PyAutoLens" in r for r in v["red_reasons"])
+
+
+# --- every gap says which check produced it ---------------------------------
+
+def test_stale_details_carry_the_gate_key_beside_each_reason():
+    """A surface must be able to look up the check that closes a gap. The key
+    is the gap's machine-readable identity; the sentence is for humans."""
+    snap = make_snapshot()
+    del snap["verify_install"]
+    del snap["validation_report"]
+    v = compute(snap)
+
+    assert v["verdict"] == "stale"
+    # index for index with the flat list, which is unchanged
+    assert [d["text"] for d in v["stale_details"]] == v["stale_reasons"]
+    by_key = {d["key"]: d["text"] for d in v["stale_details"]}
+    assert by_key["install_unknown"] == "install verification not run"
+    assert by_key["validation_absent"] == "no release validation for current source"
+
+
+def test_stale_details_are_empty_when_nothing_is_stale():
+    v = compute(make_snapshot())
+    assert v["verdict"] == "green"
+    assert v["stale_details"] == []
+
+
+def test_release_ci_profile_files_no_details_for_out_of_scope_evidence():
+    """Under release-ci a dev-box-local gap is `na`, not stale — so it earns no
+    remedy chip either."""
+    snap = make_snapshot()
+    del snap["test_run"]
+    v = compute_ci(snap)
+
+    assert not any(d["key"] == "test_unknown" for d in v["stale_details"])
+    assert any("test run status unknown" in r for r in v["na_reasons"])

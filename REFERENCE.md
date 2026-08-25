@@ -41,12 +41,18 @@ same `state.json` + `release_ready.json`, so they cannot disagree.
 - **Pages board** — <https://pyautolabs.github.io/PyAutoHeart/>, published daily
   by `heart-health.yml`. Blockers link the repo and the failing run, and carry
   one-tap 📋 buttons copying a ready-made `/bug …` Claude prompt; grey
-  dev-box-only rows say what they watch and copy the observe command.
+  dev-box-only rows say what they watch and copy the observe command. An
+  **evidence gap** carries its remedy instead: ⌨ copies the command that
+  re-runs that check, 📋 the prompt that does the same in a chat, and the
+  "clear them all" chip above the list copies ONE plan (prompt, plus a command
+  chain when every gap has one) that closes the whole tier — the remedies are
+  keyed off the readiness gate key, never guessed from the reason text.
 - **README strip** — the `heart:begin/end` block (`--md-brief`): verdict +
   linked blockers + board link, auto-committed by the same workflow.
 - **Badge** — `badge.json` on the Pages site, rendered via shields.io.
 - **Terminal** — `pyauto-heart dashboard` / `status` / the `watch` daemon.
-- **JSON** — `--json` (schema v2: structured `blockers` with prompts/links,
+- **JSON** — `--json` (schema v3: structured `blockers` with prompts/links and,
+  on a stale row, the `command` that closes it; board-level `stale_plan`;
   per-section `action`/`links`/`observed_ago`) — what the Health Agent and
   mobile consume.
 - **Issue** — one `[heart-health]` tracking issue opens while cloud checks are

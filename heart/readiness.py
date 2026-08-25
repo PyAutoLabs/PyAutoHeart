@@ -71,7 +71,10 @@ Red dominates yellow, which dominates stale, structurally: reasons are
 collected into separate lists and
 ``verdict = red if red_reasons else yellow if yellow_reasons else stale if stale_reasons else green``.
 A ``score`` (0–100, weighted penalties) is advisory/sortable only — the colour,
-not the number, is the gate. ``compute`` is a pure function of the snapshot for
+not the number, is the gate. Each stale reason also travels with the gate key
+that produced it in ``stale_details`` (additive — the flat reason lists are
+unchanged), so a surface can look up the check that closes a gap instead of
+parsing the sentence. ``compute`` is a pure function of the snapshot for
 easy testing and never raises on partial/malformed data.
 """
 
@@ -250,6 +253,10 @@ def compute(
     # remedy is re-running a check. Never receives a reason whose last known
     # result was adverse (those stay red/yellow); see the module docstring.
     stale: list[str] = []
+    # The gate key behind each entry of ``stale``, index for index — the
+    # machine-readable identity of a gap, so a consumer looks its remedy up
+    # instead of guessing it from the sentence.
+    stale_keys: list[str] = []
     # Out-of-scope-by-profile: dev-box-local evidence gaps under release-ci.
     # Listed for transparency (never silently green) but non-gating — the
     # module docstring's "Profiles" section is the rule's home.
@@ -259,6 +266,12 @@ def compute(
     def hit(key: str, n: int = 1) -> None:
         counts[key] = counts.get(key, 0) + n
 
+    def add_stale(msg: str, key: str) -> None:
+        """File an evidence gap: its sentence, its gate key, its penalty."""
+        stale.append(msg)
+        stale_keys.append(key)
+        hit(key)
+
     def scope_local(msg: str, key: str) -> None:
         """File a *gap* in dev-box-local evidence: stale on the default
         profile; out-of-scope (na, non-gating) under release-ci. Adverse
@@ -266,15 +279,13 @@ def compute(
         if release_ci:
             na.append(msg + " (dev-box-local — out of scope for release-ci)")
         else:
-            stale.append(msg)
-            hit(key)
+            add_stale(msg, key)
 
     # --- library gates (RED) ---
     for lib in libs:
         body = repos.get(lib)
         if not isinstance(body, dict) or not body:
-            stale.append(f"{lib}: status unknown")
-            hit("lib_unknown")
+            add_stale(f"{lib}: status unknown", "lib_unknown")
             continue
         ci = body.get("ci_status", {}) or {}
         conclusion = ci.get("conclusion")
@@ -282,8 +293,8 @@ def compute(
             # The CI query failed, so we have no evidence either way. That is a
             # STALE "unknown", never a pass — and it must be *said*, because a
             # silent unknown here is indistinguishable from a healthy repo.
-            stale.append(f"{lib}: CI status unavailable ({ci['error']})")
-            hit("lib_ci_unavailable")
+            add_stale(f"{lib}: CI status unavailable ({ci['error']})",
+                      "lib_ci_unavailable")
         elif conclusion not in (None, "", "success"):
             red.append(f"{lib}: CI {conclusion}")
             hit("lib_ci")
@@ -403,8 +414,10 @@ def compute(
                 )
                 hit("skew_bad")
             elif status == "UNKNOWN":
-                stale.append(f"{w.get('workspace')}: newest {w.get('library')} release unknown")
-                hit("skew_unknown")
+                add_stale(
+                    f"{w.get('workspace')}: newest {w.get('library')} release unknown",
+                    "skew_unknown",
+                )
 
     # --- version skew, PyPI yank leg (deep `version_skew --pypi`; the slice is
     # absent until that on-demand probe has run — absence is no signal) ---
@@ -432,10 +445,10 @@ def compute(
                 )
                 hit("skew_pypi_floor_yanked")
             elif status == "UNKNOWN":
-                stale.append(
-                    f"{w.get('workspace')}: PyPI unreachable for {w.get('package')}"
+                add_stale(
+                    f"{w.get('workspace')}: PyPI unreachable for {w.get('package')}",
+                    "skew_pypi_unknown",
                 )
-                hit("skew_pypi_unknown")
 
     # --- manifest drift (YELLOW — identity hygiene vs PyAutoMind/repos.yaml) ---
     manifest = snapshot.get("manifest_drift")
@@ -475,22 +488,21 @@ def compute(
             )
             hit("install_not_ready")
         elif index == "find-links":
-            stale.append(
+            add_stale(
                 "install verification development-only (find-links; "
-                "PyPI/TestPyPI evidence required)"
+                "PyPI/TestPyPI evidence required)",
+                "install_non_release",
             )
-            hit("install_non_release")
         else:
             age = _age_days(vi.get("ts"), ref)
             if age is None or age > INSTALL_STALE_DAYS:
-                stale.append(
+                add_stale(
                     f"install verification stale ({index}, "
-                    + ("age unknown)" if age is None else f"{int(age)}d old)")
+                    + ("age unknown)" if age is None else f"{int(age)}d old)"),
+                    "install_stale",
                 )
-                hit("install_stale")
     else:
-        stale.append("install verification not run")
-        hit("install_unknown")
+        add_stale("install verification not run", "install_unknown")
 
     # --- release-validation gate (hard) -------------------------------------
     # GREEN-for-release now REQUIRES a fresh, passing validation_report whose
@@ -515,8 +527,8 @@ def compute(
             # Nothing is wrong; the rehearsal evidence is simply absent. The
             # wording must contain "release validation" — the Health Agent
             # classifier matches on that string to route the remedy.
-            stale.append("release validation incomplete: no rehearsal for current source")
-            hit("validation_absent")
+            add_stale("release validation incomplete: no rehearsal for current source",
+                      "validation_absent")
         elif outcome == "fail":
             vr_stages = vr.get("stages")
             failed_stages = [
@@ -548,46 +560,44 @@ def compute(
                     mismatched.append(lib)
             vr_profile = str(vr.get("profile") or "").strip().lower()
             if not commit_shas:
-                stale.append("release validation source unconfirmed (no commit_shas)")
-                hit("validation_unknown")
+                add_stale("release validation source unconfirmed (no commit_shas)",
+                          "validation_unknown")
             elif mismatched:
-                stale.append(
+                add_stale(
                     "release validation stale: source moved since rehearsal ("
-                    + ", ".join(mismatched) + ")"
+                    + ", ".join(mismatched) + ")",
+                    "validation_stale_sha",
                 )
-                hit("validation_stale_sha")
             elif confirmed == 0:
-                stale.append("release validation source unconfirmed (current HEADs unknown)")
-                hit("validation_unknown")
+                add_stale("release validation source unconfirmed (current HEADs unknown)",
+                          "validation_unknown")
             elif unconfirmed:
                 # Some libs matched, but at least one gated repo's SHA could not
                 # be confirmed either way — an unknown must never be silently
                 # treated as green (same principle every other gate here follows).
-                stale.append(
+                add_stale(
                     "release validation partially unconfirmed (repo(s) with unknown "
-                    "current HEAD: " + ", ".join(unconfirmed) + ")"
+                    "current HEAD: " + ", ".join(unconfirmed) + ")",
+                    "validation_unknown",
                 )
-                hit("validation_unknown")
             elif vr_profile != "release":
-                stale.append(
-                    f"release validation profile '{vr.get('profile') or '?'}' is not 'release'"
+                add_stale(
+                    f"release validation profile '{vr.get('profile') or '?'}' is not 'release'",
+                    "validation_profile",
                 )
-                hit("validation_profile")
             else:
                 age = _age_days(vr.get("ts"), ref)
                 if age is None or age > VALIDATION_STALE_DAYS:
-                    stale.append(
+                    add_stale(
                         "release validation stale "
-                        + ("(age unknown)" if age is None else f"({int(age)}d old)")
+                        + ("(age unknown)" if age is None else f"({int(age)}d old)"),
+                        "validation_stale",
                     )
-                    hit("validation_stale")
                 # else: fresh, passing, matching, release profile → GREEN-eligible
         else:
-            stale.append("release validation status unknown")
-            hit("validation_unknown")
+            add_stale("release validation status unknown", "validation_unknown")
     else:
-        stale.append("no release validation for current source")
-        hit("validation_absent")
+        add_stale("no release validation for current source", "validation_absent")
 
     # --- script timing (YELLOW) ---
     timing = snapshot.get("script_timing", {}) or {}
@@ -663,6 +673,10 @@ def compute(
         "red_reasons": red,
         "yellow_reasons": yellow,
         "stale_reasons": stale,
+        # Each stale reason with the gate key that produced it — the surfaces
+        # key their remedy off this and never off the sentence. Additive: the
+        # flat lists above are the contract every existing consumer reads.
+        "stale_details": [{"text": t, "key": k} for t, k in zip(stale, stale_keys)],
         "na_reasons": na,
         "ts": snapshot.get("ts") or datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }

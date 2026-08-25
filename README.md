@@ -60,6 +60,7 @@ pyauto-heart watch           # the daemon: tick every 5 min, live board on a tty
 pyauto-heart dashboard       # the board (also --md, --md-brief, --html, --json, --oneline)
 pyauto-heart publish         # push the dev-box observation to the live board
 pyauto-heart fix ci <repo>   # bundle a failing topic into a paste-ready Claude prompt
+pyauto-heart fix stale       # the evidence gaps + the one plan that clears them all
 ```
 
 The full CLI surface, the run-from-checkout model, state layout, and verdict

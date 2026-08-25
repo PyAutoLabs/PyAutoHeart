@@ -576,7 +576,7 @@ def test_json_v2_carries_blockers_and_actions():
     out = dashboard.render(_failing_snapshot(), v, fmt="json",
                            unobserved=dashboard.LOCAL_ONLY_FAMILIES, now=FRESH_NOW)
     d = json.loads(out)
-    assert d["schema_version"] == 2
+    assert d["schema_version"] == dashboard.SCHEMA_VERSION
     assert d["blockers"][0]["prompt"].startswith("/bug ")
     unobs = [s for s in d["sections"] if s["state"] == "unobserved"]
     assert unobs and all(s["action"]["payload"].startswith("pyauto-heart") for s in unobs)
@@ -786,8 +786,8 @@ def test_board_json_carries_the_performance_block_with_prompts_verbatim():
     assert perf["no_run"]["totals"]["unmeasured_slow"] == 7
     assert perf["no_run"]["rows"][0]["prompt"] == ROW_PROMPT
     assert len(perf["history"]) == 3
-    # schema v2 stays v2 — the performance block is purely additive.
-    assert d["schema_version"] == 2
+    # the performance block is purely additive — it bumps nothing on its own.
+    assert d["schema_version"] == dashboard.SCHEMA_VERSION
 
 
 def test_performance_no_run_rows_are_capped_at_ten():
@@ -855,3 +855,126 @@ def test_a_long_out_link_label_cannot_push_the_page_sideways():
         fmt="html", now=FRESH_NOW)
     rule = re.search(r"a\.out\{[^}]*\}", out).group(0)
     assert "nowrap" not in rule
+
+
+# --- evidence gaps carry the check that closes them --------------------------
+#
+# STALE is the board's steady state, so a gap that only names itself leaves the
+# reader with nothing to do. Each row carries its own remedy (looked up by the
+# readiness gate key, never sniffed from the sentence), and the tier carries one
+# plan that closes all of them at once.
+
+GAPS = ["install verification not run",
+        "test run status unknown (no report.json)"]
+
+
+def _stale_verdict(reasons, keys, score=80):
+    return {"verdict": "stale", "score": score, "ts": TS,
+            "red_reasons": [], "yellow_reasons": [], "stale_reasons": list(reasons),
+            "stale_details": [{"text": t, "key": k} for t, k in zip(reasons, keys)]}
+
+
+def test_each_gap_carries_the_command_that_closes_it():
+    v = _stale_verdict(GAPS, ["install_unknown", "test_unknown"])
+    board = dashboard.build_board(make_snapshot(), v, now=FRESH_NOW)
+    install, test_run = [b for b in board.blockers if b["severity"] == "stale"]
+
+    assert install["command"] == dashboard.VERIFY_INSTALL_CMD
+    assert test_run["command"] == dashboard.TICK_CMD
+    # the prompt names the check AND the gap it closes — not the sentence back
+    assert dashboard.VERIFY_INSTALL_CMD in install["prompt"]
+    assert GAPS[0] in install["prompt"]
+    assert install["prompt"].startswith("/health")
+    # STALE's rule survives the trip to the chip
+    assert "never change code" in install["prompt"]
+    assert not any(b["prompt"].startswith("/bug") for b in board.blockers)
+
+
+def test_a_gap_needing_a_conversation_offers_no_command():
+    v = _stale_verdict(["no release validation for current source"], ["validation_absent"])
+    board = dashboard.build_board(make_snapshot(), v, now=FRESH_NOW)
+    (gap,) = board.blockers
+
+    assert gap["command"] is None          # the Heart never dispatches a rehearsal
+    assert "/release rehearse" in gap["prompt"]
+
+
+def test_an_unkeyed_gap_falls_back_to_the_generic_nudge():
+    # A verdict from an older Heart carries no `stale_details` at all: the row
+    # must degrade to the old prompt, never to a guessed remedy.
+    v = {"verdict": "stale", "score": 90, "ts": TS,
+         "stale_reasons": ["some gap nobody has mapped yet"]}
+    board = dashboard.build_board(make_snapshot(), v, now=FRESH_NOW)
+    (gap,) = board.blockers
+
+    assert gap["command"] is None
+    assert gap["prompt"] == "/health re-run the stale evidence: some gap nobody has mapped yet"
+    assert board.stale_plan is None
+
+
+def test_the_tier_carries_one_plan_that_clears_every_gap():
+    v = _stale_verdict(GAPS, ["install_unknown", "test_unknown"])
+    board = dashboard.build_board(make_snapshot(), v, now=FRESH_NOW)
+    plan = board.stale_plan
+
+    assert plan["count"] == 2
+    for gap in GAPS:
+        assert gap in plan["prompt"]           # every gap named, in order
+    assert plan["prompt"].startswith("/health clear the Heart's 2 evidence gap(s)")
+    # every gap here has a command, so the whole tier is one shell chain that
+    # ends by re-reading the verdict
+    assert plan["command"] == (f"{dashboard.VERIFY_INSTALL_CMD} && {dashboard.TICK_CMD}"
+                               " && pyauto-heart readiness")
+
+
+def test_the_plan_withholds_a_command_chain_it_cannot_complete():
+    # A chain that silently skips the rehearsal would read as "that cleared it".
+    v = _stale_verdict(GAPS + ["no release validation for current source"],
+                       ["install_unknown", "test_unknown", "validation_absent"])
+    board = dashboard.build_board(make_snapshot(), v, now=FRESH_NOW)
+
+    assert board.stale_plan["command"] is None
+    assert "/release rehearse" in board.stale_plan["prompt"]
+
+
+def test_no_plan_when_nothing_is_stale():
+    board = dashboard.build_board(make_snapshot(), make_verdict(), now=FRESH_NOW)
+    assert board.stale_plan is None
+
+
+def test_surfaces_render_the_remedies_and_the_plan():
+    v = _stale_verdict(GAPS, ["install_unknown", "test_unknown"])
+    snap = make_snapshot()
+
+    html = dashboard.render(snap, v, fmt="html", now=FRESH_NOW)
+    assert "\U0001f4cb clear them all" in html and "command chain" in html
+    assert dashboard.VERIFY_INSTALL_CMD in html
+
+    md = dashboard.render(snap, v, fmt="md", now=FRESH_NOW)
+    assert "Clear every gap in one go" in md
+    assert dashboard.VERIFY_INSTALL_CMD in md
+
+    d = json.loads(dashboard.render(snap, v, fmt="json", now=FRESH_NOW))
+    assert d["stale_plan"]["count"] == 2
+    assert all("command" in b for b in d["blockers"])
+
+
+def test_the_plan_stays_off_a_board_showing_another_tier():
+    # The board shows one tier at a time; a plan for gaps the reader cannot see
+    # is noise (the json surface still carries it as data).
+    v = _stale_verdict(GAPS, ["install_unknown", "test_unknown"], score=45)
+    v.update(verdict="red", red_reasons=["PyAutoLens: CI failure"])
+    html = dashboard.render(make_snapshot(), v, fmt="html", now=FRESH_NOW)
+
+    assert "\U0001f4cb clear them all" not in html
+    assert json.loads(dashboard.render(make_snapshot(), v, fmt="json",
+                                       now=FRESH_NOW))["stale_plan"]["count"] == 2
+
+
+def test_the_terminal_verdict_points_at_the_door_out_of_stale():
+    v = _stale_verdict(GAPS, ["install_unknown", "test_unknown"])
+    block = "\n".join(dashboard.render_readiness_block(v))
+    assert "pyauto-heart fix stale" in block
+    # the prompt hook's one-liner stays a one-liner
+    quiet = "\n".join(dashboard.render_readiness_block(v, quiet=True))
+    assert "fix stale" not in quiet
