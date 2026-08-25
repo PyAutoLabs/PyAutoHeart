@@ -365,6 +365,50 @@ jobs:
           name: results-scripts-${{ matrix.project.name }}-${{ matrix.project.directory }}
           path: workspace/test-results/
           retention-days: 30
+      - name: Upload the per-script timings (scripts leg) under a globbable name
+        # PyAutoHands#264 gave RunReport.write() a consolidated
+        # smoke_timings.json, and PyAutoHeart#167 published it from the PR gate
+        # (smoke-tests.yml) as `smoke-timings-<python-version>`. This body never
+        # did — so the WIDEST timing sample the organism produces, the weekly
+        # workspace-smoke sweep, survived only INSIDE the `results-*` zips above,
+        # under no name a consumer could glob for.
+        #
+        # WHY A SEPARATE ARTIFACT and not a wider `results-*` glob: the artifact
+        # NAME is the contract the deferred Heart-board timing ingester globs on
+        # (`smoke-timings-*`). `results-*` is a different contract — it is what
+        # the `analyze` job downloads and hands to aggregate_results.py, which
+        # globs `**/*.json` and skips this sidecar BY NAME. Publishing timings
+        # under a `results-*` name would aim them straight at the one consumer
+        # that deliberately excludes them.
+        #
+        # WHY THE LEG SUFFIX: the PR gate has one leg per python version, so a
+        # fixed name is safe there. This body runs ~50 legs in a single weekly
+        # run, so the name must carry the leg — (project.name, project.directory)
+        # is exactly the pair the `results-*` upload above already relies on the
+        # script matrix to keep unique.
+        #
+        # WHY ONLY THE JSON, not the whole report dir: the report dir already
+        # ships as `results-*` above. Duplicating ~50 of them weekly buys
+        # nothing; the gap is discoverability, and the timings file is the part
+        # a consumer wants.
+        #
+        # NO retention-days (unlike the 30 above, deliberately): the dataset IS
+        # the point, matching the PR gate's reasoning — the timings keep the
+        # repo's full default artifact retention and outlive the report dirs
+        # they came from. One small JSON per leg, so the cost is negligible.
+        #
+        # if: always() + if-no-files-found: ignore are both load-bearing. A leg
+        # that fails still has timings worth keeping; a leg that dies before the
+        # first report write (a failed install, an empty script list) leaves no
+        # report dir at all — and an upload failing closed would turn "we
+        # collected no timings" into "the weekly sweep is red", which is exactly
+        # backwards.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-timings-scripts-${{ matrix.project.name }}-${{ matrix.project.directory }}
+          path: workspace/**/smoke_timings.json
+          if-no-files-found: ignore
 
   run_notebooks:
     runs-on: ubuntu-latest
@@ -453,6 +497,21 @@ jobs:
           name: results-notebooks-${{ matrix.project.name }}-${{ matrix.project.directory }}
           path: workspace/test-results/
           retention-days: 30
+      - name: Upload the per-script timings (notebooks leg) under a globbable name
+        # The notebook leg's report is written by run.py, which reaches the same
+        # RunReport.write() — so it emits smoke_timings.json too, and it is half
+        # the weekly timing sample. Full rationale on the scripts leg's copy of
+        # this step above; only the name's leg segment and the gate differ.
+        #
+        # The gate is carried over from the results-* upload: the *_test
+        # workspaces publish no notebooks, so those legs skip execution entirely
+        # and have nothing to collect.
+        if: always() && steps.gate.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-timings-notebooks-${{ matrix.project.name }}-${{ matrix.project.directory }}
+          path: workspace/**/smoke_timings.json
+          if-no-files-found: ignore
 
   analyze:
     runs-on: ubuntu-latest
