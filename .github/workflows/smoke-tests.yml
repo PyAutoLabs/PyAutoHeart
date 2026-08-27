@@ -205,6 +205,12 @@ jobs:
       - name: Run the workspace runner (the smoke runner by default)
         env:
           JAX_ENABLE_X64: "True"
+          # Same reason as workspace-validation.yml's workflow-level env: JAX's
+          # default traceback filter strips the frames that name the exception,
+          # so a failing script reports the placeholder instead of the failure.
+          # This runner is the other surface that executes workspace scripts
+          # under JAX, so it needs the same treatment.
+          JAX_TRACEBACK_FILTERING: "off"
           NUMBA_CACHE_DIR: /tmp/numba_cache
           MPLCONFIGDIR: /tmp/matplotlib
           PYTHONPATH: ${{ github.workspace }}/PyAutoHands/autohands
