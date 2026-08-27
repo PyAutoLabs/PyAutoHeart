@@ -133,6 +133,8 @@ _WEIGHTS: dict[str, tuple[int, int]] = {
     "skew_pypi_bad": (25, 50),
     "skew_pypi_floor_yanked": (8, 24),
     "skew_pypi_unknown": (10, 30),
+    "required_workflow_drift": (20, 40),
+    "required_workflow_unknown": (10, 30),
     "install_not_ready": (40, 40),
     "install_non_release": (10, 10),
     "install_stale": (10, 10),
@@ -460,6 +462,38 @@ def compute(
                     f"manifest drift: {label} — {n} mismatch(es) vs PyAutoMind/repos.yaml"
                 )
                 hit("manifest_drift")
+
+    # --- required-workflow drift (YELLOW — a gate that is not wired up) ---
+    #
+    # A required workflow with no file never satisfies ci_status.rollup()'s
+    # all_green, so the repo reads `in_progress` forever — indistinguishable
+    # from a run in flight, which is why this state survives unnoticed. It is a
+    # *configuration* finding, not red CI: the repo's code is fine, its gate is
+    # missing, and colouring it red would misattribute the fault.
+    wf_drift = snapshot.get("required_workflow_drift")
+    if isinstance(wf_drift, dict) and wf_drift.get("available"):
+        for row in wf_drift.get("repos") or []:
+            if not isinstance(row, dict):
+                continue
+            for wf in row.get("missing") or []:
+                yellow.append(
+                    f"{row.get('name')}: required workflow '{wf}' has no workflow "
+                    f"file — CI can never roll up green"
+                )
+                hit("required_workflow_drift")
+        # A repo whose workflow list could not be read is an unknown, never an
+        # implied pass: without it a missing gate would hide behind the error.
+        unreadable = [
+            str(row.get("name"))
+            for row in wf_drift.get("repos") or []
+            if isinstance(row, dict) and row.get("error")
+        ]
+        if unreadable:
+            add_stale(
+                "required workflows unverified (workflow list unreadable): "
+                + ", ".join(sorted(unreadable)),
+                "required_workflow_unknown",
+            )
 
     # --- install verification (deep check: RED on fail, YELLOW if stale/unrun) ---
     #
