@@ -75,6 +75,18 @@ env:
   # in profile_release.yaml (the TestPyPI dev version never matches the
   # workspace pin either) — belt and braces.
   PYAUTO_SKIP_WORKSPACE_VERSION_CHECK: "1"
+  # JAX filters its own frames out of a traceback by default, and in practice
+  # takes the exception that names the failure with them — a failing script then
+  # reports only "For simplicity, JAX has removed its internal frames...". Run
+  # 30516167217 (2026-07-30) failed both interferometer shards with exactly that
+  # and nothing else; the real cause (a RESOURCE_EXHAUSTED OOM) was only legible
+  # the next night, in 30607596240, when the message happened to survive. A gate
+  # whose error messages are filtered away is the PyAutoBrain#196 exit-code
+  # problem again: the signal exists and the harness discards it before a human
+  # sees it. Set at workflow level so both the smoke and release legs, and every
+  # project in the matrix, are covered — run_python.py's per-script env profiles
+  # inherit it, since a profile only *sets* the keys it is given.
+  JAX_TRACEBACK_FILTERING: "off"
 
 jobs:
   find_scripts:
