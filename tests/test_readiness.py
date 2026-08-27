@@ -786,6 +786,57 @@ def test_manifest_drift_unavailable_stays_green():
     assert v["verdict"] == "green"
 
 
+def _wf_drift(**overrides):
+    row = {
+        "name": "autolens_workspace",
+        "group": "workspaces",
+        "required": ["Smoke Tests", "Navigator Check"],
+        "present": ["Smoke Tests"],
+        "missing": ["Navigator Check"],
+        "error": "",
+    }
+    row.update(overrides)
+    return {"available": True, "checked": 1, "repos": [row],
+            "missing_count": len(row["missing"]),
+            "error_count": 1 if row["error"] else 0}
+
+
+def test_missing_required_workflow_is_yellow_not_red():
+    """A gate that is not wired up is a configuration finding, not red CI."""
+    v = compute(make_snapshot(required_workflow_drift=_wf_drift()))
+    assert v["verdict"] == "yellow"
+    assert v["red_reasons"] == []
+    assert any(
+        "autolens_workspace" in r and "Navigator Check" in r
+        for r in v["yellow_reasons"]
+    )
+
+
+def test_required_workflows_all_present_stays_green():
+    v = compute(make_snapshot(required_workflow_drift=_wf_drift(
+        present=["Smoke Tests", "Navigator Check"], missing=[])))
+    assert v["verdict"] == "green"
+
+
+def test_required_workflow_drift_unavailable_stays_green():
+    """No `gh` (the web/mobile session) is a skip, not a finding."""
+    v = compute(make_snapshot(required_workflow_drift={
+        "available": False, "reason": "gh not installed", "repos": [],
+        "missing_count": 0}))
+    assert v["verdict"] == "green"
+
+
+def test_unreadable_workflow_list_is_stale_not_an_implied_pass():
+    """Without this, a missing gate would hide behind a failed fetch."""
+    v = compute(make_snapshot(required_workflow_drift=_wf_drift(
+        present=[], missing=[], error="HTTP 403")))
+    assert v["verdict"] == "stale"
+    assert any("required workflows unverified" in r for r in v["stale_reasons"])
+    assert any(
+        d["key"] == "required_workflow_unknown" for d in v["stale_details"]
+    )
+
+
 # ---------------------------------------------------------------------------
 # release-ci profile (the scheduled-nightly gate — design §5 in
 # PyAutoHands/docs/nightly_release_design.md). The driver assembles a snapshot

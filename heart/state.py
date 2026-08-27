@@ -84,6 +84,7 @@ def aggregate() -> dict[str, Any]:
         "version_skew": _read_json_or_default(HEART_STATE_DIR / "version_skew.json", {}),
         "version_skew_pypi": _read_json_or_default(HEART_STATE_DIR / "version_skew_pypi.json", {}),
         "manifest_drift": _read_json_or_default(HEART_STATE_DIR / "manifest_drift.json", {}),
+        "required_workflow_drift": _read_json_or_default(HEART_STATE_DIR / "required_workflow_drift.json", {}),
         "verify_install": _read_json_or_default(HEART_STATE_DIR / "verify_install.json", {}),
         "url_check": _read_json_or_default(HEART_STATE_DIR / "url_check.json", {}),
         "validation_report": _read_json_or_default(HEART_STATE_DIR / "validation_report.json", {}),

@@ -48,6 +48,12 @@ PYTHONPATH="$HEART_HOME" python3 -m heart.checks.release_run || heart_log WARN "
 # Python: workspace-vs-library version skew (cheap file reads; no heavy imports).
 PYTHONPATH="$HEART_HOME" python3 -m heart.checks.version_skew || heart_log WARN "$(c_warn 'version_skew failed')"
 
+# Python: required-workflow drift — a required workflow with no file never
+# satisfies ci_status's all_green, so the repo reads `in_progress` forever.
+# One extra cheap `gh api` metadata read per gating repo, fetched in parallel;
+# skips itself entirely when `gh` is absent (web/mobile session).
+PYTHONPATH="$HEART_HOME" python3 -m heart.checks.required_workflow_drift || heart_log WARN "$(c_warn 'required_workflow_drift failed')"
+
 # Python: body-map identity drift — PyAutoMind/repos.yaml vs Heart/Build/labels
 # repo lists and every checkout's origin (delegates to repos_sync.py --check).
 if [[ -f "$PYAUTO_ROOT/PyAutoMind/scripts/repos_sync.py" ]]; then
