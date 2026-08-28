@@ -26,9 +26,7 @@ copy → paste, on a laptop or a phone.
 <!-- The line below is auto-updated by .github/workflows/heart-health.yml (everything -->
 <!-- between the heart:begin/heart:end markers is replaced with the rendered strip). -->
 <!-- heart:begin -->
-🟡 **YELLOW** · score 60 · [dashboard →](https://pyautolabs.github.io/PyAutoHeart/)
-
-**Warnings:** [PyAutoFit](https://github.com/PyAutoLabs/PyAutoFit): open PR 8d old
+🔵 **STALE** · score 65 · [dashboard →](https://pyautolabs.github.io/PyAutoHeart/)
 <!-- heart:end -->
 
 ## How PyAutoHeart works
