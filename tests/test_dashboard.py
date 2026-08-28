@@ -959,6 +959,30 @@ def test_surfaces_render_the_remedies_and_the_plan():
     assert all("command" in b for b in d["blockers"])
 
 
+def test_a_worded_copy_face_is_a_chip_and_a_glyph_stays_a_square():
+    """The theme sizes `button.copy` as a fixed 2.6rem SQUARE. A face carrying
+    words needs the `text` modifier or the label wraps inside 42px into a
+    one-word-per-line column and spills out of the box — which is what the
+    plan line did until it was caught on a laptop.
+
+    Asserted per button rather than by position: the invariant is "this face
+    has words, so this button is a chip", which stays true however the board
+    reorders its tiers.
+    """
+    v = _stale_verdict(GAPS, ["install_unknown", "test_unknown"])
+    html = dashboard.render(make_snapshot(), v, fmt="html", now=FRESH_NOW)
+
+    buttons = re.findall(r"<button class='(copy[^']*)'[^>]*>([^<]*)</button>", html)
+    assert buttons, "no copy buttons on the board at all"
+    for cls, face in buttons:
+        is_chip = "text" in cls.split()
+        assert is_chip == (len(face.split()) > 1), (cls, face)
+
+    faces = [f for _, f in buttons]
+    assert "\U0001f4cb clear them all" in faces   # a worded chip is on show
+    assert "\U0001f4cb" in faces                  # and a bare glyph beside it
+
+
 def test_the_plan_stays_off_a_board_showing_another_tier():
     # The board shows one tier at a time; a plan for gaps the reader cannot see
     # is noise (the json surface still carries it as data).

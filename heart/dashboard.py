@@ -1413,8 +1413,15 @@ def _copy_btn(payload: str, label: str = "copy", face: str = "📋") -> str:
     ``face`` is what the button shows: the bare 📋 for a chip beside a row, a
     short worded face (⌨ command chain) where the board offers more than one
     payload and the reader has to choose between them.
+
+    A worded face takes the theme's `text` modifier. The base `button.copy` is
+    a fixed 2.6rem SQUARE — right for a bare glyph, and a trap for words: the
+    label wrapped inside 42px into a one-word-per-line column and spilled out
+    of its own box. Whitespace in the face is the test, because that is what
+    makes a face a phrase rather than a glyph.
     """
-    return (f"<button class='copy' type='button' "
+    cls = "copy text" if len(face.split()) > 1 else "copy"
+    return (f"<button class='{cls}' type='button' "
             f"title='{_html.escape(label, quote=True)}' "
             f"data-cmd=\"{_html.escape(payload, quote=True)}\">{_html.escape(face)}</button>")
 
