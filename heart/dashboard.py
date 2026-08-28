@@ -1480,7 +1480,7 @@ table.board tr.fail td.dot::before{background:var(--bad)}
 table.board tr.info td.dot::before{background:var(--accent)}
 table.board td.name{font-weight:600;white-space:nowrap}
 table.board tr.unobs td.name,table.board tr.unobs td.sum{color:var(--muted)}
-/* The detail lines are column-ALIGNED text — `PyAutoArray   CI ✓   PR×1`,
+/* The detail lines are column-ALIGNED text — `<repo>   CI ✓   PR×1`,
    space-padded so the columns line up exactly as they do in the terminal
    render. Html collapses those runs of spaces, so every one of them arrived
    as run-on prose in a proportional face and the whole block read as one
