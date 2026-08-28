@@ -1480,8 +1480,16 @@ table.board tr.fail td.dot::before{background:var(--bad)}
 table.board tr.info td.dot::before{background:var(--accent)}
 table.board td.name{font-weight:600;white-space:nowrap}
 table.board tr.unobs td.name,table.board tr.unobs td.sum{color:var(--muted)}
+/* The detail lines are column-ALIGNED text — `<repo>   CI ✓   PR×1`,
+   space-padded so the columns line up exactly as they do in the terminal
+   render. Html collapses those runs of spaces, so every one of them arrived
+   as run-on prose in a proportional face and the whole block read as one
+   grey paragraph column. `pre-wrap` keeps the padding and a monospace face
+   makes it mean something again; a line too long for the column still wraps
+   rather than scrolling the page (the shared sheet's wrap guard). */
 ul.det{margin:.35rem 0 0;padding-left:1.1rem;color:var(--muted);
- font-size:.85rem}
+ font-size:.8rem;white-space:pre-wrap;
+ font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 .ago{color:var(--muted)}
 /* The out-links carry DATA in their labels — `<repo> run`, and this org's
    longest repo name is 36 characters. `nowrap` made one of those a single
