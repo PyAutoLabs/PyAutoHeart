@@ -9,7 +9,7 @@
     "profiling_drift": {
       "details": [],
       "state": "ok",
-      "summary": "25 results clean"
+      "summary": "33 results clean"
     },
     "script_timing": {
       "details": [],
@@ -17,9 +17,12 @@
       "summary": "646 within baseline"
     },
     "test_run": {
-      "details": [],
-      "state": "ok",
-      "summary": "ready \u2014 1333p / 0f / 142s @ cloud#32277952488"
+      "details": [
+        "\u2717 autolens_test scripts/imaging/rectangular_mge.py (failed)",
+        "\u2717 autolens_test scripts/imaging/rectangular_mge_rtu.py (failed)"
+      ],
+      "state": "fail",
+      "summary": "NOT ready \u2014 1368p / 2f / 119s @ cloud#33179766004"
     },
     "version_skew": {
       "details": [],
@@ -28,16 +31,15 @@
     },
     "worktree_drift": {
       "details": [
-        "point-source-defaults-campaign/autolens_profiling: 4 dirty",
-        "canonical PyAutoMemory: 1 dirty",
-        "canonical admin_jammy: 3 dirty",
-        "canonical autolens_assistant: 1 dirty",
-        "canonical autolens_profiling: 5 dirty",
+        "bundle-themes/PyAutoMind: 2 dirty",
+        "numba-cpu-nnls-iteration-reduction/autolens_profiling: 24 dirty",
+        "canonical autogalaxy_workspace: 1 dirty",
+        "canonical autolens_workspace: 1 dirty",
         "canonical autolens_workspace_test: 1 dirty"
       ],
       "state": "fail",
-      "summary": "4 orphan / 0 missing / 1 dirty"
+      "summary": "1 orphan / 0 missing / 2 dirty"
     }
   },
-  "ts": "2026-08-19T17:44:39.969764+00:00"
+  "ts": "2026-08-28T15:02:11.346856+00:00"
 }
