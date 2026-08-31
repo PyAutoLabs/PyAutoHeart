@@ -1576,6 +1576,13 @@ def _render_html(board: Board) -> str:
     )
     t_ = theme()
     hero = t_.hero(BOARD_KEY, "Dashboard", _LEDE)
+    # The way back from the Pages board to the repository front door; owner
+    # from the declared config surface (REPO_OWNERS), so the segment drops
+    # out on a tenant whose config does not list this repo.
+    repo_name = PAGES_URL.rstrip("/").rsplit("/", 1)[-1]
+    gh_owner = REPO_OWNERS.get(repo_name)
+    github_link = (f' · <a href="https://github.com/{gh_owner}/{repo_name}'
+                   '/blob/main/README.md">GitHub Page</a>' if gh_owner else "")
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1586,7 +1593,7 @@ def _render_html(board: Board) -> str:
 {hero}
 <p class="verdict {_VERDICT_TONE.get(board.verdict, '')}"><b>{word} · score
  {board.score}</b><span class="muted">snapshot {_html.escape(board.ts)} ·
- {age} · <a href="dashboard.md">markdown version</a></span></p>
+ {age} · <a href="dashboard.md">markdown version</a>{github_link}</span></p>
 {stale_html}
 {reasons_html}
 <table class="recent board">{''.join(rows)}</table>

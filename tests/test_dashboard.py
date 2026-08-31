@@ -96,6 +96,10 @@ def test_html_is_self_contained():
                            red_reasons=["PyAutoLens: CI failure"]), fmt="html", now=FRESH_NOW)
     assert out.lstrip().startswith("<!doctype html>")
     assert "RED" in out
+    # The header links the markdown twin and the repository front door.
+    assert '<a href="dashboard.md">markdown version</a>' in out
+    assert ('<a href="https://github.com/PyAutoLabs/PyAutoHeart/blob/main/'
+            'README.md">GitHub Page</a>') in out
     # No external ASSETS (renders anywhere, loads nothing remote): no src=, no
     # <link>, no fetches. Inline <script> is allowed — the one-tap 📋 copy
     # buttons need the clipboard API — and outbound <a href> links are
