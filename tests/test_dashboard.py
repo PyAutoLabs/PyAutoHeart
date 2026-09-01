@@ -96,6 +96,13 @@ def test_html_is_self_contained():
                            red_reasons=["PyAutoLens: CI failure"]), fmt="html", now=FRESH_NOW)
     assert out.lstrip().startswith("<!doctype html>")
     assert "RED" in out
+    # The header links the markdown twin and the repository front door. The
+    # expected owner comes from the same declared config surface the renderer
+    # reads (the tenant firewall keeps org literals out of organ code).
+    assert '<a href="dashboard.md">markdown version</a>' in out
+    gh_owner = dashboard.REPO_OWNERS["PyAutoHeart"]
+    assert (f'<a href="https://github.com/{gh_owner}/PyAutoHeart/blob/main/'
+            'README.md">GitHub Page</a>') in out
     # No external ASSETS (renders anywhere, loads nothing remote): no src=, no
     # <link>, no fetches. Inline <script> is allowed — the one-tap 📋 copy
     # buttons need the clipboard API — and outbound <a href> links are
