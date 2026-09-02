@@ -28,7 +28,7 @@ copy → paste, on a laptop or a phone.
 <!-- heart:begin -->
 🟡 **YELLOW** · score 60 · [dashboard →](https://pyautolabs.github.io/PyAutoHeart/)
 
-**Warnings:** [PyAutoArray](https://github.com/PyAutoLabs/PyAutoArray): open PR 9d old
+**Warnings:** [PyAutoArray](https://github.com/PyAutoLabs/PyAutoArray): open PR 10d old
 <!-- heart:end -->
 
 ## How PyAutoHeart works
