@@ -28,6 +28,7 @@ SUBCOMMAND_ORDER=(
   fix
   "# Release validation (ingest-and-judge only; never dispatches a build)"
   validate
+  freeze
   "# Deep checks (on-demand; too slow for the tick)"
   smoke
   verify_install
@@ -48,6 +49,7 @@ declare -A SHORT_DESC=(
   [dashboard]="The unified health board (--oneline/--md/--html/--json); reads cache, no tick"
   [publish]="Push a distilled dev-box board into the repo so the cloud page fills its grey rows"
   [validate]="Ingest release-validation artifacts into validation_report.json"
+  [freeze]="Set/clear the release-validation freeze flag (library mains should not move)"
   [smoke]="Prepare isolated local environments and run workspace smoke suites"
   [logs]="Tail the daemon log"
   [fix]="Bundle context for a specific topic and emit a Claude command"
@@ -299,6 +301,40 @@ EOF
 cmd_validate() {
   mkdir -p "$HEART_STATE_DIR"
   exec env PYTHONPATH="$HEART_HOME" python3 -m heart.validate "$@"
+}
+
+help_freeze() { cat <<EOF
+pyauto-heart freeze [--show] [--json]
+pyauto-heart freeze --set "<reason>" --until <90m|2h|1d|ISO-8601> [--set-by WHO]
+pyauto-heart freeze --clear
+
+The release-validation freeze flag: while it is set, the library \`main\`
+branches should not move, because a merge landing mid-validation invalidates
+the evidence and restales the rehearsal (~75 minutes, measured 2026-08-29).
+
+Heart OWNS the flag and is the only writer; \$HEART_STATE_DIR/freeze.json holds
+{reason, set_at, until, set_by}. PyAutoBrain reads it and never writes it:
+\`pyauto-brain vitals\` prints it as a warning line, \`/prm\` refuses to merge a
+LIBRARY repo's PR while it is active (\`--thaw\` overrides, logged), and
+\`batch collect\` carries one line. It does NOT enter the readiness verdict —
+a freeze is not a health problem, and gating every skill on it was never the
+intent.
+
+--until is MANDATORY: a freeze with no expiry never clears. Past the expiry the
+flag reads as clear for every consumer, and \`--show\` reports it as "expired"
+so a forgotten set is visible.
+
+Exit codes: 3 while a freeze is ACTIVE (so \`freeze --show\` is a one-call shell
+gate), 0 when clear or expired, 2 on a usage error. \`--set\` always exits 0.
+
+Call sites: pre_build sets it before dispatching the release workflow;
+\`pyauto-heart validate --ingest\` clears it (the ingest is the end of the
+window); review_release clears a freeze the ingest did not.
+EOF
+}
+cmd_freeze() {
+  mkdir -p "$HEART_STATE_DIR"
+  exec env PYTHONPATH="$HEART_HOME" python3 -m heart.freeze "$@"
 }
 
 help_logs() { cat <<EOF

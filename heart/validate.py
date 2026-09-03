@@ -116,7 +116,7 @@ import sys
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
-from heart import state
+from heart import freeze, state
 
 SCHEMA_VERSION = 1
 
@@ -975,6 +975,16 @@ def main(argv: list[str] | None = None) -> int:
             commit_shas=commit_shas,
             out=Path(ns.out) if ns.out else None,
         )
+        # The ingest of the validation evidence IS the end of the validation
+        # window, so it is where the freeze flag comes off — not a separate
+        # thing to remember. Only on a real ingest: `--out` redirects the
+        # report for inspection and must not touch live state, exactly as the
+        # verify_install sidecar above. Never on the read-only path.
+        if ns.out is None:
+            was = freeze.clear()
+            if was["state"] != freeze.CLEAR:
+                print(f"freeze cleared: {was['reason']} "
+                      f"(set {was['set_at']} by {was['set_by'] or 'unknown'})")
 
     if ns.json:
         json.dump(report, sys.stdout, indent=2, sort_keys=True)

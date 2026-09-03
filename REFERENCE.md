@@ -29,6 +29,7 @@ Tests: `pytest tests/`.
 | `logs` | tail the daemon log | operational |
 | `fix` | emit a Claude remediation bundle (`ci`/`dirty`/`drift`/`timing`) | remediation entry point |
 | `validate` | ingest release-validation artifacts into `validation_report.json` | release rehearsal evidence |
+| `freeze` | set/clear the release-validation freeze flag (`--set/--until/--clear/--show`) | the validation window, made visible |
 | `smoke` | isolated local workspace smoke suites | deep validation |
 | `verify_install` | deep pip/conda install-path check (slow) | deep readiness signal |
 | `url_check` / `url_sweep` | offline URL-hygiene guard / ecosystem sweep | monitoring only |
@@ -119,6 +120,49 @@ back to grey after 48 h (`DEVBOX_FRESH_SECONDS`).
 `red > yellow > stale > green`. The `score` (0–100) is advisory/sortable only —
 the colour is the gate. Persisted to `~/.pyauto-heart/release_ready.json`.
 
+## The release freeze window (`freeze`)
+
+A release validation is a window in which the library `main` branches must not
+move: a merge landing mid-validation invalidates the evidence and restales the
+rehearsal (~75 minutes, measured 2026-08-29). `pyauto-heart freeze` is the flag
+that says so out loud.
+
+- **The file.** `$HEART_STATE_DIR/freeze.json` — `{reason, set_at, until,
+  set_by}`, written atomically like every other sidecar. Heart is the only
+  writer.
+- **The verb.** `freeze --set "<reason>" --until <90m|2h|1d|ISO-8601>
+  [--set-by WHO]`, `freeze --clear`, `freeze --show [--json]` (the default
+  action). `--until` is **mandatory**: a freeze with no expiry never clears.
+- **Expiry.** Past `until` the flag reads as clear for every consumer, while
+  `--show` reports it as `expired` — a forgotten set stays visible instead of
+  vanishing. An unreadable or expiry-less file also reads as clear: a freeze
+  nobody can parse must not be able to block a merge.
+- **Exit codes.** A *read* exits `3` while a freeze is active (so
+  `pyauto-heart freeze --show` is a one-call shell gate), `0` when clear or
+  expired, `2` on a usage error. `--set` always exits `0`, so a driver under
+  `set -e` does not abort on the freeze it just took out.
+
+**It is not part of the readiness verdict, deliberately.** `heart/readiness.py`
+never reads it. A freeze is not a health problem, and folding it into the
+colour would make every ship and release gate in the organism block on it. It
+is advice — with teeth in exactly one place.
+
+### Who sets it, who clears it, who reads it
+
+| Call site | What it does |
+|---|---|
+| `PyAutoHands/skills/pre_build/pre_build.md` | **sets** it before dispatching the release workflow — the window opens there |
+| `pyauto-heart validate --ingest` | **clears** it: the ingest of the evidence *is* the end of the window (never on `--out`, which is an inspection path) |
+| `PyAutoHeart/skills/review_release/review_release.md` | checks it while triaging the run and **clears** a freeze the ingest did not |
+| expiry | clears it on its own if none of the above happens |
+| the scheduled nightly release run (`PyAutoBrain/agents/conductors/release/nightly.sh` → Hands `release.yml`) | **not wired**: it runs unattended in CI, where this dev-box state file does not exist. Set the freeze on the dev box if a nightly run's window needs to be visible locally; wiring CI would need the flag to live somewhere both can see, which is a bigger change than this one |
+
+Readers are all in PyAutoBrain and all read-only: the `vitals` faculty prints
+`FROZEN: <reason> until <ts>` as a warning line, `/prm` refuses to merge a
+**library** repo's PR while it is active (`--thaw` overrides, logged to
+`PyAutoMind/autonomy_log.md`), and `batch collect` carries one line. Organ and
+workspace repos are not gated, and no other skill blocks on it.
+
 ## GitHub workflows (`.github/workflows/`)
 
 - **heart-health.yml** — daily cloud sweep; renders + publishes the Pages
@@ -136,8 +180,9 @@ the colour is the gate. Persisted to `~/.pyauto-heart/release_ready.json`.
 ## State (`~/.pyauto-heart/`)
 
 `state.json` (aggregated snapshot), `release_ready.json` (the verdict),
-`validation_report.json`, per-repo sidecars, rolling `timings/`,
-`url_check.json`, `verify_install.json`, daemon `heart.pid`, `logs/heart.log`.
+`validation_report.json`, `freeze.json` (the release freeze window), per-repo
+sidecars, rolling `timings/`, `url_check.json`, `verify_install.json`, daemon
+`heart.pid`, `logs/heart.log`.
 
 ## Internals
 
