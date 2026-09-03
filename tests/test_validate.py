@@ -1153,3 +1153,47 @@ def test_null_discriminator_is_malformed_not_absent(tmp_path):
     assert validate.report_outcome(nul) == "fail"
     _write(tmp_path / "validation_report.json", nul)
     assert validate.ingest([tmp_path])["validation_outcome"] == "fail"
+
+
+# --- the freeze window ------------------------------------------------------
+def test_ingest_clears_the_freeze_because_the_window_has_ended(tmp_path, capsys):
+    """`validate --ingest` is where the validation window closes.
+
+    The evidence landing IS the end of the freeze, so the flag comes off there
+    rather than being something a human has to remember after a green run.
+    """
+    from heart import freeze
+
+    freeze.set_freeze("release validation", "2h", set_by="pre-build")
+    _write(tmp_path / "rehearsal.json", REHEARSAL)
+    assert validate.main(["--ingest", str(tmp_path)]) == 0
+    assert "freeze cleared: release validation" in capsys.readouterr().out
+    assert freeze.read()["state"] == freeze.CLEAR
+
+
+def test_out_redirected_ingest_leaves_the_freeze_alone(tmp_path):
+    """`--out` is an inspection path: it touches no live state, freeze included."""
+    from heart import freeze
+
+    freeze.set_freeze("release validation", "2h", set_by="pre-build")
+    try:
+        _write(tmp_path / "rehearsal.json", REHEARSAL)
+        assert validate.main(["--ingest", str(tmp_path),
+                              "--out", str(tmp_path / "report.json")]) == 0
+        assert freeze.read()["state"] == freeze.ACTIVE
+    finally:
+        freeze.clear()
+
+
+def test_reading_the_report_does_not_clear_the_freeze(tmp_path):
+    """The read-only path (`validate` with no --ingest) is not the end of anything."""
+    from heart import freeze
+
+    _write(tmp_path / "rehearsal.json", REHEARSAL)
+    validate.main(["--ingest", str(tmp_path)])
+    freeze.set_freeze("release validation", "2h", set_by="pre-build")
+    try:
+        assert validate.main([]) == 0
+        assert freeze.read()["state"] == freeze.ACTIVE
+    finally:
+        freeze.clear()

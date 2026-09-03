@@ -77,6 +77,27 @@ The Heart verdict is authoritative even when it differs from the selected
 build's conclusion. Releases require GREEN. Never acknowledge YELLOW or infer
 GREEN inside this skill.
 
+**Then read the freeze window.** A validation run is a window in which the
+library `main` branches should not move, and `pre_build` sets a flag saying so:
+
+```bash
+pyauto-heart freeze --show          # exit 3 = still frozen, 0 = clear/expired
+```
+
+The ingest (`pyauto-heart validate --ingest`) clears it on its own, so a freeze
+still standing here means the run ended without one — a rehearsal that never
+ingested, a failed live run, or a dispatch that never completed. Report the
+line, then clear it, because reviewing the run is the end of the window either
+way:
+
+```bash
+pyauto-heart freeze --clear
+```
+
+Never clear it while the run is still **in progress** (step 1) — that is the
+one case where the window is genuinely still open. An `expired` reading needs
+no action beyond the clear; it means nobody closed the window and time did.
+
 ### 4. Explain adverse evidence
 
 For each build failure, show the failing job and the error detail actually
