@@ -95,7 +95,8 @@ only job conclusions and details present in the selected run's logs.
   Claude, depending on the requested mode). Manual releases remain
   `human-required`.
 - **Live run**: report whether that release completed or failed. Never offer to
-  dispatch another release from review of a live run.
+  dispatch another release from review of a live run. **On a live run that
+  completed successfully, clear the pending-release chain** — see step 6.
 - **Unknown mode**: investigate the job graph. Do not release.
 - **STALE**: list the exact evidence Heart requires refreshing and route to the
   corresponding validation command. Do not release.
@@ -111,3 +112,37 @@ workspace.
 If the user chooses investigation, show the full traceback, relevant source,
 recent file history, and correlated PR diff until the failure has a defensible
 locus. Heart remains the final readiness authority after any fix or refresh.
+
+### 6. Clear the pending-release chain (successful live run only)
+
+This is the one step in the organism that establishes a release **actually
+published** — `pre_build` dispatches, `/build` coordinates, and neither knows
+the outcome. So this is where the merged-but-unreleased chain is cleared. Run
+it only for a **live** run whose `release` / `release_workspaces` jobs
+succeeded; never for a rehearsal, an unknown mode, or a failed live run.
+
+For each library the run published:
+
+1. **GitHub — the source of truth.** Drop the `pending-release` label from
+   every merged PR of that library carrying it:
+
+   ```bash
+   gh pr list --repo PyAutoLabs/<Library> --state merged --label pending-release \
+     --json number --jq '.[].number'
+   gh pr edit <n> --repo PyAutoLabs/<Library> --remove-label pending-release
+   ```
+
+2. **Mind — the link.** Delete the matching `- pending-release: <lib>@<pr-url>`
+   lines from `PyAutoMind/active.md` rows and from `complete/` records, and any
+   `- release-gate: <lib>` line on a workspace task the release unblocks (tell
+   the user which tasks those are — they are now free to merge). The schema and
+   the division of labour are `PyAutoMind/REFERENCE.md` → "The pending-release
+   chain".
+
+3. **Confirm.** `python3 PyAutoMind/scripts/lifecycle.py check` must report no
+   `pending-release` warning for that library, and the regenerated
+   `dashboard.md` must no longer list it under **Pending release**
+   (`pyauto-brain intake --apply dashboard`, then push Mind).
+
+A release that was dispatched is not a release that published: nothing else may
+clear these keys.
