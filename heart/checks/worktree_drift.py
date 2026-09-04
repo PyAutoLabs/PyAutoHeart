@@ -22,6 +22,13 @@ claim under ``PyAutoLabs/.codex-worktrees/`` is tracked like any other, not
 reported missing because it isn't under the wt root. Claim values that are not
 path-shaped (parked.md carries prose like ``worktree: none (…)``) are ignored.
 
+Discovery under the wt root skips **hidden** directories: the wt root is a plain
+directory other tools write into (a JetBrains project dir lands at
+``<wt root>/.idea``), and such a dir is claimed by nobody, so it was reported as a
+permanent, unfixable ORPHAN. Only *discovery* is filtered — an explicit claim on
+a dotted path is still honoured, which is why ``.codex-worktrees`` claims keep
+working.
+
 Monitoring-only: surfaced on the dashboard/status, never a readiness reason.
 ``worktree_drift.sh`` is a thin shim over this module for tick.sh.
 """
@@ -105,7 +112,13 @@ def scan(
 
     if wt_root.is_dir():
         for entry in sorted(wt_root.iterdir()):
-            if entry.is_dir():
+            # Hidden dirs under the wt root are not task worktrees and never
+            # will be: the wt root is an ordinary directory a user's tools also
+            # write into (JetBrains puts its project dir at `<wt root>/.idea`).
+            # Discovery skips them; the claims leg below does NOT, so a task
+            # whose `worktree:` genuinely points at a dotted path is still
+            # tracked and never reported missing.
+            if entry.is_dir() and not entry.name.startswith("."):
                 note(entry, entry.name)
     for c in active_claims + parked_claims:
         note(Path(c["path"]), Path(c["path"]).name)

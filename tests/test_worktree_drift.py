@@ -88,6 +88,38 @@ def test_unclaimed_dir_is_an_orphan(tmp_path):
     assert [o["name"] for o in out["orphans"]] == ["mystery"]
 
 
+def test_hidden_dirs_under_wt_root_are_not_orphans(tmp_path):
+    """A `.idea` beside a real orphan yields one orphan, not two.
+
+    The wt root is an ordinary directory the user's tools also write into —
+    JetBrains puts its project dir at `<wt root>/.idea`. It is a directory, it
+    is claimed by neither registry, and before the hidden-name guard it was
+    reported as an ORPHAN forever: drift no one can ever clear.
+    """
+    wt_root = tmp_path / "wt-root"
+    _git_repo(wt_root / "mystery" / "RepoA")
+    (wt_root / ".idea").mkdir()
+    (wt_root / ".idea" / "workspace.xml").write_text("<project/>")
+    out = wd.scan(wt_root, tmp_path / "active.md", tmp_path / "parked.md")
+    assert [o["name"] for o in out["orphans"]] == ["mystery"]
+    assert out["on_disk_count"] == 1
+
+
+def test_hidden_dir_that_is_explicitly_claimed_is_still_tracked(tmp_path):
+    """Only *discovery* is filtered — a claim on a dotted path still counts.
+
+    `.codex-worktrees/<task>` claims are real; the guard must not turn them
+    into permanent MISSING lines.
+    """
+    claimed = tmp_path / ".codex-worktrees" / "some-task"
+    _git_repo(claimed / "RepoA")
+    active = _registry(tmp_path / "active.md", {"some-task": str(claimed)})
+    out = wd.scan(tmp_path / "wt-root", active, tmp_path / "parked.md")
+    assert out["missing"] == []
+    assert out["orphans"] == []
+    assert out["on_disk_count"] == 1
+
+
 def test_prose_worktree_values_are_ignored(tmp_path):
     parked = tmp_path / "parked.md"
     parked.write_text("## shipped-task\n- worktree: none (pushed; local removed)\n")
