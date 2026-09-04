@@ -849,6 +849,52 @@ def test_html_wears_the_shared_family_theme():
     assert "#58a6ff" not in out  # the old hard-coded GitHub blue
 
 
+# The canonical board family, in the order `PyAutoBrain/config/policy.yaml`
+# declares it. This board is `heart`, so its own chip never appears.
+FAMILY_WITHOUT_HEART = ["brain", "mind", "cortex", "memory", "hands", "organism"]
+
+
+def test_the_family_footer_carries_the_cortex_in_the_canonical_order():
+    """The footer's membership is the Brain's config, not a tuple in here.
+
+    It used to be a tuple in here — written before the Cortex had a board —
+    so this page linked five siblings in an ad-hoc order and silently missed
+    the sixth. Reading `_theme.board_links` means adding a board to
+    `config/policy.yaml` lights it in every footer at once.
+    """
+    out = dashboard.render(_failing_snapshot(), make_verdict("red", 45),
+                           fmt="html", now=FRESH_NOW)
+    footer = re.search(r'<ul class="boards">.*?</ul>', out, re.S).group(0)
+    assert re.findall(r'data-organ="(\w+)"', footer) == FAMILY_WITHOUT_HEART
+    assert "PyAutoCortex" in footer
+
+
+def test_the_footer_never_links_the_page_it_is_on():
+    out = dashboard.render(_failing_snapshot(), make_verdict("red", 45),
+                           fmt="html", now=FRESH_NOW)
+    footer = re.search(r'<ul class="boards">.*?</ul>', out, re.S).group(0)
+    assert f'data-organ="{dashboard.BOARD_KEY}"' not in footer
+
+
+def test_the_footer_falls_back_when_the_brain_checkout_predates_the_helper():
+    """An older PyAutoBrain beside this repo has no `board_links`. The page
+    must still render its footer — from the legacy tuple — rather than crash
+    the whole board over a nav strip."""
+    class _Older:
+        def __init__(self, real):
+            self.boards_footer = real.boards_footer
+
+    real = dashboard.theme()
+    nav = dashboard._boards_nav_html.__globals__["theme"]
+    dashboard._boards_nav_html.__globals__["theme"] = lambda: _Older(real)
+    try:
+        footer = dashboard._boards_nav_html()
+    finally:
+        dashboard._boards_nav_html.__globals__["theme"] = nav
+    assert re.findall(r'data-organ="(\w+)"', footer) == [
+        k for k, _ in dashboard.BOARD_FAMILY]
+
+
 def test_a_long_out_link_label_cannot_push_the_page_sideways():
     """The out-links carry DATA in their labels (`<repo> run`), and this org's
     longest repo name is 36 characters. Under `white-space:nowrap` that was a

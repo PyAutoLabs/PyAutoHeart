@@ -193,8 +193,17 @@ def theme():
         "— check PyAutoBrain out beside this repo or set PYAUTO_BRAIN")
 
 # The one-tap board family — the cross-board footer nav every board carries,
-# each board skipping its own entry. The base comes from PAGES_URL so the
-# owner is named exactly once in this file.
+# each board skipping its own entry.
+#
+# Membership and order are NOT decided here: they live once, in the Brain's
+# `config/policy.yaml` `board: boards:`, and `_theme.board_links` is the read.
+# This file used to keep its own tuple, written before the Cortex had a board
+# — so this footer was short a chip and out of the family's order, and nothing
+# noticed. The tuple below survives only as the fallback for an older
+# PyAutoBrain checkout whose theme predates the helper; it is deliberately the
+# old list, because a fallback that guessed at the current one would drift the
+# same way. The base comes from PAGES_URL so the owner is named exactly once
+# in this file.
 BOARD_FAMILY = (("mind", "PyAutoMind"), ("brain", "PyAutoBrain"),
                 ("hands", "PyAutoHands"), ("memory", "PyAutoMemory"),
                 ("organism", "PyAutoScientist"))
@@ -202,10 +211,14 @@ BOARD_FAMILY = (("mind", "PyAutoMind"), ("brain", "PyAutoBrain"),
 
 def _boards_nav_html() -> str:
     """The cross-board footer — one chip per sibling, each in its own organ's
-    colour (the theme owns the chip palette; this board owns the URLs)."""
+    colour (the theme owns the chip palette AND the family's membership; this
+    board owns only which page it is)."""
+    t_ = theme()
     base = PAGES_URL.rsplit("/", 2)[0]
-    links = {key: f"{base}/{repo}/" for key, repo in BOARD_FAMILY}
-    return theme().boards_footer(links, BOARD_KEY)
+    links = getattr(t_, "board_links", None)
+    links = (links(base, BOARD_KEY) if links else
+             {key: f"{base}/{repo}/" for key, repo in BOARD_FAMILY})
+    return t_.boards_footer(links, BOARD_KEY)
 
 # v2: sections gained links/action/observed_ago; the board gained structured
 # `blockers` ({text, severity, repo, repo_url, run_url, prompt}). Additive.
