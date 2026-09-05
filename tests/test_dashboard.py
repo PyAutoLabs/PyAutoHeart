@@ -1232,3 +1232,64 @@ def test_the_terminal_verdict_points_at_the_door_out_of_stale():
     # the prompt hook's one-liner stays a one-liner
     quiet = "\n".join(dashboard.render_readiness_block(v, quiet=True))
     assert "fix stale" not in quiet
+
+
+# --- the committed timing record's census on the two ⏱ rows ------------------
+#
+# The record (timings/gates.jsonl + timings/scripts/) is where the history now
+# durably lives; the board says how much of it stands behind the numbers. It is
+# a DETAIL LINE and nothing else: an older snapshot has no census and renders
+# exactly as it always did, and the `performance` block never sees it.
+
+TIMINGS_CENSUS = {
+    "gates_days": 42, "gates_first": "2026-07-25", "gates_last": "2026-09-05",
+    "scripts_observations": 96, "repos": 3, "unparseable": 0,
+    "appended_today": {"gates": True, "scripts": {"RepoA": 1}},
+}
+
+
+def _record_snapshot(**kw):
+    return make_snapshot(ci_timing=_ci_timing_slice(), no_run_census=_no_run_slice(),
+                         smoke_timings=_smoke_timings_slice(),
+                         timings_record=TIMINGS_CENSUS, **kw)
+
+
+def test_the_record_census_renders_one_detail_line_under_each_timing_row():
+    board = dashboard.build_board(_record_snapshot(), make_verdict(), now=FRESH_NOW)
+    assert _section(board, "ci_timing").details[-1] == (
+        "record: timings/gates.jsonl — 42 days")
+    assert _section(board, "smoke_timings").details[-1] == (
+        "record: timings/scripts/ — 96 observations across 3 repos")
+
+
+def test_a_snapshot_without_the_census_renders_exactly_as_it_always_did():
+    """Older snapshots (and a dev box that never appends) must be byte-identical
+    — the census adds a line, it never changes a row."""
+    v = make_verdict()
+    without = _scripts_snapshot()
+    assert "timings_record" not in without
+    for fmt in ("term", "md", "html", "json"):
+        out = dashboard.render(without, v, fmt=fmt, now=FRESH_NOW)
+        assert "timings/gates.jsonl" not in out
+        assert "timings/scripts/" not in out
+    board = dashboard.build_board(without, v, now=FRESH_NOW)
+    assert not any(d.startswith("record:") for d in _section(board, "ci_timing").details)
+    assert not any(d.startswith("record:")
+                   for d in _section(board, "smoke_timings").details)
+    # An empty census is "no record", not "a record of nothing".
+    empty = _scripts_snapshot()
+    empty["timings_record"] = {}
+    assert (dashboard.render(empty, v, fmt="md", now=FRESH_NOW)
+            == dashboard.render(without, v, fmt="md", now=FRESH_NOW))
+
+
+def test_the_census_never_touches_the_performance_block():
+    """`performance` is the contract the Brain board and the next render's
+    fallback consume verbatim — the census is a render-side detail only."""
+    v = make_verdict()
+    with_census = json.loads(dashboard.render(_record_snapshot(), v, fmt="json",
+                                              now=FRESH_NOW))
+    without = json.loads(dashboard.render(_scripts_snapshot(), v, fmt="json",
+                                          now=FRESH_NOW))
+    assert with_census["performance"] == without["performance"]
+    assert "timings_record" not in with_census["performance"]

@@ -464,3 +464,89 @@ def test_main_treats_unparseable_stdin_as_fetch_error(tmp_path, monkeypatch, cap
     assert rc == 0
     assert json.loads(out.read_text())["error"]
     capsys.readouterr()
+
+
+# --- the committed record is the history source; the board is the fallback ---
+#
+# The published board.json is the same artifact this render produces, so a Pages
+# gap loses it and nothing can recompute it. `timings/gates.jsonl` is the
+# durable copy (see heart/timings.py) and it wins whenever it has anything.
+
+def _record_history(p50):
+    return [{"date": "2026-08-23", "gates": {f"{REPO}/Gate One":
+                                             {"p50_s": p50, "runs": 9}}}]
+
+
+def _prev_board_history(p50):
+    return {"performance": {"history": [
+        {"date": "2026-08-23", "gates": {f"{REPO}/Gate One":
+                                         {"p50_s": p50, "runs": 9}}},
+    ]}}
+
+
+def _one_gate_sidecar(median_s):
+    return {
+        "name": REPO, "group": "workspaces", "owner": "OwnerX", "error": "",
+        "ts": "T",
+        "workflows": {"Gate One": {
+            "median_s": median_s, "pr_median_s": None, "queue_median_s": None,
+            "max_s": median_s, "runs_counted": 5, "window_from": "",
+            "conclusions": {"success": 5}, "superseded": 0,
+            "actions_url": ACTIONS,
+        }},
+        "events": [],
+    }
+
+
+def test_aggregate_prefers_the_committed_record_over_the_previous_board():
+    thr = {"yellow_factor": 1.5, "min_delta_s": 120, "history_cap": 30}
+    roll = ct.aggregate(
+        [_one_gate_sidecar(900.0)],
+        # The board would say the gate has always taken 900s — no drift.
+        _prev_board_history(900.0), "2026-08-24", "T", thr,
+        # The record says it took 300s yesterday — the drift is real.
+        record_history=_record_history(300.0),
+    )
+    (gate,) = roll["gates"]
+    assert gate["baseline_s"] == 300.0 and gate["state"] == "warn"
+
+
+def test_aggregate_falls_back_to_the_previous_board_when_the_record_is_empty():
+    thr = {"yellow_factor": 1.5, "min_delta_s": 120, "history_cap": 30}
+    for record in (None, []):
+        roll = ct.aggregate([_one_gate_sidecar(900.0)], _prev_board_history(300.0),
+                            "2026-08-24", "T", thr, record_history=record)
+        (gate,) = roll["gates"]
+        assert gate["baseline_s"] == 300.0 and gate["state"] == "warn"
+
+
+def test_the_rolled_forward_history_keeps_its_shape_whichever_source_was_used():
+    """board.json's `performance.history` is the fallback cache AND the Brain
+    board's sparkline input — the record must not change what it looks like."""
+    thr = {"yellow_factor": 1.5, "min_delta_s": 120, "history_cap": 30}
+    roll = ct.aggregate([_one_gate_sidecar(900.0)], {}, "2026-08-24", "T", thr,
+                        record_history=_record_history(300.0))
+    assert [h["date"] for h in roll["history"]] == ["2026-08-23", "2026-08-24"]
+    assert roll["history"][-1]["gates"][f"{REPO}/Gate One"] == {
+        "p50_s": 900.0, "runs": 5,
+    }
+
+
+def test_main_aggregate_reads_the_record_directory(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("HEART_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("NO_COLOR", "1")
+    per_repo = tmp_path / "per-repo"
+    per_repo.mkdir()
+    (per_repo / f"{REPO}.ci_timing.json").write_text(json.dumps(_one_gate_sidecar(900.0)))
+
+    record = tmp_path / "timings"
+    record.mkdir()
+    (record / "gates.jsonl").write_text(json.dumps(_record_history(300.0)[0]) + "\n")
+
+    out = tmp_path / "ci_timing.json"
+    assert ct.main(["--aggregate", "--per-repo-dir", str(per_repo), "--ts", "T",
+                    "--today", "2026-08-24", "--record-dir", str(record),
+                    "--out", str(out)]) == 0
+    (gate,) = json.loads(out.read_text())["gates"]
+    assert gate["baseline_s"] == 300.0 and gate["state"] == "warn"
+    capsys.readouterr()

@@ -142,8 +142,12 @@ check_smoke_timings_all() {
 
   local prev
   prev="$(_smoke_timings_prev_board)"
+  # The committed record (timings/scripts/<repo>.jsonl) is the source of truth
+  # for the previous observation; the previously published board is only the
+  # fallback for when it is not there yet.
   PYTHONPATH="$HEART_HOME" python3 -m heart.checks.smoke_timings \
     --aggregate --prev-board "$prev" --ts "$(date -Iseconds)" \
+    --record-dir "$HEART_HOME/timings" \
     --out "$HEART_STATE_DIR/smoke_timings.json"
   [[ -n "$prev" ]] && rm -f "$prev"
 
