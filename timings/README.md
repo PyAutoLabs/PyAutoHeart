@@ -24,6 +24,7 @@ carries the same rules for a reader who arrives from the Python side.
 
 ```
 timings/README.md            # this file — doctrine, not data
+timings/legacy_round_2026-09.md  # the digest of the first (legacy) round — prose, not data
 timings/epochs.jsonl         # one line per epoch boundary  — a human writes it
 timings/gates.jsonl          # one line per UTC date
 timings/scripts/<repo>.jsonl # one line per (python leg, run id)  — smoke scripts
