@@ -1,0 +1,1 @@
+{"date":"2026-09-05","label":"legacy","note":"pre-rebuild reference round of the ci-timing-fast-tests epic: phases 5-7 change _test script content, datasets, pinned likelihoods and CI caches; comparisons must not cross this boundary"}

@@ -550,3 +550,40 @@ def test_main_aggregate_reads_the_record_directory(tmp_path, monkeypatch, capsys
     (gate,) = json.loads(out.read_text())["gates"]
     assert gate["baseline_s"] == 300.0 and gate["state"] == "warn"
     capsys.readouterr()
+
+
+def test_main_aggregate_compares_only_inside_the_current_epoch(tmp_path,
+                                                               monkeypatch,
+                                                               capsys):
+    """#208: a boundary in timings/epochs.jsonl is where the world changed, and
+    a p50 measured before it is not a baseline for one measured after it — the
+    record lines dated before the boundary are simply invisible here."""
+    monkeypatch.setenv("HEART_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("NO_COLOR", "1")
+    per_repo = tmp_path / "per-repo"
+    per_repo.mkdir()
+    (per_repo / f"{REPO}.ci_timing.json").write_text(json.dumps(_one_gate_sidecar(900.0)))
+
+    record = tmp_path / "timings"
+    record.mkdir()
+    (record / "epochs.jsonl").write_text(json.dumps({
+        "date": "2026-09-05", "label": "legacy",
+        "note": "the reference round before the rebuild",
+    }) + "\n")
+    # A fast gate before the boundary; a slow one after it. Taken together the
+    # median baseline would be 450s and this run would read as a 2x regression.
+    (record / "gates.jsonl").write_text("".join(
+        json.dumps({"date": date,
+                    "gates": {f"{REPO}/Gate One": {"p50_s": p50, "runs": 9}}}) + "\n"
+        for date, p50 in (("2026-09-03", 100.0), ("2026-09-05", 800.0))))
+
+    out = tmp_path / "ci_timing.json"
+    assert ct.main(["--aggregate", "--per-repo-dir", str(per_repo), "--ts", "T",
+                    "--today", "2026-09-06", "--record-dir", str(record),
+                    "--out", str(out)]) == 0
+    roll = json.loads(out.read_text())
+    (gate,) = roll["gates"]
+    assert gate["baseline_s"] == 800.0 and gate["state"] == "ok"
+    # ...and the pre-boundary day is not in the rolled-forward history either.
+    assert [h["date"] for h in roll["history"]] == ["2026-09-05", "2026-09-06"]
+    capsys.readouterr()

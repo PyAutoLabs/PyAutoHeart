@@ -943,11 +943,17 @@ def main(argv: list[str] | None = None) -> int:
         per_repo = Path(ns.per_repo_dir) if ns.per_repo_dir else _state.HEART_PER_REPO_DIR
         record_dir = Path(ns.record_dir) if ns.record_dir else _timings.TIMINGS_DIR
         unit_dir = record_dir / "unit"
+        # compare within the current epoch only — a boundary in
+        # timings/epochs.jsonl is where the world changed (a rebuild, a runner
+        # change), and a baseline from before it is not a baseline.
+        epochs = _timings.read_epochs(record_dir / "epochs.jsonl")
+        since = ((_timings.current_epoch(epochs) or {}).get("date") or "")
         rollup = aggregate(
             read_sidecars(per_repo), ts, thresholds,
-            record_prev_rows=_timings.previous_unit_rows(unit_dir),
+            record_prev_rows=_timings.previous_unit_rows(unit_dir, since=since),
             record_import_history=_timings.import_history(
-                unit_dir, int(thresholds.get("import_window", 7) or 7)
+                unit_dir, int(thresholds.get("import_window", 7) or 7),
+                since=since,
             ),
         )
         _write(Path(ns.out), rollup)

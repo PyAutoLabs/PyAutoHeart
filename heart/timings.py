@@ -15,6 +15,7 @@ commit a day, written by the daily cloud job and by nothing else.
 Layout::
 
     timings/README.md            # the schema + the rules (doctrine)
+    timings/epochs.jsonl         # one line per epoch boundary (a human writes it)
     timings/gates.jsonl          # one line per UTC date
     timings/scripts/<repo>.jsonl # one line per (python leg, run id)
     timings/unit/<repo>.jsonl    # one line per (python leg, run id)
@@ -79,10 +80,20 @@ reads, while the totals keep the coverage visible. ``import_s`` is the
 fresh-process cold import measured on the CI runner, and it is ``null`` — never
 0.0 — when that import failed or timed out.
 
-``timings/epochs.jsonl`` is RESERVED (``EPOCHS_FILE``) for a future labelled
-epoch boundary — ``{"date", "label", "note"}``, e.g. "runners moved to 8-core"
-— so a reader can tell a step change from a regression. Nothing here writes it
-and the file deliberately does not exist yet.
+``epochs.jsonl`` line::
+
+    {"date": "2026-09-05", "label": "legacy",
+     "note": "pre-rebuild reference round; comparisons must not cross this"}
+
+An epoch boundary is where **the world changed** — a rebuild, a runner change,
+a cap change — and it is the one line in this record a human writes, through
+``python -m heart.timings epoch`` in a PR. The daily job never touches the
+file: a boundary is a judgement, not an observation. Every reader here takes a
+``since`` and drops the record lines dated before it, so the current epoch is
+the only window a baseline is ever drawn from — a number measured before the
+world changed is not a baseline for a run after it, it is a different
+experiment. No epochs at all means one unbroken epoch, which is exactly the
+behaviour this record had before the file existed.
 """
 
 from __future__ import annotations
@@ -99,9 +110,10 @@ TIMINGS_DIR = HEART_HOME / "timings"
 GATES_FILE = TIMINGS_DIR / "gates.jsonl"
 SCRIPTS_DIR = TIMINGS_DIR / "scripts"
 UNIT_DIR = TIMINGS_DIR / "unit"
-# Named so the reservation is in the code, not only in the README. NOTHING
-# writes this: an epoch boundary is a human's judgement about the world (a
-# runner change, a cap change), not something a daily job can observe.
+# The boundaries. A HUMAN writes this, through the `epoch` verb in a PR; the
+# daily job never does — an epoch boundary is a judgement about the world (a
+# rebuild, a runner change, a cap change), not something a daily job can
+# observe.
 EPOCHS_FILE = TIMINGS_DIR / "epochs.jsonl"
 
 # The census key set, so a reader (and `show`) sees the same keys whether or
@@ -115,6 +127,10 @@ EMPTY_CENSUS = {
     "unit_observations": 0,
     "unit_repos": 0,
     "unparseable": 0,
+    # The boundaries recorded, and the one every reader is currently comparing
+    # inside of (`None` when there is none — one unbroken epoch).
+    "epochs": 0,
+    "epoch": None,
 }
 
 
@@ -200,6 +216,96 @@ def _append(path: Path | str, records: list[dict[str, Any]]) -> None:
             handle.write(_dump(record) + "\n")
 
 
+# --- epochs ------------------------------------------------------------------
+def _within_epoch(record: dict[str, Any], since: str) -> bool:
+    """Is this record line inside the epoch that begins on ``since``?
+
+    An empty ``since`` is "no boundary" and keeps everything, which is exactly
+    how this record read before epochs existed. A line with NO date counts as
+    older than any boundary: the record cannot place it after the world
+    changed, and a baseline that might predate the change is not a baseline.
+    """
+    if not since:
+        return True
+    date = str(record.get("date") or "")
+    return bool(date) and date >= since
+
+
+def read_epochs(path: Path | str = EPOCHS_FILE) -> list[dict[str, Any]]:
+    """The epoch boundaries, oldest first, as ``{"date", "label", "note"}``.
+
+    A line with no date or no label is not a boundary — it could not be
+    compared against and could not be named on the board — so it is dropped
+    rather than carried as a half-boundary. The sort is stable on ``date``, so
+    two boundaries recorded for the same day stay in the order they landed.
+    """
+    records, _ = read_jsonl(path)
+    out: list[dict[str, Any]] = []
+    for record in records:
+        date = str(record.get("date") or "")
+        label = str(record.get("label") or "")
+        if not date or not label:
+            continue
+        out.append({"date": date, "label": label,
+                    "note": str(record.get("note") or "")})
+    out.sort(key=lambda rec: rec["date"])
+    return out
+
+
+def current_epoch(
+    epochs: list[dict[str, Any]], today: str | None = None
+) -> dict[str, Any] | None:
+    """The boundary in force today — the LAST one dated on or before it.
+
+    ``None`` when there is none, which every reader takes as "everything is one
+    epoch". A boundary dated in the future is not in force yet: it can be
+    written ahead of the change it labels (the PR that lands a rebuild appends
+    it) without silently blinding every baseline the day it is committed.
+    """
+    day = today or datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+    current: dict[str, Any] | None = None
+    for epoch in epochs or []:
+        if str(epoch.get("date") or "") <= day:
+            current = epoch
+    return current
+
+
+def append_epoch(
+    path: Path | str, date: str, label: str, note: str = ""
+) -> bool:
+    """Append one boundary. ``False`` when it is already there, or malformed.
+
+    Keyed on ``(date, label)``: re-running the verb is a no-op rather than a
+    second boundary for the same judgement. Append-only like every other writer
+    here — a boundary recorded wrongly is superseded by a later one, never
+    edited away, because the record is evidence.
+    """
+    date = str(date or "")
+    label = str(label or "").strip()
+    if not label or not _is_iso_date(date):
+        return False
+    for existing in read_epochs(path):
+        if existing["date"] == date and existing["label"] == label:
+            return False
+    _append(path, [{"date": date, "label": label, "note": str(note or "")}])
+    return True
+
+
+def _is_iso_date(value: str) -> bool:
+    """``YYYY-MM-DD`` and nothing else — the record sorts on these as strings.
+
+    The round-trip is the point: ``strptime`` happily parses ``2026-9-5``, and
+    an unpadded date sorts *after* ``2026-12-01``, which would silently place a
+    boundary in the wrong epoch.
+    """
+    text = str(value)
+    try:
+        parsed = datetime.datetime.strptime(text, "%Y-%m-%d").date()
+    except ValueError:
+        return False
+    return parsed.isoformat() == text
+
+
 # --- gates -------------------------------------------------------------------
 def gates_line_from_rollup(
     rollup: Any, today: str, ts: str
@@ -252,7 +358,7 @@ def append_gates(path: Path | str, line: dict[str, Any] | None) -> bool:
 
 
 def gates_history(
-    path: Path | str = GATES_FILE, cap: int = 30
+    path: Path | str = GATES_FILE, cap: int = 30, since: str = ""
 ) -> list[dict[str, Any]]:
     """The last ``cap`` gates lines, oldest first, in the *history* shape.
 
@@ -262,12 +368,16 @@ def gates_history(
     dropped from this view: the baseline and the sparkline are about the p50,
     and widening the shape here would change ``board.json``'s
     ``performance.history`` for every consumer downstream.
+
+    ``since`` is the current epoch's date: lines dated before the boundary are
+    invisible, because a gate measured before the world changed is not a
+    baseline for one measured after it. Empty ``since`` filters nothing.
     """
     records, _ = read_jsonl(path)
     out: list[dict[str, Any]] = []
     for record in records:
         date = str(record.get("date") or "")
-        if not date:
+        if not date or not _within_epoch(record, since):
             continue
         gates = record.get("gates")
         if not isinstance(gates, dict):
@@ -377,7 +487,7 @@ def append_scripts(path: Path | str, lines: list[dict[str, Any]]) -> int:
 
 
 def previous_script_rows(
-    scripts_dir: Path | str = SCRIPTS_DIR,
+    scripts_dir: Path | str = SCRIPTS_DIR, since: str = "",
 ) -> dict[tuple[str, str, str], dict[str, Any]]:
     """``{(repo, python, entry): prev_row}`` — the last recorded observation.
 
@@ -389,6 +499,10 @@ def previous_script_rows(
     is append-only, so the last line for a leg is the most recently recorded
     one. Timed entries only — the record holds no untimed rows to begin with,
     and a row with no seconds could not be compared anyway.
+
+    ``since`` is the current epoch's date, applied BEFORE "latest per leg" is
+    chosen: a pre-boundary line is not a stale baseline to be superseded, it is
+    a measurement of a different world, so it must not be the latest either.
     """
     out: dict[tuple[str, str, str], dict[str, Any]] = {}
     root = Path(scripts_dir)
@@ -399,6 +513,8 @@ def previous_script_rows(
         records, _ = read_jsonl(path)
         latest: dict[str, dict[str, Any]] = {}
         for record in records:
+            if not _within_epoch(record, since):
+                continue
             latest[str(record.get("python") or "")] = record
         for python, record in latest.items():
             entries = record.get("entries")
@@ -519,7 +635,7 @@ def append_unit(path: Path | str, lines: list[dict[str, Any]]) -> int:
 
 
 def previous_unit_rows(
-    unit_dir: Path | str = UNIT_DIR,
+    unit_dir: Path | str = UNIT_DIR, since: str = "",
 ) -> dict[tuple[str, str, str], dict[str, Any]]:
     """``{(repo, python, nodeid): prev_row}`` — the last recorded observation.
 
@@ -532,6 +648,10 @@ def previous_unit_rows(
     one. Only the recorded (slowest) tests are in there to begin with — a test
     that dropped out of the top N simply has no baseline next run, which is
     honest: nothing was recorded about it.
+
+    ``since`` is the current epoch's date, applied BEFORE "latest per leg" is
+    chosen, for the reason ``previous_script_rows`` gives: a pre-boundary line
+    measured a different world and must not stand in as the latest.
     """
     out: dict[tuple[str, str, str], dict[str, Any]] = {}
     root = Path(unit_dir)
@@ -542,6 +662,8 @@ def previous_unit_rows(
         records, _ = read_jsonl(path)
         latest: dict[str, dict[str, Any]] = {}
         for record in records:
+            if not _within_epoch(record, since):
+                continue
             latest[str(record.get("python") or "")] = record
         for python, record in latest.items():
             slowest = record.get("slowest")
@@ -560,7 +682,7 @@ def previous_unit_rows(
 
 
 def import_history(
-    unit_dir: Path | str = UNIT_DIR, window: int = 7
+    unit_dir: Path | str = UNIT_DIR, window: int = 7, since: str = ""
 ) -> dict[tuple[str, str, str], list[float]]:
     """``{(repo, package, python): [seconds, ...]}`` — oldest first, last N.
 
@@ -569,6 +691,10 @@ def import_history(
     ``null`` observation — an import that failed or timed out — is skipped
     rather than carried as a zero, which would drag the median toward a number
     nothing ever measured.
+
+    ``since`` is the current epoch's date, applied BEFORE the window is taken:
+    a window that reached back across a boundary would take the median of two
+    different worlds, which is a number nothing ever measured either.
     """
     out: dict[tuple[str, str, str], list[float]] = {}
     root = Path(unit_dir)
@@ -580,7 +706,7 @@ def import_history(
         records, _ = read_jsonl(path)
         for record in records:
             package = str(record.get("package") or "")
-            if not package:
+            if not package or not _within_epoch(record, since):
                 continue
             seconds = _as_float(record.get("import_s"))
             if seconds is None:
@@ -600,9 +726,19 @@ def census(directory: Path | str = TIMINGS_DIR) -> dict[str, Any]:
     ``unparseable`` is summed across every file so a corrupt line is reported
     rather than silently dropped: the record is evidence, and a hole in it is
     itself a finding.
+
+    ``epoch`` is the boundary every reader is currently comparing inside of,
+    carried as ``{"date", "label"}`` — the note is the human's reasoning and
+    belongs in the file, not on a board row. ``None`` means one unbroken epoch.
     """
     root = Path(directory)
     out = dict(EMPTY_CENSUS)
+    epochs = read_epochs(root / "epochs.jsonl")
+    out["epochs"] = len(epochs)
+    epoch = current_epoch(epochs)
+    out["epoch"] = (
+        {"date": epoch["date"], "label": epoch["label"]} if epoch else None
+    )
     gates, skipped = read_jsonl(root / "gates.jsonl")
     dates = sorted(str(rec.get("date") or "") for rec in gates if rec.get("date"))
     out["gates_days"] = len(dates)
@@ -708,6 +844,29 @@ def _do_append(ns: argparse.Namespace) -> int:
     return 0
 
 
+def _do_epoch(ns: argparse.Namespace) -> int:
+    """The human door: record where the world changed, in a PR.
+
+    Exit 2 is a malformed boundary (a date that is not ``YYYY-MM-DD``, an empty
+    label) — that is a typo at a keyboard, and a keyboard is where it should be
+    reported. A boundary already recorded is exit 0: re-running the verb is a
+    no-op, not a failure.
+    """
+    directory = Path(ns.dir) if ns.dir else TIMINGS_DIR
+    date = ns.date or datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+    label = str(ns.label or "").strip()
+    if not label or not _is_iso_date(date):
+        print("epoch: need an ISO YYYY-MM-DD --date and a non-empty --label",
+              file=sys.stderr)
+        return 2
+    path = directory / "epochs.jsonl"
+    if append_epoch(path, date, label, ns.note):
+        print(_dump({"date": date, "label": label, "note": str(ns.note or "")}))
+    else:
+        print(f"epoch already recorded: {date} {label}")
+    return 0
+
+
 def _do_show(ns: argparse.Namespace) -> int:
     directory = Path(ns.dir) if ns.dir else TIMINGS_DIR
     for key, value in census(directory).items():
@@ -742,6 +901,23 @@ def main(argv: list[str] | None = None) -> int:
                            help="where the census JSON lands (default: "
                                 "$HEART_STATE_DIR/timings_record.json)")
 
+    # A HUMAN's verb, run in a PR — never the daily job's. `append` above does
+    # not touch epochs.jsonl, and must not: an epoch boundary is a judgement
+    # about the world (a rebuild, a runner change), not an observation.
+    ap_epoch = sub.add_parser(
+        "epoch", help="record an epoch boundary — where the world changed"
+    )
+    ap_epoch.add_argument("--label", required=True,
+                          help="the short name of the boundary, e.g. `legacy`")
+    ap_epoch.add_argument("--note", default="",
+                          help="why this is a boundary — the reasoning a later "
+                               "reader needs and cannot re-derive")
+    ap_epoch.add_argument("--date", default="",
+                          help="ISO date the boundary takes effect "
+                               "(default: today, UTC)")
+    ap_epoch.add_argument("--dir", default="",
+                          help=f"the record directory (default: {TIMINGS_DIR})")
+
     ap_show = sub.add_parser("show", help="print the record's census")
     ap_show.add_argument("--dir", default="",
                          help=f"the record directory (default: {TIMINGS_DIR})")
@@ -750,6 +926,8 @@ def main(argv: list[str] | None = None) -> int:
     sys.path.insert(0, str(HEART_HOME))
     if ns.command == "append":
         return _do_append(ns)
+    if ns.command == "epoch":
+        return _do_epoch(ns)
     return _do_show(ns)
 
 

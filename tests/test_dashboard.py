@@ -1436,3 +1436,69 @@ def test_malformed_unit_timings_slices_never_break_the_board():
         for fmt in ("term", "md", "html", "json"):
             assert isinstance(dashboard.render(snap, make_verdict(), fmt=fmt,
                                                now=FRESH_NOW), str)
+
+
+# --- the current epoch on the two ⏱ rows (#208) ------------------------------
+#
+# A boundary in timings/epochs.jsonl is where the world changed, and every
+# record reader compares only inside the current one — so the history a timing
+# row claims to stand on is the history SINCE that boundary, and the row says
+# so. Additive on the same rule as the census itself: a snapshot whose census
+# carries no epoch renders byte-identically to how it always did.
+
+TIMINGS_CENSUS_EPOCH = dict(TIMINGS_CENSUS, epochs=1,
+                            epoch={"label": "legacy", "date": "2026-09-05"})
+
+
+def _epoch_snapshot(**kw):
+    return make_snapshot(ci_timing=_ci_timing_slice(), no_run_census=_no_run_slice(),
+                         smoke_timings=_smoke_timings_slice(),
+                         timings_record=TIMINGS_CENSUS_EPOCH, **kw)
+
+
+def test_both_record_lines_name_the_epoch_they_are_measured_inside():
+    board = dashboard.build_board(_epoch_snapshot(), make_verdict(), now=FRESH_NOW)
+    assert _section(board, "ci_timing").details[-1] == (
+        "record: timings/gates.jsonl — 42 days · epoch legacy since 2026-09-05")
+    assert _section(board, "smoke_timings").details[-1] == (
+        "record: timings/scripts/ — 96 observations across 3 repos"
+        " · epoch legacy since 2026-09-05")
+
+
+def test_a_census_without_an_epoch_renders_the_lines_it_always_did():
+    """One unbroken epoch is the record's old behaviour, and it must read like
+    it: no suffix, not an empty one."""
+    board = dashboard.build_board(_record_snapshot(), make_verdict(), now=FRESH_NOW)
+    for key in ("ci_timing", "smoke_timings"):
+        assert "epoch" not in _section(board, key).details[-1]
+
+
+def test_the_performance_block_carries_the_epoch_only_when_there_is_one():
+    """`performance` is the contract the Brain board reads verbatim: the key is
+    additive, and a census with no boundary leaves the block byte-identical."""
+    v = make_verdict()
+    with_epoch = json.loads(dashboard.render(_epoch_snapshot(), v, fmt="json",
+                                             now=FRESH_NOW))
+    without = json.loads(dashboard.render(_record_snapshot(), v, fmt="json",
+                                          now=FRESH_NOW))
+    assert with_epoch["performance"]["epoch"] == {"label": "legacy",
+                                                  "date": "2026-09-05"}
+    assert "epoch" not in without["performance"]
+    stripped = dict(with_epoch["performance"])
+    stripped.pop("epoch")
+    assert stripped == without["performance"]
+
+
+def test_a_half_written_epoch_is_no_epoch_at_all():
+    """A boundary with no label could not be named on a row and a boundary with
+    no date could not be compared against — neither is one."""
+    v = make_verdict()
+    for epoch in (None, {}, {"label": "legacy"}, {"date": "2026-09-05"}, "legacy"):
+        census = dict(TIMINGS_CENSUS, epoch=epoch)
+        board = dashboard.build_board(
+            make_snapshot(ci_timing=_ci_timing_slice(),
+                          no_run_census=_no_run_slice(),
+                          smoke_timings=_smoke_timings_slice(),
+                          timings_record=census),
+            v, now=FRESH_NOW)
+        assert "epoch" not in _section(board, "ci_timing").details[-1]

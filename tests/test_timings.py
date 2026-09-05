@@ -252,10 +252,14 @@ def test_the_census_counts_days_observations_and_repos(tmp_path):
         timings.append_scripts(timings.scripts_file(repo, tmp_path), lines)
     # The two unit_* keys arrived with the unit-timings slice (#206): the
     # census is the record's key set, and the record now holds three slices.
+    # The two unit_* keys arrived with #206; `epochs`/`epoch` with #208 — the
+    # census is the record's key set, and the record now holds the boundaries
+    # every reader compares inside of as well as the three observation slices.
     assert timings.census(tmp_path) == {
         "gates_days": 2, "gates_first": "2026-09-04", "gates_last": TODAY,
         "scripts_observations": 2, "repos": 2,
         "unit_observations": 0, "unit_repos": 0, "unparseable": 0,
+        "epochs": 0, "epoch": None,
     }
 
 
@@ -329,9 +333,12 @@ def test_main_show_prints_the_census_one_key_per_line(tmp_path, capsys):
     assert {ln.split(":")[0] for ln in lines} == set(timings.EMPTY_CENSUS)
 
 
-def test_the_epoch_file_is_reserved_and_never_written(tmp_path):
+def test_the_daily_append_never_writes_the_epoch_file(tmp_path):
     """`epochs.jsonl` is a human's judgement about the world, not an
-    observation — the path is named so the reservation lives in the code."""
+    observation — so the daily job's verb never creates it and never adds to
+    it. (#208: the file is live now; before it, this test asserted the stronger
+    "and it does not exist" — the half that survives is the load-bearing one,
+    that the writer of observations is not the writer of boundaries.)"""
     assert timings.EPOCHS_FILE.name == "epochs.jsonl"
     ci, smoke = _write_rollups(tmp_path)
     record = tmp_path / "timings"
@@ -339,7 +346,6 @@ def test_the_epoch_file_is_reserved_and_never_written(tmp_path):
                   "--today", TODAY, "--dir", str(record),
                   "--census-out", str(tmp_path / "census.json")])
     assert not (record / "epochs.jsonl").exists()
-    assert not timings.EPOCHS_FILE.exists()
 
 
 # --- the unit slice: per-test durations + the cold import (#206) --------------
@@ -509,3 +515,273 @@ def test_a_run_without_the_unit_flag_reads_exactly_as_it_always_did(tmp_path,
     ]) == 0
     assert "unit +" not in capsys.readouterr().out
     assert "unit" not in json.loads(census_out.read_text())["appended_today"]
+
+
+# --- epochs: where the world changed (#208) ----------------------------------
+#
+# A boundary is the one line in this record a HUMAN writes, in a PR, because it
+# is a judgement about the world (a rebuild, a runner change) and not something
+# a daily job can observe. What it buys is the thing these tests pin: every
+# reader compares INSIDE the current epoch, so a number measured before the
+# world changed never stands in as the baseline for a run measured after it.
+
+EPOCH_NOTE = "the reference round; comparisons must not cross this boundary"
+
+
+def _epochs_file(tmp_path, *lines):
+    """Write an epochs.jsonl by hand — the readers must cope with any order."""
+    path = tmp_path / "epochs.jsonl"
+    path.write_text("".join(json.dumps(line) + "\n" for line in lines))
+    return path
+
+
+def test_read_epochs_sorts_normalises_and_drops_the_half_boundaries(tmp_path):
+    path = _epochs_file(
+        tmp_path,
+        {"date": "2026-09-05", "label": "legacy", "note": EPOCH_NOTE},
+        {"date": "2026-07-01", "label": "runners"},
+        # Neither of these is a boundary: one cannot be compared against, the
+        # other cannot be named on a board row.
+        {"date": "2026-08-01"},
+        {"label": "nameless"},
+    )
+    assert timings.read_epochs(path) == [
+        {"date": "2026-07-01", "label": "runners", "note": ""},
+        {"date": "2026-09-05", "label": "legacy", "note": EPOCH_NOTE},
+    ]
+    # A missing file is an empty record, never an error.
+    assert timings.read_epochs(tmp_path / "nope.jsonl") == []
+
+
+def test_two_boundaries_on_one_day_keep_the_order_they_landed(tmp_path):
+    path = _epochs_file(tmp_path,
+                        {"date": "2026-09-05", "label": "first"},
+                        {"date": "2026-09-05", "label": "second"})
+    assert [e["label"] for e in timings.read_epochs(path)] == ["first", "second"]
+
+
+def test_current_epoch_is_the_latest_boundary_on_or_before_today():
+    epochs = [
+        {"date": "2026-07-01", "label": "runners", "note": ""},
+        {"date": "2026-09-05", "label": "legacy", "note": EPOCH_NOTE},
+        # Written ahead of the change it labels: not in force yet, so it cannot
+        # blind every baseline the day its PR lands.
+        {"date": "2026-12-01", "label": "fast-tests", "note": ""},
+    ]
+    assert timings.current_epoch(epochs, TODAY)["label"] == "legacy"
+    assert timings.current_epoch(epochs, "2026-08-31")["label"] == "runners"
+    assert timings.current_epoch(epochs, "2026-06-30") is None
+    # No boundaries at all is one unbroken epoch, which is the old behaviour.
+    assert timings.current_epoch([], TODAY) is None
+
+
+def test_append_epoch_dedupes_on_date_and_label_and_never_rewrites(tmp_path):
+    path = tmp_path / "epochs.jsonl"
+    assert timings.append_epoch(path, TODAY, "legacy", EPOCH_NOTE) is True
+    before = path.read_bytes()
+    # The same judgement recorded twice is a no-op, not a second boundary.
+    assert timings.append_epoch(path, TODAY, "legacy", "a different note") is False
+    assert path.read_bytes() == before
+    # A different label on the same day IS a different judgement.
+    assert timings.append_epoch(path, TODAY, "runners", "") is True
+    after = path.read_bytes()
+    assert after.startswith(before) and len(after) > len(before)
+    assert [e["label"] for e in timings.read_epochs(path)] == ["legacy", "runners"]
+
+
+def test_append_epoch_refuses_a_bad_date_or_an_empty_label(tmp_path):
+    """The record sorts on these dates as strings, so `YYYY-MM-DD` and nothing
+    else; a label-less boundary could not be named on a board row."""
+    path = tmp_path / "epochs.jsonl"
+    for date in ("05-09-2026", "2026-9-5", "20260905", "tomorrow", ""):
+        assert timings.append_epoch(path, date, "legacy", "") is False
+    for label in ("", "   "):
+        assert timings.append_epoch(path, TODAY, label, "") is False
+    assert not path.exists()
+
+
+# --- every reader compares inside the current epoch ---------------------------
+def _dated_gates(date, p50):
+    return {"date": date, "ts": TS,
+            "gates": {"RepoA/Gate One": {"p50_s": p50, "runs": 5}}}
+
+
+def test_gates_history_drops_the_lines_before_the_boundary(tmp_path):
+    path = tmp_path / "gates.jsonl"
+    for line in (_dated_gates("2026-09-03", 100.0),
+                 _dated_gates("2026-09-05", 900.0)):
+        timings.append_gates(path, line)
+    assert [h["date"] for h in timings.gates_history(path, 30)] == [
+        "2026-09-03", "2026-09-05"]
+    # A gate measured before the world changed is not a baseline for one
+    # measured after it.
+    assert [h["date"] for h in timings.gates_history(path, 30, since=TODAY)] == [
+        "2026-09-05"]
+    assert timings.gates_history(path, 30, since="2026-12-01") == []
+
+
+def _scripts_line(date, run_id, seconds):
+    return {"date": date, "at": "", "python": "3.12", "run_id": run_id,
+            "run_url": RUN_URL, "head_branch": "", "head_sha": "",
+            "env_profile": "smoke",
+            "entries": {"imaging/x.py": [seconds, "passed", 600.0]}}
+
+
+def test_previous_script_rows_filters_before_it_picks_the_latest(tmp_path):
+    """The order matters: a pre-boundary line is not a stale baseline to be
+    superseded, it is a measurement of a different world — so it must not win
+    the "latest per leg" race either."""
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    path = scripts / "RepoA.jsonl"
+    timings._append(path, [_scripts_line("2026-09-04", 6, 10.0),
+                           _scripts_line("2026-09-05", 7, 30.0)])
+    key = ("RepoA", "3.12", "imaging/x.py")
+    assert timings.previous_script_rows(scripts)[key]["seconds"] == 30.0
+    assert timings.previous_script_rows(scripts, since=TODAY)[key]["run_id"] == 7
+    # With only the pre-boundary line inside reach, there is no baseline at all
+    # — which is honest: nothing comparable was recorded.
+    only_old = tmp_path / "old"
+    only_old.mkdir()
+    timings._append(only_old / "RepoA.jsonl", [_scripts_line("2026-09-04", 6, 10.0)])
+    assert timings.previous_script_rows(only_old, since=TODAY) == {}
+    assert timings.previous_script_rows(only_old)[key]["seconds"] == 10.0
+
+
+def test_an_undated_line_is_older_than_any_boundary(tmp_path):
+    """The record cannot place it after the world changed, and a baseline that
+    MIGHT predate the change is not a baseline. With no boundary in force it is
+    read exactly as it always was."""
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    undated = _scripts_line("", 6, 10.0)
+    undated.pop("date")
+    timings._append(scripts / "RepoA.jsonl", [undated])
+    key = ("RepoA", "3.12", "imaging/x.py")
+    assert timings.previous_script_rows(scripts)[key]["seconds"] == 10.0
+    assert timings.previous_script_rows(scripts, since=TODAY) == {}
+
+
+def _unit_line(date, run_id, seconds, import_s):
+    return {"date": date, "at": "", "python": "3.12", "run_id": run_id,
+            "run_url": RUN_URL, "head_branch": "", "head_sha": "",
+            "package": PACKAGE, "import_s": import_s,
+            "suite": {"tests": 2, "failures": 0, "errors": 0, "skipped": 0,
+                      "wall_s": 40.0},
+            "slowest": {NODEID: seconds}}
+
+
+def test_previous_unit_rows_and_import_history_honour_the_boundary(tmp_path):
+    unit = tmp_path / "unit"
+    unit.mkdir()
+    timings._append(unit / "RepoA.jsonl", [
+        _unit_line("2026-09-03", 5, 1.0, 1.0),
+        _unit_line("2026-09-04", 6, 2.0, 2.0),
+        _unit_line("2026-09-05", 7, 9.0, 9.0),
+    ])
+    key = ("RepoA", "3.12", NODEID)
+    assert timings.previous_unit_rows(unit)[key]["run_id"] == 7
+    assert timings.previous_unit_rows(unit, since=TODAY)[key]["run_id"] == 7
+
+    hist_key = ("RepoA", PACKAGE, "3.12")
+    assert timings.import_history(unit, 7)[hist_key] == [1.0, 2.0, 9.0]
+    # A window reaching back across a boundary would take the median of two
+    # different worlds — so the boundary is applied BEFORE the window.
+    assert timings.import_history(unit, 7, since=TODAY)[hist_key] == [9.0]
+    assert timings.import_history(unit, 7, since="2026-09-04")[hist_key] == [2.0, 9.0]
+
+
+def test_an_empty_since_reads_byte_identically_to_no_since_at_all(tmp_path):
+    """The whole record predates epochs; with no boundary in force every reader
+    must answer exactly what it always answered."""
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    timings._append(scripts / "RepoA.jsonl", [_scripts_line("2026-09-04", 6, 10.0)])
+    unit = tmp_path / "unit"
+    unit.mkdir()
+    timings._append(unit / "RepoA.jsonl", [_unit_line("2026-09-04", 6, 2.0, 2.0)])
+    gates = tmp_path / "gates.jsonl"
+    timings.append_gates(gates, _dated_gates("2026-09-04", 100.0))
+
+    assert timings.gates_history(gates, 30, since="") == timings.gates_history(gates, 30)
+    assert (timings.previous_script_rows(scripts, since="")
+            == timings.previous_script_rows(scripts))
+    assert (timings.previous_unit_rows(unit, since="")
+            == timings.previous_unit_rows(unit))
+    assert timings.import_history(unit, 7, since="") == timings.import_history(unit, 7)
+
+
+# --- the census and the CLI ---------------------------------------------------
+def test_the_census_carries_the_boundaries_and_the_one_in_force(tmp_path):
+    empty = timings.census(tmp_path)
+    assert empty["epochs"] == 0 and empty["epoch"] is None
+    _epochs_file(tmp_path,
+                 {"date": "2026-07-01", "label": "runners", "note": ""},
+                 {"date": "2026-09-05", "label": "legacy", "note": EPOCH_NOTE},
+                 {"date": "2099-01-01", "label": "not yet", "note": ""})
+    census = timings.census(tmp_path)
+    assert census["epochs"] == 3
+    # The note is the human's reasoning and belongs in the file, not on a row.
+    assert census["epoch"] == {"date": "2026-09-05", "label": "legacy"}
+
+
+def test_main_epoch_appends_once_and_says_so_on_the_repeat(tmp_path, capsys):
+    record = tmp_path / "timings"
+    argv = ["epoch", "--date", TODAY, "--label", "legacy", "--note", EPOCH_NOTE,
+            "--dir", str(record)]
+    assert timings.main(argv) == 0
+    assert json.loads(capsys.readouterr().out.strip()) == {
+        "date": TODAY, "label": "legacy", "note": EPOCH_NOTE}
+    before = (record / "epochs.jsonl").read_bytes()
+
+    assert timings.main(argv) == 0
+    assert capsys.readouterr().out.strip() == f"epoch already recorded: {TODAY} legacy"
+    assert (record / "epochs.jsonl").read_bytes() == before
+
+
+def test_main_epoch_exits_2_on_a_boundary_it_cannot_record(tmp_path, capsys):
+    record = tmp_path / "timings"
+    assert timings.main(["epoch", "--date", "05-09-2026", "--label", "legacy",
+                         "--dir", str(record)]) == 2
+    assert timings.main(["epoch", "--date", TODAY, "--label", "  ",
+                         "--dir", str(record)]) == 2
+    capsys.readouterr()
+    assert not (record / "epochs.jsonl").exists()
+
+
+def test_main_append_leaves_the_epoch_file_byte_identical(tmp_path):
+    """The daily job writes observations; a boundary is a judgement, and the
+    two writers are not the same one."""
+    ci, smoke = _write_rollups(tmp_path)
+    record = tmp_path / "timings"
+    record.mkdir()
+    epochs = _epochs_file(record, {"date": TODAY, "label": "legacy",
+                                   "note": EPOCH_NOTE})
+    before = epochs.read_bytes()
+    assert timings.main([
+        "append", "--ci-timing", str(ci), "--smoke-timings", str(smoke),
+        "--today", TODAY, "--dir", str(record),
+        "--census-out", str(tmp_path / "census.json"),
+    ]) == 0
+    assert epochs.read_bytes() == before
+    assert json.loads((tmp_path / "census.json").read_text())["epoch"] == {
+        "date": TODAY, "label": "legacy"}
+
+
+def test_main_show_prints_the_epoch_keys_too(tmp_path, capsys):
+    _epochs_file(tmp_path, {"date": TODAY, "label": "legacy", "note": EPOCH_NOTE})
+    assert timings.main(["show", "--dir", str(tmp_path)]) == 0
+    out = capsys.readouterr().out
+    assert "epochs: 1" in out
+    assert "'label': 'legacy'" in out and "'date': '2026-09-05'" in out
+
+
+def test_the_committed_record_carries_exactly_the_legacy_boundary():
+    """Declared data in the record, read the way the config tests read
+    config/repos.yaml: the `legacy` boundary labels the pre-rebuild reference
+    round, and the phase that lands the rebuild appends the NEXT one."""
+    epochs = timings.read_epochs(timings.EPOCHS_FILE)
+    assert len(epochs) == 1
+    assert epochs[0]["date"] == "2026-09-05" and epochs[0]["label"] == "legacy"
+    assert epochs[0]["note"]
+    assert len(timings.EPOCHS_FILE.read_text().splitlines()) == 1
