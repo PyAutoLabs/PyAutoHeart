@@ -17,6 +17,7 @@ Layout::
     timings/README.md            # the schema + the rules (doctrine)
     timings/gates.jsonl          # one line per UTC date
     timings/scripts/<repo>.jsonl # one line per (python leg, run id)
+    timings/unit/<repo>.jsonl    # one line per (python leg, run id)
 
 Deliberate choices, each one a recorded lesson:
 
@@ -25,7 +26,7 @@ Deliberate choices, each one a recorded lesson:
   evidence that can be quietly rewritten is not evidence. Consequently every
   writer here appends; none of them opens a file for truncation.
 * **Dedupe on identity, never on the day.** The gates file is keyed by
-  ``date``; the scripts files by ``(python, run_id)``. The distinction matters:
+  ``date``; the scripts and unit files by ``(python, run_id)``. The distinction matters:
   a quiet week produces the SAME smoke run for seven days running, and keying
   the scripts record on the day would write seven copies of one measurement —
   the ``script_timing`` "one value repeated seven times" defect, recorded once
@@ -61,6 +62,23 @@ The entry triple is ``[seconds, status, cap_s]`` — positional on purpose: this
 file grows by one line per leg per run forever, and the three keys repeated on
 every entry would triple it for nothing a reader cannot infer from the schema.
 
+``unit/<repo>.jsonl`` line (the libraries' own CI, via
+``heart/checks/unit_timings.py``)::
+
+    {"date": "2026-09-05", "at": "2026-09-04T10:00:00Z", "python": "3.12",
+     "run_id": 7, "run_url": "https://ci.invalid/runs/7",
+     "head_branch": "feat/x", "head_sha": "abc123", "package": "pkg_a",
+     "import_s": 3.6,
+     "suite": {"tests": 1500, "failures": 0, "errors": 0, "skipped": 3,
+               "wall_s": 412.0},
+     "slowest": {"tests/foo/test_bar.py::test_x": 12.5}}
+
+Only the N SLOWEST tests are recorded, with the suite totals beside them: a
+1500-test suite recorded whole would multiply this file forever for rows nothing
+reads, while the totals keep the coverage visible. ``import_s`` is the
+fresh-process cold import measured on the CI runner, and it is ``null`` — never
+0.0 — when that import failed or timed out.
+
 ``timings/epochs.jsonl`` is RESERVED (``EPOCHS_FILE``) for a future labelled
 epoch boundary — ``{"date", "label", "note"}``, e.g. "runners moved to 8-core"
 — so a reader can tell a step change from a regression. Nothing here writes it
@@ -80,6 +98,7 @@ HEART_HOME = Path(__file__).resolve().parents[1]
 TIMINGS_DIR = HEART_HOME / "timings"
 GATES_FILE = TIMINGS_DIR / "gates.jsonl"
 SCRIPTS_DIR = TIMINGS_DIR / "scripts"
+UNIT_DIR = TIMINGS_DIR / "unit"
 # Named so the reservation is in the code, not only in the README. NOTHING
 # writes this: an epoch boundary is a human's judgement about the world (a
 # runner change, a cap change), not something a daily job can observe.
@@ -93,6 +112,8 @@ EMPTY_CENSUS = {
     "gates_last": "",
     "scripts_observations": 0,
     "repos": 0,
+    "unit_observations": 0,
+    "unit_repos": 0,
     "unparseable": 0,
 }
 
@@ -100,6 +121,11 @@ EMPTY_CENSUS = {
 def scripts_file(repo: str, directory: Path | str = TIMINGS_DIR) -> Path:
     """The per-repo scripts record path under ``directory``."""
     return Path(directory) / "scripts" / f"{repo}.jsonl"
+
+
+def unit_file(repo: str, directory: Path | str = TIMINGS_DIR) -> Path:
+    """The per-repo unit-timings record path under ``directory``."""
+    return Path(directory) / "unit" / f"{repo}.jsonl"
 
 
 # --- jsonl I/O ---------------------------------------------------------------
@@ -394,6 +420,179 @@ def previous_script_rows(
     return out
 
 
+# --- unit tests + imports (the libraries' own CI) ----------------------------
+def unit_lines_from_rollup(
+    rollup: Any, today: str
+) -> dict[str, list[dict[str, Any]]]:
+    """``{repo: [line, ...]}`` from a ``unit_timings.json`` rollup.
+
+    One line per ``(repo, python, run_id)`` — the identity of a measurement, the
+    same key the scripts record uses and for the same reason: the libraries'
+    artifacts only change when a run happens, so a quiet week hands the daily
+    job the SAME run seven times.
+
+    Everything the line needs is on the rollup's ``repos[]`` item (provenance,
+    the suite totals, the leg's slowest tests, the import seconds), so the
+    record can be built from the rollup alone without re-reading a sidecar. A
+    leg with no ``run_id`` has no identity and is skipped outright.
+    """
+    out: dict[str, list[dict[str, Any]]] = {}
+    if not isinstance(rollup, dict):
+        return out
+
+    seen: set[tuple[str, str, str]] = set()
+    for leg in rollup.get("repos") or []:
+        if not isinstance(leg, dict):
+            continue
+        repo = str(leg.get("repo") or "")
+        run_id = leg.get("run_id")
+        if not repo or run_id is None or str(run_id) == "":
+            continue
+        python = str(leg.get("python") or "")
+        key = (repo, python, str(run_id))
+        if key in seen:
+            continue
+        seen.add(key)
+
+        suite_in = leg.get("suite") if isinstance(leg.get("suite"), dict) else {}
+        suite = {
+            "tests": _as_int(suite_in.get("tests")),
+            "failures": _as_int(suite_in.get("failures")),
+            "errors": _as_int(suite_in.get("errors")),
+            "skipped": _as_int(suite_in.get("skipped")),
+            "wall_s": _as_float(suite_in.get("wall_s")),
+        }
+        slowest: dict[str, float] = {}
+        for row in leg.get("slowest") or []:
+            if not isinstance(row, dict):
+                continue
+            nodeid = str(row.get("nodeid") or "")
+            seconds = _as_float(row.get("seconds"))
+            if not nodeid or seconds is None:
+                continue
+            slowest[nodeid] = seconds
+
+        out.setdefault(repo, []).append({
+            "date": today,
+            "at": str(leg.get("at") or ""),
+            "python": python,
+            "run_id": run_id,
+            "run_url": str(leg.get("run_url") or ""),
+            "head_branch": str(leg.get("head_branch") or ""),
+            "head_sha": str(leg.get("head_sha") or ""),
+            "package": str(leg.get("package") or ""),
+            # `null`, never 0.0: an import that failed was not an instant one.
+            "import_s": _as_float(leg.get("import_s")),
+            "suite": suite,
+            "slowest": {name: slowest[name] for name in sorted(slowest)},
+        })
+    for repo in out:
+        out[repo].sort(key=lambda line: (str(line.get("python") or ""),
+                                         str(line.get("run_id") or "")))
+    return out
+
+
+def append_unit(path: Path | str, lines: list[dict[str, Any]]) -> int:
+    """Append the unit lines not already recorded. Returns how many landed.
+
+    Keyed by ``(python, run_id)``, NOT by the day — the scripts record's rule,
+    for the scripts record's reason: a quiet week would otherwise write seven
+    identical observations and make a flat week look like a week of
+    measurements.
+    """
+    existing, _ = read_jsonl(path)
+    seen = {
+        (str(rec.get("python") or ""), str(rec.get("run_id") or ""))
+        for rec in existing
+    }
+    fresh: list[dict[str, Any]] = []
+    for line in lines or []:
+        if not isinstance(line, dict):
+            continue
+        key = (str(line.get("python") or ""), str(line.get("run_id") or ""))
+        if not key[1] or key in seen:
+            continue
+        seen.add(key)
+        fresh.append(line)
+    _append(path, fresh)
+    return len(fresh)
+
+
+def previous_unit_rows(
+    unit_dir: Path | str = UNIT_DIR,
+) -> dict[tuple[str, str, str], dict[str, Any]]:
+    """``{(repo, python, nodeid): prev_row}`` — the last recorded observation.
+
+    The shape is exactly what ``smoke_timings.classify_drift`` expects of a
+    previous row (``seconds``/``run_id``/``run_url``), which is the same
+    function ``unit_timings`` classifies its test drift with.
+
+    The *latest* line per python leg wins, and "latest" is file order: the file
+    is append-only, so the last line for a leg is the most recently recorded
+    one. Only the recorded (slowest) tests are in there to begin with — a test
+    that dropped out of the top N simply has no baseline next run, which is
+    honest: nothing was recorded about it.
+    """
+    out: dict[tuple[str, str, str], dict[str, Any]] = {}
+    root = Path(unit_dir)
+    if not root.is_dir():
+        return out
+    for path in sorted(root.glob("*.jsonl")):
+        repo = path.name[: -len(".jsonl")]
+        records, _ = read_jsonl(path)
+        latest: dict[str, dict[str, Any]] = {}
+        for record in records:
+            latest[str(record.get("python") or "")] = record
+        for python, record in latest.items():
+            slowest = record.get("slowest")
+            if not isinstance(slowest, dict):
+                continue
+            for nodeid, value in slowest.items():
+                seconds = _as_float(value)
+                if seconds is None:
+                    continue
+                out[(repo, python, str(nodeid))] = {
+                    "seconds": seconds,
+                    "run_id": record.get("run_id"),
+                    "run_url": str(record.get("run_url") or ""),
+                }
+    return out
+
+
+def import_history(
+    unit_dir: Path | str = UNIT_DIR, window: int = 7
+) -> dict[tuple[str, str, str], list[float]]:
+    """``{(repo, package, python): [seconds, ...]}`` — oldest first, last N.
+
+    The median of this window is the import baseline (``import_time``'s
+    doctrine, kept so a ratio means the same thing from either vantage). A
+    ``null`` observation — an import that failed or timed out — is skipped
+    rather than carried as a zero, which would drag the median toward a number
+    nothing ever measured.
+    """
+    out: dict[tuple[str, str, str], list[float]] = {}
+    root = Path(unit_dir)
+    if not root.is_dir():
+        return out
+    cap = int(window) if window and int(window) > 0 else 0
+    for path in sorted(root.glob("*.jsonl")):
+        repo = path.name[: -len(".jsonl")]
+        records, _ = read_jsonl(path)
+        for record in records:
+            package = str(record.get("package") or "")
+            if not package:
+                continue
+            seconds = _as_float(record.get("import_s"))
+            if seconds is None:
+                continue
+            key = (repo, package, str(record.get("python") or ""))
+            out.setdefault(key, []).append(seconds)
+    if cap:
+        for key in out:
+            out[key] = out[key][-cap:]
+    return out
+
+
 # --- census ------------------------------------------------------------------
 def census(directory: Path | str = TIMINGS_DIR) -> dict[str, Any]:
     """What the record holds — the one-screen answer, and the board's detail.
@@ -411,18 +610,21 @@ def census(directory: Path | str = TIMINGS_DIR) -> dict[str, Any]:
     out["gates_last"] = dates[-1] if dates else ""
     out["unparseable"] = skipped
 
-    scripts_root = root / "scripts"
-    repos = 0
-    observations = 0
-    if scripts_root.is_dir():
-        for path in sorted(scripts_root.glob("*.jsonl")):
-            records, repo_skipped = read_jsonl(path)
-            out["unparseable"] += repo_skipped
-            if records:
-                repos += 1
-            observations += len(records)
-    out["repos"] = repos
-    out["scripts_observations"] = observations
+    def _count(sub: str) -> tuple[int, int]:
+        """(repos with at least one line, total lines) under ``root/<sub>``."""
+        repos = observations = 0
+        directory = root / sub
+        if directory.is_dir():
+            for path in sorted(directory.glob("*.jsonl")):
+                records, repo_skipped = read_jsonl(path)
+                out["unparseable"] += repo_skipped
+                if records:
+                    repos += 1
+                observations += len(records)
+        return repos, observations
+
+    out["repos"], out["scripts_observations"] = _count("scripts")
+    out["unit_repos"], out["unit_observations"] = _count("unit")
     return out
 
 
@@ -470,8 +672,25 @@ def _do_append(ns: argparse.Namespace) -> int:
             appended[repo] = added
             scripts_added += added
 
+    per_repo_unit = unit_lines_from_rollup(_read_rollup(ns.unit_timings), today)
+    appended_unit: dict[str, int] = {}
+    unit_added = 0
+    for repo in sorted(per_repo_unit):
+        lines = per_repo_unit[repo]
+        added = append_unit(unit_file(repo, directory), lines)
+        skipped += len(lines) - added
+        if added:
+            appended_unit[repo] = added
+            unit_added += added
+
     payload = dict(census(directory))
     payload["appended_today"] = {"gates": gates_added, "scripts": appended}
+    # The unit slice reports itself only when it was ASKED for, so an older
+    # invocation's payload and summary line read exactly as they always did.
+    # (The census above always carries the unit counts — the record has the
+    # slice whether or not this run was handed a rollup for it.)
+    if ns.unit_timings:
+        payload["appended_today"]["unit"] = appended_unit
     out_path = Path(ns.census_out) if ns.census_out else _default_census_out()
     try:
         state.atomic_write_json(out_path, payload)
@@ -479,11 +698,13 @@ def _do_append(ns: argparse.Namespace) -> int:
         # The census is a convenience for the render, never the record itself.
         pass
 
-    print(
+    line = (
         f"timings: gates +{1 if gates_added else 0} line, "
-        f"scripts +{scripts_added} lines across {len(appended)} repos, "
-        f"{skipped} skipped (already recorded)"
+        f"scripts +{scripts_added} lines across {len(appended)} repos"
     )
+    if ns.unit_timings:
+        line += f", unit +{unit_added} lines across {len(appended_unit)} repos"
+    print(f"{line}, {skipped} skipped (already recorded)")
     return 0
 
 
@@ -506,6 +727,10 @@ def main(argv: list[str] | None = None) -> int:
                                 "to append from that slice, never an error")
     ap_append.add_argument("--smoke-timings", default="",
                            help="the smoke_timings.json rollup; missing => "
+                                "nothing to append from that slice")
+    ap_append.add_argument("--unit-timings", default="",
+                           help="the unit_timings.json rollup (per-test "
+                                "durations + import seconds); missing => "
                                 "nothing to append from that slice")
     ap_append.add_argument("--today", default="",
                            help="ISO date for the gates line (default: today, UTC)")

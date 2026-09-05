@@ -6,9 +6,14 @@ Distinct from ``script_timing``, which reads PyAutoHands ``run_all`` durations
 scripts with ``PYAUTO_TEST_MODE=2`` + ``PYAUTO_WORKSPACE_SMALL_DATASETS=1`` — the
 developer-loop mode named in the original hygiene prompt — and times them.
 
-OFF-TICK by design: running scripts costs seconds–minutes, which does not fit
-the <30s watch-loop budget (``docs/internals.md`` rule 3). Run on a slower
-cadence (daily cron / on demand), NOT from ``heart/tick.sh``:
+Superseded on the board by the per-script smoke timings
+(``heart/checks/smoke_timings.py``, #203): the smoke gates already run the
+workspace scripts in TEST_MODE=2 with small datasets on every PR. Kept runnable
+on demand; no longer a cloud-greyed board row (#206).
+
+Running scripts costs seconds–minutes, which does not fit the <30s watch-loop
+budget (``docs/internals.md`` rule 3), so this module is never run from
+``heart/tick.sh``:
 
     python -m heart.checks.workspace_testmode_timing
 

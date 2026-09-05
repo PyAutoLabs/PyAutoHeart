@@ -250,9 +250,12 @@ def test_the_census_counts_days_observations_and_repos(tmp_path):
         for line in lines:
             line["repo"] = repo
         timings.append_scripts(timings.scripts_file(repo, tmp_path), lines)
+    # The two unit_* keys arrived with the unit-timings slice (#206): the
+    # census is the record's key set, and the record now holds three slices.
     assert timings.census(tmp_path) == {
         "gates_days": 2, "gates_first": "2026-09-04", "gates_last": TODAY,
-        "scripts_observations": 2, "repos": 2, "unparseable": 0,
+        "scripts_observations": 2, "repos": 2,
+        "unit_observations": 0, "unit_repos": 0, "unparseable": 0,
     }
 
 
@@ -337,3 +340,172 @@ def test_the_epoch_file_is_reserved_and_never_written(tmp_path):
                   "--census-out", str(tmp_path / "census.json")])
     assert not (record / "epochs.jsonl").exists()
     assert not timings.EPOCHS_FILE.exists()
+
+
+# --- the unit slice: per-test durations + the cold import (#206) --------------
+#
+# Same two rules as the scripts record — append-only, keyed on (python, run_id)
+# — over the libraries' own CI instead of the workspaces'. What is new here is
+# WHAT is recorded: only the slowest N tests plus the suite totals (a 1500-test
+# suite recorded whole would multiply the file for rows nothing reads), and the
+# fresh-process import seconds, `null` when that import never succeeded.
+
+PACKAGE = "pkg_a"
+NODEID = "tests/foo/test_bar.py::test_x"
+
+
+def _unit_rollup(run_id=7, seconds=1.5, import_s=3.6, python="3.12"):
+    """A unit_timings.json rollup: one repo, one python leg, two slow tests."""
+    return {
+        "ts": TS,
+        "repos": [
+            {"repo": "RepoA", "python": python, "run_id": run_id,
+             "run_url": RUN_URL, "head_branch": "feat/x", "head_sha": "abc123",
+             "at": "2026-09-04T10:00:00Z", "tests": 1500, "wall_s": 412.0,
+             "import_s": import_s, "package": PACKAGE, "error": "",
+             "suite": {"tests": 1500, "failures": 0, "errors": 0, "skipped": 3,
+                       "wall_s": 412.0},
+             "slowest": [{"nodeid": NODEID, "seconds": seconds},
+                         {"nodeid": "tests/foo/test_bar.py::test_y",
+                          "seconds": 0.5}]},
+        ],
+        "tests": [], "imports": [], "slowed_tests": [], "slowed_imports": [],
+        "errors": [], "thresholds": {},
+    }
+
+
+def test_unit_lines_are_one_per_repo_python_and_run():
+    lines = timings.unit_lines_from_rollup(_unit_rollup(), TODAY)
+    assert list(lines) == ["RepoA"]
+    (line,) = lines["RepoA"]
+    assert line["date"] == TODAY and line["python"] == "3.12"
+    assert line["run_id"] == 7 and line["run_url"] == RUN_URL
+    assert line["head_branch"] == "feat/x" and line["head_sha"] == "abc123"
+    assert line["at"] == "2026-09-04T10:00:00Z"
+    assert line["package"] == PACKAGE and line["import_s"] == 3.6
+    assert line["suite"] == {"tests": 1500, "failures": 0, "errors": 0,
+                             "skipped": 3, "wall_s": 412.0}
+    # Only the slowest tests, node id -> seconds, sorted by node id.
+    assert line["slowest"] == {NODEID: 1.5,
+                               "tests/foo/test_bar.py::test_y": 0.5}
+
+
+def test_a_unit_leg_with_no_run_id_has_no_identity_and_is_not_recorded():
+    rollup = _unit_rollup()
+    rollup["repos"][0]["run_id"] = None
+    assert timings.unit_lines_from_rollup(rollup, TODAY) == {}
+
+
+def test_a_failed_import_is_recorded_as_null_never_as_zero():
+    (line,) = timings.unit_lines_from_rollup(
+        _unit_rollup(import_s=None), TODAY)["RepoA"]
+    assert line["import_s"] is None
+
+
+def test_the_unit_record_is_keyed_by_leg_and_run_never_by_the_day(tmp_path):
+    path = timings.unit_file("RepoA", tmp_path)
+    lines = timings.unit_lines_from_rollup(_unit_rollup(), TODAY)["RepoA"]
+    assert timings.append_unit(path, lines) == 1
+    # Same run, a later day: nothing new was measured, so nothing is recorded.
+    again = timings.unit_lines_from_rollup(_unit_rollup(), "2026-09-06")["RepoA"]
+    assert timings.append_unit(path, again) == 0
+    fresh = timings.unit_lines_from_rollup(
+        _unit_rollup(run_id=8, seconds=9.0), "2026-09-06")["RepoA"]
+    assert timings.append_unit(path, fresh) == 1
+    records, _ = timings.read_jsonl(path)
+    assert [(r["run_id"], r["date"]) for r in records] == [(7, TODAY),
+                                                           (8, "2026-09-06")]
+    # Append-only, byte for byte.
+    assert path.read_text().count("\n") == 2
+
+
+def test_previous_unit_rows_takes_the_latest_line_per_leg_and_drives_drift(tmp_path):
+    unit_dir = tmp_path / "unit"
+    path = timings.unit_file("RepoA", tmp_path)
+    for run_id, seconds in ((7, 1.5), (8, 4.0)):
+        timings.append_unit(path, timings.unit_lines_from_rollup(
+            _unit_rollup(run_id=run_id, seconds=seconds), TODAY)["RepoA"])
+    # A second python leg, so "latest per leg" is not "latest in the file".
+    timings.append_unit(path, timings.unit_lines_from_rollup(
+        _unit_rollup(run_id=9, seconds=0.5, python="3.13"), TODAY)["RepoA"])
+
+    prev = timings.previous_unit_rows(unit_dir)
+    assert prev[("RepoA", "3.12", NODEID)] == {
+        "seconds": 4.0, "run_id": 8, "run_url": RUN_URL}
+    assert prev[("RepoA", "3.13", NODEID)]["seconds"] == 0.5
+
+    thr = {"slow_factor": 2.0, "min_delta_s": 2}
+    row = prev[("RepoA", "3.12", NODEID)]
+    assert smoke_timings.classify_drift(12.0, row, thr, run_id=9)[0] == "warn"
+    assert smoke_timings.classify_drift(5.0, row, thr, run_id=9)[0] == "ok"
+    # ...and a row from the SAME run is never compared against itself.
+    assert smoke_timings.classify_drift(12.0, row, thr, run_id=8) == (
+        "ok", None, None)
+
+
+def test_import_history_is_oldest_first_window_capped_and_skips_nulls(tmp_path):
+    unit_dir = tmp_path / "unit"
+    path = timings.unit_file("RepoA", tmp_path)
+    for run_id, import_s in ((1, 1.0), (2, None), (3, 2.0), (4, 3.0), (5, 4.0)):
+        timings.append_unit(path, timings.unit_lines_from_rollup(
+            _unit_rollup(run_id=run_id, import_s=import_s), TODAY)["RepoA"])
+    key = ("RepoA", PACKAGE, "3.12")
+    # A null was never a measurement: carrying it as 0.0 would drag the median
+    # toward a number nothing ever observed.
+    assert timings.import_history(unit_dir, 7)[key] == [1.0, 2.0, 3.0, 4.0]
+    assert timings.import_history(unit_dir, 2)[key] == [3.0, 4.0]
+    assert timings.import_history(tmp_path / "nope", 7) == {}
+
+
+def test_the_census_counts_the_unit_slice_too(tmp_path):
+    assert timings.census(tmp_path)["unit_observations"] == 0
+    for repo in ("RepoA", "RepoB"):
+        lines = timings.unit_lines_from_rollup(_unit_rollup(), TODAY)["RepoA"]
+        timings.append_unit(timings.unit_file(repo, tmp_path), lines)
+    census = timings.census(tmp_path)
+    assert census["unit_observations"] == 2 and census["unit_repos"] == 2
+    # ...and the scripts figures stay their own.
+    assert census["scripts_observations"] == 0 and census["repos"] == 0
+
+
+def test_main_append_records_the_unit_slice_and_is_idempotent(tmp_path, capsys):
+    ci, smoke = _write_rollups(tmp_path)
+    unit = tmp_path / "unit_timings.json"
+    unit.write_text(json.dumps(_unit_rollup()))
+    record = tmp_path / "timings"
+    census_out = tmp_path / "census.json"
+    argv = ["append", "--ci-timing", str(ci), "--smoke-timings", str(smoke),
+            "--unit-timings", str(unit), "--today", TODAY, "--ts", TS,
+            "--dir", str(record), "--census-out", str(census_out)]
+
+    assert timings.main(argv) == 0
+    assert capsys.readouterr().out.strip() == (
+        "timings: gates +1 line, scripts +1 lines across 1 repos, "
+        "unit +1 lines across 1 repos, 0 skipped (already recorded)")
+    assert timings.unit_file("RepoA", record).is_file()
+    census = json.loads(census_out.read_text())
+    assert census["unit_observations"] == 1 and census["unit_repos"] == 1
+    assert census["appended_today"]["unit"] == {"RepoA": 1}
+
+    # A second run over the SAME inputs appends nothing at all.
+    assert timings.main(argv) == 0
+    assert capsys.readouterr().out.strip() == (
+        "timings: gates +0 line, scripts +0 lines across 0 repos, "
+        "unit +0 lines across 0 repos, 3 skipped (already recorded)")
+    assert len(timings.unit_file("RepoA", record).read_text().splitlines()) == 1
+    assert json.loads(census_out.read_text())["appended_today"]["unit"] == {}
+
+
+def test_a_run_without_the_unit_flag_reads_exactly_as_it_always_did(tmp_path,
+                                                                    capsys):
+    """The slice reports itself only when it was asked for, so an older
+    invocation's summary line and census payload are unchanged."""
+    ci, smoke = _write_rollups(tmp_path)
+    census_out = tmp_path / "census.json"
+    assert timings.main([
+        "append", "--ci-timing", str(ci), "--smoke-timings", str(smoke),
+        "--today", TODAY, "--dir", str(tmp_path / "timings"),
+        "--census-out", str(census_out),
+    ]) == 0
+    assert "unit +" not in capsys.readouterr().out
+    assert "unit" not in json.loads(census_out.read_text())["appended_today"]

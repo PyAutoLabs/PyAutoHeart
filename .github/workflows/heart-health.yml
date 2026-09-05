@@ -4,9 +4,9 @@ name: Heart Health
 # the ONE unified health dashboard (heart/dashboard.py) alongside the existing
 # alerting.
 #
-# It runs the five checks that need only the GitHub API (no local working tree) —
-# CI status, open PRs, CI wall-clock timing, the NO_RUN census and the
-# per-script smoke timings — across every polled repo, then:
+# It runs the six checks that need only the GitHub API (no local working tree) —
+# CI status, open PRs, CI wall-clock timing, the NO_RUN census, the per-script
+# smoke timings and the per-test unit timings — across every polled repo, then:
 #   1. renders the unified board (one renderer, many formats) and publishes it
 #      three ways, all from the SAME snapshot so they cannot disagree:
 #        * GitHub Pages   — self-contained fmt="html" + a shields badge.json
@@ -14,10 +14,12 @@ name: Heart Health
 #        * README          — a shields verdict badge + an auto-updated
 #                            <!-- heart:begin -->…<!-- heart:end --> md block
 #      and commits, beside that block, the day's lines of the PERMANENT timing
-#      record (timings/gates.jsonl + timings/scripts/<repo>.jsonl). This job is
-#      the record's single writer; the two timing checks read it back as the
-#      first source for their baselines, with the published board.json only as
-#      the fallback, so a Pages gap no longer loses history.
+#      record (timings/gates.jsonl + timings/scripts/<repo>.jsonl +
+#      timings/unit/<repo>.jsonl). This job is the record's single writer; the
+#      timing checks read it back as the first source for their baselines, with
+#      the published board.json only as the fallback, so a Pages gap no longer
+#      loses history — and for unit_timings the record is the ONLY baseline,
+#      since the board never carried per-test rows.
 #   2. opens-or-updates a single "[heart-health]" tracking ISSUE when anything
 #      is red/degraded and closes it when clean — the ALERTING channel (kept).
 #
@@ -42,9 +44,10 @@ on:
 # contents: write  → commit the README badge/block into Heart's OWN README
 # issues:   write  → the [heart-health] tracking issue
 # pages/id-token   → publish the Pages board
-# actions:  read   → list and download workflow artifacts (smoke_timings). The
-#                    artifact endpoints need this scope even for the repo's own
-#                    artifacts, and the default token grant does not include it.
+# actions:  read   → list and download workflow artifacts (smoke_timings,
+#                    unit_timings). The artifact endpoints need this scope even
+#                    for the repo's own artifacts, and the default token grant
+#                    does not include it.
 permissions:
   contents: write
   issues: write
@@ -90,33 +93,37 @@ jobs:
       - name: Install PyYAML
         run: pip install --quiet pyyaml
 
-      - name: Run cloud-safe checks (ci_status, open_prs, ci_timing, no_run_census, smoke_timings)
+      - name: Run cloud-safe checks (ci_status, open_prs, ci_timing, no_run_census, smoke_timings, unit_timings)
         env:
           # The repo-scoped GITHUB_TOKEN is enough for every check here except
-          # the artifact /zip downloads smoke_timings makes against OTHER repos:
+          # the artifact /zip downloads smoke_timings and unit_timings make
+          # against OTHER repos (workspaces and libraries respectively):
           # actions/download-artifact documents a cross-repo download as needing
           # a token with actions:read ON THAT REPO, and the default token has no
           # standing there — the endpoint answers 403. The check records that
           # per repo as an honest error rather than a quiet-looking empty
           # result, and the remedy is a secret, never a code change: a
-          # fine-grained PAT (Actions: read on the workspace repos) stored as
-          # HEART_TIMINGS_TOKEN. Absent that secret this falls back to the
-          # auto-provisioned token and Heart's own artifacts still ingest.
+          # fine-grained PAT (Actions: read on the workspace AND library repos)
+          # stored as HEART_TIMINGS_TOKEN. Absent that secret this falls back to
+          # the auto-provisioned token and Heart's own artifacts still ingest.
           GH_TOKEN: ${{ secrets.HEART_TIMINGS_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          # Five API-only checks: CI conclusions and open PRs (health), then CI
-          # wall-clock, the NO_RUN census and the per-script smoke timings (the
-          # ⏱ performance surface). ci_timing's and smoke_timings' aggregate
-          # steps re-read the board.json published by the previous run to carry
-          # their own history/previous observation forward; a fetch failure
-          # there costs a sparkline or a comparison, never the render. `set +e`
-          # keeps a single broken check from aborting the board.
+          # Six API-only checks: CI conclusions and open PRs (health), then CI
+          # wall-clock, the NO_RUN census, the per-script smoke timings and the
+          # per-test unit timings (the ⏱ performance surface). ci_timing's and
+          # smoke_timings' aggregate steps re-read the board.json published by
+          # the previous run to carry their own history/previous observation
+          # forward; a fetch failure there costs a sparkline or a comparison,
+          # never the render. unit_timings reads only the committed record —
+          # the board never carried per-test rows. `set +e` keeps a single
+          # broken check from aborting the board.
           set +e
           bash heart/checks/ci_status.sh
           bash heart/checks/open_prs.sh
           bash heart/checks/ci_timing.sh
           bash heart/checks/no_run_census.sh
           bash heart/checks/smoke_timings.sh
+          bash heart/checks/unit_timings.sh
           exit 0
 
       - name: Append today's observations to the timing record
@@ -124,9 +131,10 @@ jobs:
           # ORDERING: after the checks, before the render. The checks' aggregate
           # passes have already READ the record for their baselines, and neither
           # can be fooled by today's own line — ci_timing's `history_baseline`
-          # excludes today's date, and smoke_timings compares by run id and
-          # refuses to compare a run against itself. So appending here is safe,
-          # and it lets the render census a record that already includes today.
+          # excludes today's date, and smoke_timings and unit_timings compare by
+          # run id and refuse to compare a run against itself. So appending here
+          # is safe, and it lets the render census a record that already
+          # includes today.
           #
           # SINGLE WRITER: only this workflow appends. The record is committed
           # into this repo (below, beside the README block), and two writers on
@@ -137,7 +145,8 @@ jobs:
           # error: this exits 0 whatever the checks managed to produce.
           PYTHONPATH="$PWD" python -m heart.timings append \
             --ci-timing "$HEART_STATE_DIR/ci_timing.json" \
-            --smoke-timings "$HEART_STATE_DIR/smoke_timings.json"
+            --smoke-timings "$HEART_STATE_DIR/smoke_timings.json" \
+            --unit-timings "$HEART_STATE_DIR/unit_timings.json"
 
       - name: Aggregate snapshot + compute readiness verdict
         run: |

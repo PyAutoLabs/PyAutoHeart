@@ -188,7 +188,9 @@ def _as_int(value: Any) -> int | None:
     return int(num) if num is not None else None
 
 
-def select_artifacts(listing: Any) -> list[dict[str, Any]]:
+def select_artifacts(
+    listing: Any, pattern: re.Pattern[str] = ARTIFACT_RE
+) -> list[dict[str, Any]]:
     """The newest non-expired ``smoke-timings-<py>`` artifact per python leg.
 
     Accepts the REST ``{"artifacts": [...]}`` object the shell leg fetches and
@@ -198,6 +200,12 @@ def select_artifacts(listing: Any) -> list[dict[str, Any]]:
     No URL is composed here: the selector is pure and knows nothing about a
     GitHub host. ``build_sidecar`` owns ``run_url``, because it is the thing
     that knows the owner and the repo name.
+
+    ``pattern`` is the artifact-name rule, defaulting to this check's own. The
+    selection LOGIC — newest, non-expired, one per named leg, group 1 is the
+    python version — is identical for every per-leg timings artifact, so
+    ``unit_timings`` passes its own ``unit-timings-<py>`` regex here rather than
+    growing a second copy of it that could drift.
     """
     if isinstance(listing, dict):
         raw = listing.get("artifacts") or []
@@ -213,7 +221,7 @@ def select_artifacts(listing: Any) -> list[dict[str, Any]]:
         if not isinstance(art, dict):
             continue
         name = str(art.get("name") or "")
-        match = ARTIFACT_RE.match(name)
+        match = pattern.match(name)
         if not match:
             continue
         if art.get("expired"):

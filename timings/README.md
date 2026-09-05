@@ -3,7 +3,8 @@
 This directory is PyAutoHeart's **append-only record of how long CI takes**. It
 is written by exactly one thing — the daily `heart-health.yml` cloud job, which
 commits it beside the README board block, one commit a day — and read by the
-two timing checks as the first source for their baselines.
+timing checks as the first source for their baselines (for `unit_timings` it is
+the *only* source: the board never carried per-test rows).
 
 It exists because the alternative did not last. `ci_timing` and `smoke_timings`
 both carried their history in the `board.json` published to Pages by the
@@ -21,12 +22,13 @@ carries the same rules for a reader who arrives from the Python side.
 ```
 timings/README.md            # this file — doctrine, not data
 timings/gates.jsonl          # one line per UTC date
-timings/scripts/<repo>.jsonl # one line per (python leg, run id)
+timings/scripts/<repo>.jsonl # one line per (python leg, run id)  — smoke scripts
+timings/unit/<repo>.jsonl    # one line per (python leg, run id)  — unit tests + import
 ```
 
-`gates.jsonl` and `timings/scripts/` are created by the first run that has
-something to record; an empty file is not a record, so they are not committed
-ahead of the data.
+`gates.jsonl`, `timings/scripts/` and `timings/unit/` are created by the first
+run that has something to record; an empty file is not a record, so they are not
+committed ahead of the data.
 
 ### `gates.jsonl` — one line per date
 
@@ -71,6 +73,37 @@ joined to its `rows` (the timed entries):
 * `head_sha` and `env_profile` are `""` when the rollup that produced the line
   predates them, so every line in a file carries the same keys either way.
 
+### `unit/<repo>.jsonl` — one line per leg per run
+
+One JSON object per line, from `unit_timings.json`'s `repos` — the rollup the
+libraries' own CI feeds through
+[`heart/checks/unit_timings.py`](../heart/checks/unit_timings.py):
+
+```json
+{"date":"2026-09-05","at":"2026-09-04T10:00:00Z","python":"3.12","run_id":7,
+ "run_url":"https://ci.invalid/OwnerX/RepoA/actions/runs/7",
+ "head_branch":"feat/x","head_sha":"abc123","package":"pkg_a","import_s":3.62,
+ "suite":{"tests":1500,"failures":0,"errors":0,"skipped":3,"wall_s":412.0},
+ "slowest":{"tests/foo/test_bar.py::test_x":12.5}}
+```
+
+* **Only the N slowest tests are recorded**, with the suite totals beside them.
+  A library suite is ~1500 tests; recorded whole, one line would carry 1500
+  entries and this file would grow by a megabyte a week for rows nothing reads —
+  the board shows the slowest handful and the totals. `suite` is what keeps the
+  coverage visible next to them (a suite that got faster by running fewer tests
+  must not read as a suite that got faster), and `slowest` maps the pytest node
+  id to its seconds — the same positional-free shape the drift rule compares
+  run to run. `top_n` lives in `config/repos.yaml`, never here.
+* **`import_s` is the fresh-process cold import** measured on the CI runner: a
+  new interpreter importing the package once, which is the cost the developer
+  loop actually pays — not the warm in-process cost a test session amortises. It
+  is `null`, never `0.0`, when that import failed or timed out; the import
+  baseline is the **median** of the last `import_window` non-null observations,
+  which is why a null is skipped rather than carried as a zero.
+* A test that drops out of the slowest N simply has no baseline next run. That
+  is honest: nothing was recorded about it.
+
 ## The two rules
 
 ### 1. Append-only
@@ -86,8 +119,9 @@ truncates.
 * `gates.jsonl` is keyed by **`date`** — appending is skipped when that date is
   already present. Re-running the daily job is then a no-op rather than a
   second point for the same day in every gate's sparkline.
-* `scripts/<repo>.jsonl` is keyed by **`(python, run_id)`** — appending is
-  skipped when that leg of that run is already recorded.
+* `scripts/<repo>.jsonl` and `unit/<repo>.jsonl` are keyed by
+  **`(python, run_id)`** — appending is skipped when that leg of that run is
+  already recorded.
 
 The second key is the load-bearing one. The smoke artifacts only change when a
 PR runs, so a quiet week hands the daily job the *same run* seven days running.
@@ -118,6 +152,10 @@ something a daily job can observe.
   practice far fewer — a line lands only when a new run produced a new
   artifact. Two legs per repo is the current shape, so ≤ 2 lines/day/repo, and
   a quiet repo contributes nothing at all.
+* `unit/<repo>.jsonl`: the same shape and the same cap — ≤ 2 lines/day/repo,
+  and only when a new run produced a new artifact. A line is larger than a
+  scripts line (the slowest N tests plus the suite totals) but bounded by
+  `top_n`, which is what keeps a 1500-test suite from setting the file size.
 
 Yearly sharding (`gates-2026.jsonl`, `scripts/2026/<repo>.jsonl`) is the
 obvious next step if a file ever gets unwieldy. **Not now**: at this growth
@@ -137,6 +175,10 @@ jq -r '.date + " " + (.gates["RepoA/Gate One"].p50_s|tostring)' timings/gates.js
 # One script's seconds across the recorded runs of a repo.
 jq -r '[.run_id, .python, .entries["imaging/x.py"][0]] | @tsv' \
    timings/scripts/RepoA.jsonl
+
+# One library's suite wall-clock and cold import across the recorded runs.
+jq -r '[.run_id, .python, .suite.wall_s, .import_s] | @tsv' \
+   timings/unit/RepoA.jsonl
 ```
 
 The daily job also writes the census to `$HEART_STATE_DIR/timings_record.json`,
