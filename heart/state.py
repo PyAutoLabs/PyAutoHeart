@@ -80,6 +80,11 @@ def aggregate() -> dict[str, Any]:
         "test_run": _read_json_or_default(HEART_STATE_DIR / "test_run.json", {}),
         "ci_timing": _read_json_or_default(HEART_STATE_DIR / "ci_timing.json", {}),
         "smoke_timings": _read_json_or_default(HEART_STATE_DIR / "smoke_timings.json", {}),
+        # The census of the COMMITTED timing record (timings/), written by
+        # `heart.timings append` in the daily cloud job. A snapshot taken
+        # before the record existed simply has no key, and the board renders
+        # exactly as it did — the census adds a detail line, never a row.
+        "timings_record": _read_json_or_default(HEART_STATE_DIR / "timings_record.json", {}),
         "no_run_census": _read_json_or_default(HEART_STATE_DIR / "no_run_census.json", {}),
         "workspace_testmode_timing": _read_json_or_default(HEART_STATE_DIR / "workspace_testmode_timing.json", {}),
         "version_skew": _read_json_or_default(HEART_STATE_DIR / "version_skew.json", {}),

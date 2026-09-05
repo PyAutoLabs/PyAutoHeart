@@ -92,8 +92,12 @@ check_ci_timing_all() {
 
   local prev
   prev="$(_ci_timing_prev_board)"
+  # The committed record (timings/gates.jsonl) is the source of truth for the
+  # history; the previously published board is only the fallback for when it
+  # is not there yet (first run, fresh clone, a Pages-only consumer).
   PYTHONPATH="$HEART_HOME" python3 -m heart.checks.ci_timing \
     --aggregate --prev-board "$prev" --ts "$(date -Iseconds)" \
+    --record-dir "$HEART_HOME/timings" \
     --out "$HEART_STATE_DIR/ci_timing.json"
   [[ -n "$prev" ]] && rm -f "$prev"
 

@@ -47,6 +47,11 @@ Deliberate choices, each one a recorded lesson:
 * **A failed fetch is not a quiet repo.** ``--fetch-error`` records the reason
   and writes empty ``workflows``/``events``; "we could not ask" must never
   render as "all quiet".
+* **The history comes from the committed record first.** ``timings/gates.jsonl``
+  (see ``heart/timings.py``) is durable; the previously published ``board.json``
+  is the same artifact this render produces, so a Pages gap loses it. The board
+  stays as the fallback — first run, fresh clone, no record yet — and the
+  rolled-forward ``performance.history`` is written either way.
 
 Per-repo sidecar schema (``<name>.ci_timing.json``)::
 
@@ -479,10 +484,27 @@ def aggregate(
     today: str,
     ts: str,
     thresholds: dict[str, float] | None = None,
+    record_history: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Fold the per-repo sidecars + the previous board into the global rollup."""
+    """Fold the per-repo sidecars + the history into the global rollup.
+
+    ``record_history`` is the COMMITTED record (``timings/gates.jsonl``, via
+    ``heart.timings.gates_history``) and is preferred whenever it is non-empty:
+    it is durable, whereas the previously published board is the same artifact
+    the render produces and a Pages gap loses it. The board stays as the
+    fallback for the very first run, a fresh clone, or a record that is not
+    there yet.
+
+    Whichever history was used is also what ``roll_history`` rolls forward, so
+    ``board.json``'s ``performance.history`` keeps its shape either way — it
+    remains the fallback cache and the Brain board's sparkline input.
+    """
     thr = dict(thresholds or DEFAULT_CI_TIMING_THRESHOLDS)
-    history_in = prev_history_of(prev_board)
+    history_in = (
+        [e for e in record_history if isinstance(e, dict)]
+        if record_history
+        else prev_history_of(prev_board)
+    )
 
     gates: list[dict[str, Any]] = []
     events: list[dict[str, Any]] = []
@@ -631,6 +653,10 @@ def main(argv: list[str] | None = None) -> int:
                     help="ISO date for the history entry (default: today, UTC)")
     ap.add_argument("--per-repo-dir", default="",
                     help="where the sidecars live (default: $HEART_STATE_DIR/per-repo)")
+    ap.add_argument("--record-dir", default="",
+                    help="the committed timing record (default: HEART_HOME/timings); "
+                         "its gates.jsonl is the preferred history source, the "
+                         "previous board.json only the fallback")
     ap.add_argument("--fetch-error", default="",
                     help="reason the runs fetch failed; recorded instead of a bogus quiet repo")
     ns = ap.parse_args(argv)
@@ -640,12 +666,18 @@ def main(argv: list[str] | None = None) -> int:
     if ns.aggregate:
         sys.path.insert(0, str(HEART_HOME))
         from heart import state as _state
+        from heart import timings as _timings
 
         per_repo = Path(ns.per_repo_dir) if ns.per_repo_dir else _state.HEART_PER_REPO_DIR
         today = ns.today or datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+        thr = load_thresholds()
+        record_dir = Path(ns.record_dir) if ns.record_dir else _timings.TIMINGS_DIR
         rollup = aggregate(
             read_sidecars(per_repo), read_prev_board(ns.prev_board), today, ts,
-            load_thresholds(),
+            thr,
+            record_history=_timings.gates_history(
+                record_dir / "gates.jsonl", int(thr.get("history_cap", 30))
+            ),
         )
         _write(Path(ns.out), rollup)
         print(summary_line(rollup))

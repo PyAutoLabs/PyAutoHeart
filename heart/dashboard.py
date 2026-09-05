@@ -892,8 +892,27 @@ def build_board(
     )
 
 
+def _record_lines(record: Any) -> tuple[str, str]:
+    """The two `record:` detail lines from the committed record's census.
+
+    Empty strings when the census is absent — a snapshot taken before the
+    record existed must render byte-identically to how it always did, so the
+    caller appends nothing rather than a line saying "0 days".
+    """
+    if not isinstance(record, dict) or not record:
+        return "", ""
+    days = _as_int(record.get("gates_days"))
+    obs = _as_int(record.get("scripts_observations"))
+    repos = _as_int(record.get("repos"))
+    return (
+        f"record: timings/gates.jsonl — {days} days",
+        f"record: timings/scripts/ — {obs} observations across {repos} repos",
+    )
+
+
 def _ci_timing_section(ct: dict, gates: list[dict], events: list[dict],
-                       errors: list, history: list[dict]) -> Section:
+                       errors: list, history: list[dict],
+                       record: Any = None) -> Section:
     """The CI wall-clock row: how long the gates a change must pass now take."""
     timed = [g for g in gates if _as_int(g.get("runs_counted"))]
     warned = [g for g in gates if g.get("state") == "warn"]
@@ -927,6 +946,11 @@ def _ci_timing_section(ct: dict, gates: list[dict], events: list[dict],
                 f"max {_dur(g.get('max_s'))}  ({_as_int(g.get('runs_counted'))} runs)")
         spark = _gate_spark(history, f"{g.get('repo')}/{g.get('workflow')}")
         details.append(f"{line}  {spark}" if spark else line)
+    # How much durable history stands behind those sparklines. Absent census
+    # (an older snapshot) adds no line at all.
+    gates_line = _record_lines(record)[0]
+    if gates_line:
+        details.append(gates_line)
 
     links = [
         {"label": f"{e.get('repo')} {e.get('kind')}", "url": str(e.get("run_url")),
@@ -948,7 +972,7 @@ def _ci_timing_section(ct: dict, gates: list[dict], events: list[dict],
 
 def _smoke_timings_section(st: dict, repos: list[dict], rows: list[dict],
                            slowed: list[dict], events: list[dict],
-                           errors: list) -> Section:
+                           errors: list, record: Any = None) -> Section:
     """The per-script row: which script inside the gate is spending the time."""
     # A TIMEOUT is a killed script — the only hard row here. A slowed script,
     # like a slowed gate, is advisory by construction: this measurement rides on
@@ -982,6 +1006,11 @@ def _smoke_timings_section(st: dict, repos: list[dict], rows: list[dict],
         tail = f"({_as_int(r.get('timed'))} scripts, {_dur(r.get('total_s'))} total)"
         prefix = f"{r.get('repo')} py{r.get('python') or '?'}:"
         details.append(f"{prefix} {head}  {tail}" if head else f"{prefix} {tail}")
+    # Same as the gate row: how much durable history stands behind the
+    # run-to-run comparisons. Absent census adds no line at all.
+    scripts_line = _record_lines(record)[1]
+    if scripts_line:
+        details.append(scripts_line)
 
     links = [
         {"label": f"{e.get('repo')} {e.get('entry')} TIMEOUT",
@@ -1051,6 +1080,12 @@ def _performance_sections(snapshot: dict, sections: list[Section]) -> dict | Non
     nr = nr if isinstance(nr, dict) else {}
     st = snapshot.get("smoke_timings")
     st = st if isinstance(st, dict) else {}
+    # The census of the committed timing record. It decorates the two timing
+    # rows with one detail line each and touches NOTHING else — in particular
+    # the `performance` block below is unchanged by it, so the Brain board and
+    # the next render's fallback read exactly what they always read.
+    record = snapshot.get("timings_record")
+    record = record if isinstance(record, dict) else {}
     if not ct and not nr and not st:
         return None
 
@@ -1069,10 +1104,11 @@ def _performance_sections(snapshot: dict, sections: list[Section]) -> dict | Non
     st_errors = list(st.get("errors") or [])
 
     if ct:
-        sections.append(_ci_timing_section(ct, gates, events, errors, history))
+        sections.append(_ci_timing_section(ct, gates, events, errors, history,
+                                           record))
     if st:
         sections.append(_smoke_timings_section(st, st_repos, st_rows, st_slowed,
-                                               st_events, st_errors))
+                                               st_events, st_errors, record))
     if nr:
         sections.append(_no_run_section(totals, rows, repo_rows))
 

@@ -477,3 +477,89 @@ def test_summary_lines_are_honest_about_unavailability(monkeypatch):
     assert "UNAVAILABLE" in smt.repo_summary_line(dead)
     roll = smt.aggregate([dead], {}, "T", smt.DEFAULT_SMOKE_TIMINGS_THRESHOLDS)
     assert "1 unavailable" in smt.summary_line(roll)
+
+
+# --- the committed record is the previous observation; the board is fallback --
+#
+# The published board.json is the same artifact this render produces, so a Pages
+# gap loses it. `timings/scripts/<repo>.jsonl` is the durable copy (see
+# heart/timings.py) and it wins whenever it has anything.
+
+def _record_rows(seconds, run_id=6):
+    return {(REPO, "3.12", "imaging/x.py"): {
+        "seconds": seconds, "run_id": run_id, "run_url": PREV_RUN_URL,
+        "status": "passed", "cap_s": 600.0,
+    }}
+
+
+def test_aggregate_prefers_the_committed_record_over_the_previous_board(tmp_path):
+    legs = [{"artifact": _selected(), "dir": _extracted(tmp_path, [
+        _entry("imaging/x.py", seconds=30.0)]), "error": ""}]
+    side = smt.build_sidecar(REPO, "workspaces", OWNER, legs, "T")
+    roll = smt.aggregate(
+        [side],
+        # The board would say the script always took 30s — no drift.
+        _prev_board([_prev_row(30.0)]), "T",
+        {"slow_factor": 2.0, "min_delta_s": 5, "top_n": 5},
+        # The record says it took 10s last run — the drift is real.
+        record_prev_rows=_record_rows(10.0),
+    )
+    (row,) = roll["rows"]
+    assert row["state"] == "warn" and row["prev_s"] == 10.0 and row["ratio"] == 3.0
+
+
+def test_aggregate_falls_back_to_the_previous_board_when_the_record_is_empty(tmp_path):
+    legs = [{"artifact": _selected(), "dir": _extracted(tmp_path, [
+        _entry("imaging/x.py", seconds=30.0)]), "error": ""}]
+    side = smt.build_sidecar(REPO, "workspaces", OWNER, legs, "T")
+    for record in (None, {}):
+        roll = smt.aggregate([side], _prev_board([_prev_row(10.0)]), "T",
+                             {"slow_factor": 2.0, "min_delta_s": 5, "top_n": 5},
+                             record_prev_rows=record)
+        (row,) = roll["rows"]
+        assert row["state"] == "warn" and row["prev_s"] == 10.0
+
+
+def test_the_repo_rows_carry_the_provenance_the_record_stores(tmp_path):
+    """head_sha + env_profile: which commit was measured, under which profile.
+    The sidecar leg has held both since phase 1; the rollup now passes them on
+    so `timings/scripts/<repo>.jsonl` can record them."""
+    legs = [{"artifact": _selected(), "dir": _extracted(tmp_path, [
+        _entry("imaging/x.py", seconds=12.0)]), "error": ""}]
+    side = smt.build_sidecar(REPO, "workspaces", OWNER, legs, "T")
+    assert side["legs"][0]["head_sha"] == "abc123"
+    assert side["legs"][0]["env_profile"] == "smoke"
+    (repo_row,) = smt.aggregate([side], {}, "T",
+                                smt.DEFAULT_SMOKE_TIMINGS_THRESHOLDS)["repos"]
+    assert repo_row["head_sha"] == "abc123"
+    assert repo_row["env_profile"] == "smoke"
+    assert repo_row["head_branch"] == "feat/x"
+
+
+def test_main_aggregate_reads_the_record_directory(tmp_path, monkeypatch, capsys):
+    import json as _json
+
+    monkeypatch.setenv("HEART_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("NO_COLOR", "1")
+    per_repo = tmp_path / "per-repo"
+    per_repo.mkdir()
+    legs = [{"artifact": _selected(), "dir": _extracted(tmp_path, [
+        _entry("imaging/x.py", seconds=30.0)]), "error": ""}]
+    side = smt.build_sidecar(REPO, "workspaces", OWNER, legs, "T")
+    (per_repo / f"{REPO}.smoke_timings.json").write_text(_json.dumps(side))
+
+    scripts = tmp_path / "timings" / "scripts"
+    scripts.mkdir(parents=True)
+    (scripts / f"{REPO}.jsonl").write_text(_json.dumps({
+        "date": "2026-09-04", "at": "", "python": "3.12", "run_id": 6,
+        "run_url": PREV_RUN_URL, "head_branch": "", "head_sha": "",
+        "env_profile": "smoke", "entries": {"imaging/x.py": [10.0, "passed", 600.0]},
+    }) + "\n")
+
+    out = tmp_path / "smoke_timings.json"
+    assert smt.main(["--aggregate", "--per-repo-dir", str(per_repo), "--ts", "T",
+                     "--record-dir", str(tmp_path / "timings"),
+                     "--out", str(out)]) == 0
+    (row,) = _json.loads(out.read_text())["rows"]
+    assert row["state"] == "warn" and row["prev_s"] == 10.0 and row["prev_run_id"] == 6
+    capsys.readouterr()

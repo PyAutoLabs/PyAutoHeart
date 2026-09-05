@@ -13,6 +13,11 @@ name: Heart Health
 #        * step summary    — fmt="md" into $GITHUB_STEP_SUMMARY (zero hosting)
 #        * README          — a shields verdict badge + an auto-updated
 #                            <!-- heart:begin -->…<!-- heart:end --> md block
+#      and commits, beside that block, the day's lines of the PERMANENT timing
+#      record (timings/gates.jsonl + timings/scripts/<repo>.jsonl). This job is
+#      the record's single writer; the two timing checks read it back as the
+#      first source for their baselines, with the published board.json only as
+#      the fallback, so a Pages gap no longer loses history.
 #   2. opens-or-updates a single "[heart-health]" tracking ISSUE when anything
 #      is red/degraded and closes it when clean — the ALERTING channel (kept).
 #
@@ -114,6 +119,26 @@ jobs:
           bash heart/checks/smoke_timings.sh
           exit 0
 
+      - name: Append today's observations to the timing record
+        run: |
+          # ORDERING: after the checks, before the render. The checks' aggregate
+          # passes have already READ the record for their baselines, and neither
+          # can be fooled by today's own line — ci_timing's `history_baseline`
+          # excludes today's date, and smoke_timings compares by run id and
+          # refuses to compare a run against itself. So appending here is safe,
+          # and it lets the render census a record that already includes today.
+          #
+          # SINGLE WRITER: only this workflow appends. The record is committed
+          # into this repo (below, beside the README block), and two writers on
+          # an append-only file in git is a merge conflict waiting for a human —
+          # a dev-box tick never appends.
+          #
+          # A missing rollup means "nothing to append from that slice", never an
+          # error: this exits 0 whatever the checks managed to produce.
+          PYTHONPATH="$PWD" python -m heart.timings append \
+            --ci-timing "$HEART_STATE_DIR/ci_timing.json" \
+            --smoke-timings "$HEART_STATE_DIR/smoke_timings.json"
+
       - name: Aggregate snapshot + compute readiness verdict
         run: |
           # Fold the per-repo sidecars into state.json, then compute the
@@ -150,7 +175,7 @@ jobs:
             echo "_Published board: https://pyautolabs.github.io/PyAutoHeart/_"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Update README badge + block (own repo only, main only)
+      - name: Commit the README block + today's timing record (own repo only, main only)
         if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -175,14 +200,18 @@ jobs:
               text = "\n".join(lines)
           readme.write_text(text)
           PY
-          if ! git diff --quiet README.md; then
+          # `git status --porcelain` rather than `git diff --quiet`, because
+          # the record's first line for a repo creates an UNTRACKED file, which
+          # a diff of the working tree cannot see. One commit a day carries both
+          # the README block and the day's appended lines.
+          if [ -n "$(git status --porcelain README.md timings/)" ]; then
             git config user.name  "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add README.md
-            git commit -m "docs(heart): auto-update health dashboard block [skip ci]"
+            git add README.md timings/
+            git commit -m "docs(heart): daily board block + timing record [skip ci]"
             git push
           else
-            echo "README health block unchanged — nothing to commit."
+            echo "README health block and timing record unchanged — nothing to commit."
           fi
 
       - name: Upload Pages artifact
