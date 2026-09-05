@@ -836,6 +836,183 @@ def test_malformed_performance_slices_never_break_the_board():
                                                now=FRESH_NOW), str)
 
 
+# --- the ⏱ per-script row: smoke_timings (PyAutoHeart#202) ------------------
+# Fake names again — RepoA, an OwnerX-shaped URL on an invalid host, and
+# workspace-relative entry paths that name no real script.
+SCRIPT_RUN_URL = "https://ci.invalid/OwnerX/RepoA/actions/runs/7"
+SCRIPT_PREV_RUN_URL = "https://ci.invalid/OwnerX/RepoA/actions/runs/6"
+TIMEOUT_PROMPT = (
+    f"/bug kill timer: RepoA imaging/slow.py TIMEOUT (600s) on {SCRIPT_RUN_URL} "
+    f"— stack tail in the run log"
+)
+SLOW_SCRIPT_PROMPT = (
+    "/bug slow script: RepoA imaging/x.py 10s → 30s between runs "
+    f"{SCRIPT_PREV_RUN_URL} → {SCRIPT_RUN_URL}"
+)
+
+
+def _script_row(entry="imaging/x.py", seconds=30.0, *, state="ok", prompt=None):
+    return {
+        "repo": "RepoA", "python": "3.12", "entry": entry, "kind": "script",
+        "status": "passed", "seconds": seconds, "cap_s": 600.0, "exit_code": 0,
+        "run_id": 7, "run_url": SCRIPT_RUN_URL,
+        "prev_s": 10.0 if state == "warn" else None,
+        "prev_run_id": 6 if state == "warn" else None,
+        "ratio": 3.0 if state == "warn" else None,
+        "delta_s": 20.0 if state == "warn" else None,
+        "state": state, "prompt": prompt,
+    }
+
+
+def _smoke_timings_slice(*, events=True, warn=True, errors=()):
+    rows = [
+        _script_row("imaging/x.py", 30.0,
+                    state="warn" if warn else "ok",
+                    prompt=SLOW_SCRIPT_PROMPT if warn else None),
+        _script_row("imaging/y.py", 5.0),
+    ]
+    return {
+        "ts": TS,
+        "repos": [{
+            "repo": "RepoA", "python": "3.12", "run_id": 7,
+            "run_url": SCRIPT_RUN_URL, "head_branch": "feat/x", "at": TS,
+            "entries": 3, "timed": 2, "total_s": 35.0, "error": "",
+            "slowest": [rows[0], rows[1]],
+        }],
+        "rows": rows,
+        "slowed": [r for r in rows if r["state"] == "warn"],
+        "events": ([{"kind": "timeout", "repo": "RepoA", "python": "3.12",
+                     "entry": "imaging/slow.py", "cap_s": 600.0,
+                     "run_url": SCRIPT_RUN_URL, "at": TS,
+                     "prompt": TIMEOUT_PROMPT}] if events else []),
+        "errors": list(errors),
+        "thresholds": {"slow_factor": 2.0, "min_delta_s": 5, "top_n": 5},
+    }
+
+
+def _scripts_snapshot(**kw):
+    return make_snapshot(ci_timing=_ci_timing_slice(), no_run_census=_no_run_slice(),
+                         smoke_timings=_smoke_timings_slice(**kw))
+
+
+def test_smoke_timings_section_renders_in_every_fmt_between_its_siblings():
+    snap = _scripts_snapshot()
+    v = make_verdict()
+    keys = [s.key for s in dashboard.build_board(snap, v, now=FRESH_NOW).sections]
+    assert keys.index("ci_timing") < keys.index("smoke_timings") < keys.index("no_run_census")
+    for fmt in ("term", "md", "html", "json"):
+        out = dashboard.render(snap, v, fmt=fmt, now=FRESH_NOW).lower()
+        assert "smoke scripts" in out
+
+
+def test_smoke_timings_summary_and_details_carry_coverage_beside_time():
+    sec = _section(dashboard.build_board(_scripts_snapshot(), make_verdict(),
+                                         now=FRESH_NOW), "smoke_timings")
+    assert sec.state == dashboard.FAIL          # a TIMEOUT is a hard row
+    assert "2 scripts timed across 1 repos" in sec.summary
+    assert "slowest RepoA imaging/x.py 30s" in sec.summary
+    assert "1 slowed" in sec.summary and "1 timeout" in sec.summary
+    assert sec.details[0] == ("RepoA py3.12: imaging/x.py 30s · imaging/y.py 5s"
+                             "  (2 scripts, 35s total)")
+
+
+def test_smoke_timings_timeout_is_a_link_with_its_own_prompt():
+    sec = _section(dashboard.build_board(_scripts_snapshot(), make_verdict(),
+                                         now=FRESH_NOW), "smoke_timings")
+    (link,) = sec.links
+    assert link["label"] == "RepoA imaging/slow.py TIMEOUT"
+    assert link["url"] == SCRIPT_RUN_URL and link["prompt"] == TIMEOUT_PROMPT
+    out = dashboard.render(_scripts_snapshot(), make_verdict(), fmt="html",
+                           now=FRESH_NOW)
+    assert f'data-cmd="{_html_escape(TIMEOUT_PROMPT)}"' in out
+
+
+def test_smoke_timings_without_a_timeout_is_warn_when_a_script_slowed():
+    sec = _section(dashboard.build_board(_scripts_snapshot(events=False),
+                                         make_verdict(), now=FRESH_NOW),
+                   "smoke_timings")
+    assert sec.state == dashboard.WARN
+    # exactly one slowed row → its prompt rides the row's 📋 (the gate rule)
+    assert sec.action["payload"] == SLOW_SCRIPT_PROMPT
+
+
+def test_smoke_timings_all_quiet_is_ok():
+    sec = _section(dashboard.build_board(_scripts_snapshot(events=False, warn=False),
+                                         make_verdict(), now=FRESH_NOW),
+                   "smoke_timings")
+    assert sec.state == dashboard.OK
+    assert sec.action is None and sec.links == []
+
+
+def test_smoke_timings_errors_are_warn_not_silence():
+    """A leg we could not download must never read as a leg with nothing slow."""
+    snap = _scripts_snapshot(events=False, warn=False,
+                             errors=[{"repo": "RepoA", "error": "3.11: HTTP 403"}])
+    sec = _section(dashboard.build_board(snap, make_verdict(), now=FRESH_NOW),
+                   "smoke_timings")
+    assert sec.state == dashboard.WARN and "1 unavailable" in sec.summary
+
+
+def test_board_json_carries_the_scripts_block_verbatim():
+    d = json.loads(dashboard.render(_scripts_snapshot(), make_verdict(), fmt="json",
+                                    now=FRESH_NOW))
+    scripts = d["performance"]["scripts"]
+    assert scripts["schema"] == 1
+    # The rows are what the NEXT render reads back as its previous observation,
+    # so the run id has to survive the round trip untouched.
+    row = next(r for r in scripts["rows"] if r["state"] == "warn")
+    assert row["run_id"] == 7 and row["run_url"] == SCRIPT_RUN_URL
+    assert row["prompt"] == SLOW_SCRIPT_PROMPT          # verbatim, not re-derived
+    assert scripts["slowed"] == [row]
+    assert scripts["events"][0]["prompt"] == TIMEOUT_PROMPT
+    assert scripts["repos"][0]["timed"] == 2
+    assert d["schema_version"] == dashboard.SCHEMA_VERSION   # purely additive
+
+
+def test_an_absent_smoke_slice_leaves_the_older_block_byte_identical():
+    """A snapshot taken before this check existed must render exactly as it did:
+    no row, and no `scripts` key implying "measured, nothing there"."""
+    old = dashboard.build_board(_perf_snapshot(), make_verdict(), now=FRESH_NOW)
+    new = dashboard.build_board(_scripts_snapshot(), make_verdict(), now=FRESH_NOW)
+    assert "smoke_timings" not in [s.key for s in old.sections]
+    assert "ci_timing" in [s.key for s in old.sections]
+    assert "no_run_census" in [s.key for s in old.sections]
+    assert "scripts" not in old.performance
+    assert json.dumps(old.performance, sort_keys=True) == json.dumps(
+        {k: v for k, v in new.performance.items() if k != "scripts"}, sort_keys=True)
+
+
+def test_smoke_timings_alone_still_yields_a_performance_block():
+    board = dashboard.build_board(make_snapshot(smoke_timings=_smoke_timings_slice()),
+                                  make_verdict(), now=FRESH_NOW)
+    keys = [s.key for s in board.sections]
+    assert "smoke_timings" in keys
+    assert "ci_timing" not in keys and "no_run_census" not in keys
+    assert board.performance["scripts"]["rows"]
+    assert board.performance["gates"] == [] and board.performance["no_run"]["rows"] == []
+
+
+def test_malformed_smoke_timings_slices_never_break_the_board():
+    for snap in (make_snapshot(smoke_timings="nope"),
+                 make_snapshot(smoke_timings=[]),
+                 make_snapshot(smoke_timings={"rows": None, "repos": [None, "x"],
+                                              "events": "nope", "errors": None}),
+                 make_snapshot(smoke_timings={"rows": [None, "x"],
+                                              "repos": [{"slowest": [None, "x"]}]})):
+        for fmt in ("term", "md", "html", "json"):
+            assert isinstance(dashboard.render(snap, make_verdict(), fmt=fmt,
+                                               now=FRESH_NOW), str)
+
+
+def test_smoke_timings_is_cloud_observed_not_local_only():
+    """The artifacts come from the Actions API, so the scheduled job measures
+    them first-hand — marking the row "not observed here" would be a lie."""
+    assert "smoke_timings" not in dashboard.LOCAL_ONLY_FAMILIES
+    board = dashboard.build_board(_scripts_snapshot(), make_verdict(),
+                                  unobserved=dashboard.LOCAL_ONLY_FAMILIES,
+                                  now=FRESH_NOW)
+    assert _section(board, "smoke_timings").state == dashboard.FAIL
+
 def test_html_wears_the_shared_family_theme():
     # The look is the Brain's `board/_theme.py`, not a stylesheet copied in
     # here: the page must carry this board's hero (mark, wordmark, tagline)

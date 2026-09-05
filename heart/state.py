@@ -79,6 +79,7 @@ def aggregate() -> dict[str, Any]:
         "profiling_drift": _read_json_or_default(HEART_STATE_DIR / "profiling_drift.json", {}),
         "test_run": _read_json_or_default(HEART_STATE_DIR / "test_run.json", {}),
         "ci_timing": _read_json_or_default(HEART_STATE_DIR / "ci_timing.json", {}),
+        "smoke_timings": _read_json_or_default(HEART_STATE_DIR / "smoke_timings.json", {}),
         "no_run_census": _read_json_or_default(HEART_STATE_DIR / "no_run_census.json", {}),
         "workspace_testmode_timing": _read_json_or_default(HEART_STATE_DIR / "workspace_testmode_timing.json", {}),
         "version_skew": _read_json_or_default(HEART_STATE_DIR / "version_skew.json", {}),

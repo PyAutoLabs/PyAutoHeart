@@ -253,6 +253,17 @@ thresholds:
     yellow_factor: 1.5    # median / recent-history median >= this, AND
     min_delta_s: 120      # ... at least this many seconds slower
     history_cap: 30       # days of self-carried per-gate history
+  # Per-SCRIPT timing drift (heart/checks/smoke_timings.py). The same both-gates
+  # rule as ci_timing, with its own numbers because it is measuring a different
+  # size of thing: ci_timing's 1.5x / 120 s is sized for multi-minute gates,
+  # while a smoke script runs for 5-60 s and would never clear a 120 s floor no
+  # matter how badly it regressed. 2.0x is the profiling conductor's ratio, and
+  # a 5 s floor sits just above the ~5-7 s import-floor jitter every script
+  # pays. Advisory — a slowed script never reds the readiness verdict.
+  smoke_timings:
+    slow_factor: 2.0      # seconds / previous observation >= this, AND
+    min_delta_s: 5        # ... at least this many seconds slower
+    top_n: 5              # slowest scripts shown per repo on the board
   worktree_drift:
     orphan_red: true      # orphan WT with uncommitted work → red
     orphan_yellow: true   # orphan WT (clean) → yellow
