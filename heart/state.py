@@ -80,6 +80,11 @@ def aggregate() -> dict[str, Any]:
         "test_run": _read_json_or_default(HEART_STATE_DIR / "test_run.json", {}),
         "ci_timing": _read_json_or_default(HEART_STATE_DIR / "ci_timing.json", {}),
         "smoke_timings": _read_json_or_default(HEART_STATE_DIR / "smoke_timings.json", {}),
+        # The unit half of the CI speed surface (#206): per-test durations and
+        # import seconds ingested from the libraries' own `unit-timings-<py>`
+        # artifacts. The same check also writes the two legacy summaries read
+        # above as `import_time` and `unit_test_timing`.
+        "unit_timings": _read_json_or_default(HEART_STATE_DIR / "unit_timings.json", {}),
         # The census of the COMMITTED timing record (timings/), written by
         # `heart.timings append` in the daily cloud job. A snapshot taken
         # before the record existed simply has no key, and the board renders

@@ -70,15 +70,22 @@ INFO = "info"
 # Check families that only a local working tree can observe. On the cloud job
 # these are passed as ``unobserved`` so the board marks them honestly rather
 # than implying they are green. (Spec §2 "Cloud-safe caveat".)
+#
+# Three families LEFT this tuple in #206. `import_time` and `unit_test_timing`
+# are now cloud-OBSERVED by ingestion: the libraries' own CI emits the
+# `unit-timings-<py>` artifact and `heart/checks/unit_timings.py` writes exactly
+# these two summary files from it, so greying the rows on the cloud job would be
+# a lie about data the job measured. `workspace_testmode_timing` is superseded
+# on the board by the per-script Smoke scripts row (#203) — the smoke gates
+# already run those scripts in TEST_MODE=2 on every PR — and is retired from the
+# board rather than greyed: its section still renders if a dev-box snapshot
+# carries the slice, but the cloud render no longer claims to be watching it.
 LOCAL_ONLY_FAMILIES = (
     "repo_state",
     "worktree_drift",
     "script_timing",
-    "import_time",
-    "unit_test_timing",
     "profiling_drift",
     "test_run",
-    "workspace_testmode_timing",
     "version_skew",
 )
 
@@ -114,13 +121,14 @@ REPO_OWNERS = _repo_owners()
 
 # One line per local-only family on WHAT the dev box would observe — shown on
 # the grey rows so "not observed here" is a fact with a remedy, not a shrug.
+# One line per LOCAL-ONLY family, exactly: the three that left
+# LOCAL_ONLY_FAMILIES in #206 have no entry here either, because a watch line
+# for a family that is never unobserved describes a grey row that can no longer
+# render.
 UNOBS_WATCHES = {
     "worktree_drift": "task worktrees vs the active.md ledger (orphans, missing, dirty)",
     "script_timing": "workspace script runtimes vs their baselines",
-    "import_time": "library import costs vs their baselines",
-    "unit_test_timing": "the slowest unit tests vs their baselines",
     "profiling_drift": "pinned profiling results vs their baselines",
-    "workspace_testmode_timing": "TEST_MODE workspace script runtimes vs their baselines",
     "test_run": "the latest full workspace test-run verdict",
     "version_skew": "workspace version floors vs the newest releases",
 }
@@ -346,6 +354,67 @@ def _dur(seconds: Any) -> str:
     return f"{int(round(seconds / 60))}m"
 
 
+# How many ingested unit rows a section shows before it is a wall of text. Six
+# is two python legs across three libraries — enough to see the shape, short
+# enough to stay a detail block under a one-line summary.
+UNIT_DETAIL_CAP = 6
+
+
+def _unit_suite_details(slice_: Any) -> list[str]:
+    """One line per ingested suite leg, slowest wall-clock first.
+
+    Fed by ``heart/checks/unit_timings.py``'s rollup (#206). The legacy summary
+    above counts regressions; this says what was measured — how long each
+    library's suite takes on CI and what the slowest test in it is. Absent slice
+    => no lines at all, so a snapshot from before the ingest renders exactly as
+    it did.
+    """
+    if not isinstance(slice_, dict):
+        return []
+    legs = [leg for leg in (slice_.get("repos") or []) if isinstance(leg, dict)]
+    legs.sort(key=lambda leg: (-(_as_float(leg.get("wall_s")) or 0.0),
+                               str(leg.get("repo") or ""),
+                               str(leg.get("python") or "")))
+    lines: list[str] = []
+    for leg in legs[:UNIT_DETAIL_CAP]:
+        repo = str(leg.get("repo") or "?")
+        python = str(leg.get("python") or "?")
+        tests = _as_int(leg.get("tests"))
+        line = f"{repo} py{python}: {tests} tests {_dur(leg.get('wall_s'))}"
+        slowest = [row for row in (leg.get("slowest") or []) if isinstance(row, dict)]
+        if slowest:
+            top = slowest[0]
+            seconds = _as_float(top.get("seconds"))
+            nodeid = str(top.get("nodeid") or "?").split("::")[-1]
+            if seconds is not None:
+                line += f"  slowest {nodeid} {seconds:.1f}s"
+        lines.append(line)
+    return lines
+
+
+def _unit_import_details(slice_: Any) -> list[str]:
+    """One line per ingested import measurement (#206).
+
+    A package whose import failed carries ``seconds: null`` — no number, so no
+    line: a fabricated 0.00s would be worse than the silence, and the row is
+    already counted as unavailable in the summary above.
+    """
+    if not isinstance(slice_, dict):
+        return []
+    lines: list[str] = []
+    for row in (slice_.get("imports") or []):
+        if not isinstance(row, dict):
+            continue
+        seconds = _as_float(row.get("seconds"))
+        if seconds is None:
+            continue
+        lines.append(f"{row.get('package') or '?'} "
+                     f"py{row.get('python') or '?'}: {seconds:.2f}s")
+        if len(lines) >= UNIT_DETAIL_CAP:
+            break
+    return lines
+
+
 def _gate_spark(history: Sequence[Any], key: str) -> str:
     """The sparkline of one gate's daily p50s, oldest first."""
     values: list[float] = []
@@ -371,6 +440,16 @@ def _worst(states: Iterable[str]) -> str:
 def _as_int(v: Any, default: int = 0) -> int:
     try:
         return int(v)
+    except (TypeError, ValueError):
+        return default
+
+
+def _as_float(v: Any, default: float | None = None) -> float | None:
+    """A float, or ``default``. ``bool`` is not a number here, nor is junk."""
+    if isinstance(v, bool):
+        return default
+    try:
+        return float(v)
     except (TypeError, ValueError):
         return default
 
@@ -658,6 +737,11 @@ def build_board(
                 f"{e['latest_seconds']:.2f}s vs {e['baseline_seconds']:.2f}s ({e['ratio']}×)"
                 for e in (imp.get("red") or [])[:5]
             ]
+            # What was actually measured, when the CI ingest observed it: the
+            # summary above counts regressions, and a row that says only "3
+            # imports within baseline" never says how long an import takes.
+            # Purely additive — the section's state logic is untouched.
+            details += _unit_import_details(snapshot.get("unit_timings"))
             sections.append(Section("import_time", "Import timing", st, summary, details))
 
     # Unit-test timing (advisory; off-tick) -----------------------------------
@@ -682,6 +766,10 @@ def build_board(
                 f"{e['latest_seconds']:.2f}s vs {e['baseline_seconds']:.2f}s ({e['ratio']}×)"
                 for e in (ut.get("red") or [])[:5]
             ]
+            # The suites behind the summary, slowest wall-clock first: which
+            # library's suite costs what, and the single slowest test in it.
+            # Purely additive — the section's state logic is untouched.
+            details += _unit_suite_details(snapshot.get("unit_timings"))
             sections.append(Section("unit_test_timing", "Unit-test timing", st, summary, details))
 
     # Profiling pinned-value drift -------------------------------------------
@@ -1073,6 +1161,7 @@ def _performance_sections(snapshot: dict, sections: list[Section]) -> dict | Non
     snapshot taken before this check existed still renders a byte-identical
     block — and so the next render can tell "no per-script timing observed"
     from "observed, nothing there" when it reads its own previous rows back.
+    `unit` (#206) is emitted on the same rule, for the same reason.
     """
     ct = snapshot.get("ci_timing")
     ct = ct if isinstance(ct, dict) else {}
@@ -1080,13 +1169,15 @@ def _performance_sections(snapshot: dict, sections: list[Section]) -> dict | Non
     nr = nr if isinstance(nr, dict) else {}
     st = snapshot.get("smoke_timings")
     st = st if isinstance(st, dict) else {}
+    ut = snapshot.get("unit_timings")
+    ut = ut if isinstance(ut, dict) else {}
     # The census of the committed timing record. It decorates the two timing
     # rows with one detail line each and touches NOTHING else — in particular
     # the `performance` block below is unchanged by it, so the Brain board and
     # the next render's fallback read exactly what they always read.
     record = snapshot.get("timings_record")
     record = record if isinstance(record, dict) else {}
-    if not ct and not nr and not st:
+    if not ct and not nr and not st and not ut:
         return None
 
     gates = [g for g in (ct.get("gates") or []) if isinstance(g, dict)]
@@ -1149,6 +1240,22 @@ def _performance_sections(snapshot: dict, sections: list[Section]) -> dict | Non
             "slowed": st_slowed,
             "events": st_events,
             "errors": st_errors,
+        }
+    if ut:
+        # The unit half (#206): suite legs, the slowest tests and the import
+        # measurements, each actionable row carrying its own prompt. Additive
+        # and observed-only, exactly as `scripts` — the Brain board reads it,
+        # and the baseline itself lives in the committed record, not here.
+        block["unit"] = {
+            "schema": 1,
+            "repos": [r for r in (ut.get("repos") or []) if isinstance(r, dict)],
+            "tests": [r for r in (ut.get("tests") or []) if isinstance(r, dict)],
+            "imports": [r for r in (ut.get("imports") or []) if isinstance(r, dict)],
+            "slowed_tests": [r for r in (ut.get("slowed_tests") or [])
+                             if isinstance(r, dict)],
+            "slowed_imports": [r for r in (ut.get("slowed_imports") or [])
+                               if isinstance(r, dict)],
+            "errors": list(ut.get("errors") or []),
         }
     return block
 

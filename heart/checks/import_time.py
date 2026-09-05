@@ -1,10 +1,16 @@
 """heart/checks/import_time.py — measure PyAuto library import cost in a
 subprocess, track rolling per-package baselines, classify regressions.
 
-OFF-TICK by design. Importing the science stack costs several seconds
-(``import autolens`` ~3.6s warm, more cold), which does not fit the <30s
-watch-loop tick budget (``docs/internals.md`` rule 3). Run this on a slower
-cadence — a daily cron or on demand — and do **not** wire it into
+Since #206 this surface is measured on the libraries' own CI (``lib-tests.yml``
+emits the ``unit-timings-<py>`` artifact, whose ``import_time/1`` dataset is a
+fresh-process import timed on the runner) and ingested daily by
+``heart/checks/unit_timings.py``, which writes this same summary file; running
+this module on a dev box remains an on-demand deep probe with the identical
+output shape.
+
+Importing the science stack costs several seconds (``import autolens`` ~3.6s
+warm, more cold), which does not fit the <30s watch-loop tick budget
+(``docs/internals.md`` rule 3), so this module is never wired into
 ``heart/tick.sh``:
 
     python -m heart.checks.import_time

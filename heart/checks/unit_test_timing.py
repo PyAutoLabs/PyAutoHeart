@@ -1,10 +1,15 @@
 """heart/checks/unit_test_timing.py — track library unit-test durations, flag
 slow-test regressions.
 
-OFF-TICK by design. Running the library suites costs minutes (test_autofit is
-~1500 tests), which does not fit the <30s watch-loop budget (``docs/internals.md``
-rule 3). Run on a slower cadence — a daily/weekly cron or on demand — and do
-**not** wire it into ``heart/tick.sh``:
+Since #206 this surface is measured on the libraries' own CI (``lib-tests.yml``
+emits the ``unit-timings-<py>`` artifact) and ingested daily by
+``heart/checks/unit_timings.py``, which writes this same summary file; running
+this module on a dev box remains an on-demand deep probe with the identical
+output shape.
+
+Running the library suites costs minutes (test_autofit is ~1500 tests), which
+does not fit the <30s watch-loop budget (``docs/internals.md`` rule 3), so this
+module is never wired into ``heart/tick.sh``:
 
     python -m heart.checks.unit_test_timing
     HYGIENE_PYTHON=~/venv/PyAuto/bin/python python -m heart.checks.unit_test_timing

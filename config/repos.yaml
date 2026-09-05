@@ -264,6 +264,19 @@ thresholds:
     slow_factor: 2.0      # seconds / previous observation >= this, AND
     min_delta_s: 5        # ... at least this many seconds slower
     top_n: 5              # slowest scripts shown per repo on the board
+  # Per-TEST and per-IMPORT drift from the libraries' own CI (heart/checks/unit_timings.py).
+  # Tests are 0.1-30 s, so the both-gates floor is 2 s. The import factors mirror
+  # the dev-box import_time doctrine so a ratio means the same thing from either
+  # vantage; the baseline is the median of the last `import_window` recorded runs
+  # and needs `import_min_samples` before it judges anything. Advisory.
+  unit_timings:
+    slow_factor: 2.0
+    min_delta_s: 2
+    top_n: 25
+    import_yellow_factor: 1.5
+    import_red_factor: 3.0
+    import_window: 7
+    import_min_samples: 3
   worktree_drift:
     orphan_red: true      # orphan WT with uncommitted work → red
     orphan_yellow: true   # orphan WT (clean) → yellow

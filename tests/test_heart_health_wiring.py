@@ -112,3 +112,33 @@ def test_the_snapshot_folds_in_the_record_census():
     state_py = (Path(__file__).resolve().parent.parent / "heart" / "state.py").read_text()
     assert '"timings_record": _read_json_or_default(' in state_py
     assert '"timings_record.json"' in state_py
+
+
+# --- the unit-timings ingest is wired the same way (#206) --------------------
+
+def test_the_cloud_step_runs_the_unit_timings_ingest():
+    """The libraries' per-test artifact needs the same daily ingest the
+    workspaces' per-script one gets, or the two board rows go back to sleep."""
+    _, job = _job()
+    assert "bash heart/checks/unit_timings.sh" in _cloud_step(job)["run"]
+    assert (CHECKS / "unit_timings.sh").is_file()
+
+
+def test_the_append_step_records_the_unit_slice():
+    _, job = _job()
+    body = job["steps"][_step_index(job, "Append today's observations")]["run"]
+    assert '--unit-timings "$HEART_STATE_DIR/unit_timings.json"' in body
+
+
+def test_unit_timings_reads_the_record_and_never_a_previous_board():
+    """The committed record is the ONLY baseline for this check: the published
+    board never carried per-test rows, so there is nothing to fall back to."""
+    body = (CHECKS / "unit_timings.sh").read_text()
+    assert '--record-dir "$HEART_HOME/timings"' in body
+    assert "--prev-board" not in body
+
+
+def test_the_snapshot_folds_in_the_unit_timings_rollup():
+    state_py = (Path(__file__).resolve().parent.parent / "heart" / "state.py").read_text()
+    assert '"unit_timings": _read_json_or_default(' in state_py
+    assert '"unit_timings.json"' in state_py

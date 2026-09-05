@@ -1293,3 +1293,146 @@ def test_the_census_never_touches_the_performance_block():
                                           now=FRESH_NOW))
     assert with_census["performance"] == without["performance"]
     assert "timings_record" not in with_census["performance"]
+
+
+# --- the unit timings come from CI now (#206) -------------------------------
+# The libraries' own gate emits the `unit-timings-<py>` artifact and
+# `heart/checks/unit_timings.py` ingests it into the two summary files these
+# sections already read — so two families left LOCAL_ONLY_FAMILIES, and a third
+# (workspace_testmode_timing) was retired from the board as superseded by the
+# per-script smoke row. Fake names throughout (the tenant firewall).
+
+UNIT_NODEID = "tests/foo/test_bar.py::test_x"
+UNIT_RUN_URL = "https://ci.invalid/OwnerX/RepoA/actions/runs/7"
+
+
+def _unit_timings_slice(*, imports=True):
+    return {
+        "ts": TS,
+        "repos": [
+            {"repo": "RepoA", "python": "3.12", "run_id": 7,
+             "run_url": UNIT_RUN_URL, "head_branch": "main", "head_sha": "abc",
+             "at": TS, "tests": 1500, "wall_s": 412.0, "import_s": 3.6,
+             "package": "pkg_a", "error": "",
+             "suite": {"tests": 1500, "failures": 0, "errors": 0, "skipped": 3,
+                       "wall_s": 412.0},
+             "slowest": [{"nodeid": UNIT_NODEID, "seconds": 12.5}]},
+            {"repo": "RepoB", "python": "3.12", "run_id": 8,
+             "run_url": UNIT_RUN_URL, "head_branch": "main", "head_sha": "def",
+             "at": TS, "tests": 200, "wall_s": 30.0, "import_s": 1.25,
+             "package": "pkg_b", "error": "",
+             "suite": {"tests": 200, "failures": 0, "errors": 0, "skipped": 0,
+                       "wall_s": 30.0},
+             "slowest": []},
+        ],
+        "tests": [{"repo": "RepoA", "python": "3.12", "nodeid": UNIT_NODEID,
+                   "seconds": 12.5, "run_id": 7, "run_url": UNIT_RUN_URL,
+                   "prev_s": 4.0, "prev_run_id": 6, "ratio": 3.13,
+                   "delta_s": 8.5, "state": "warn", "prompt": "/hygiene perf: x"}],
+        "imports": ([{"repo": "RepoA", "package": "pkg_a", "python": "3.12",
+                      "seconds": 3.6, "run_id": 7, "run_url": UNIT_RUN_URL,
+                      "baseline_s": 1.0, "samples": 3, "ratio": 3.6,
+                      "state": "red", "prompt": "/hygiene perf: import"},
+                     {"repo": "RepoB", "package": "pkg_b", "python": "3.12",
+                      "seconds": None, "run_id": 8, "run_url": UNIT_RUN_URL,
+                      "baseline_s": None, "samples": 0, "ratio": None,
+                      "state": "building", "prompt": None}]
+                    if imports else []),
+        "slowed_tests": [], "slowed_imports": [], "errors": [],
+        "thresholds": {},
+    }
+
+
+def _legacy_unit(**kw):
+    summary = {"python": "ci", "repos_measured": 2, "repos_unavailable": [],
+               "new_tests_no_baseline": 0, "red_count": 0, "yellow_count": 0,
+               "green_count": 3, "red": [], "yellow": []}
+    summary.update(kw)
+    return summary
+
+
+def _legacy_import(**kw):
+    summary = {"python": "ci", "packages_measured": 2, "packages_unavailable": [],
+               "new_packages_no_baseline": 0, "red_count": 0, "yellow_count": 0,
+               "green_count": 2, "red": [], "yellow": []}
+    summary.update(kw)
+    return summary
+
+
+def test_the_ingested_families_are_no_longer_local_only():
+    """They are measured on the libraries' CI and ingested daily (#206), so
+    greying them on the cloud render would be a lie about observed data;
+    workspace_testmode_timing is retired from the board as superseded (#203)."""
+    for family in ("import_time", "unit_test_timing", "workspace_testmode_timing"):
+        assert family not in dashboard.LOCAL_ONLY_FAMILIES
+        assert family not in dashboard.UNOBS_WATCHES
+
+
+def test_a_cloud_render_with_no_slices_shows_no_rows_for_them():
+    """No slice, no row — not a grey "not observed here" row either."""
+    board = dashboard.build_board(make_snapshot(), make_verdict(),
+                                  unobserved=dashboard.LOCAL_ONLY_FAMILIES,
+                                  now=FRESH_NOW)
+    keys = [s.key for s in board.sections]
+    for family in ("import_time", "unit_test_timing", "workspace_testmode_timing"):
+        assert family not in keys
+
+
+def test_the_ingested_sections_render_their_detail_lines_only_with_the_slice():
+    plain = _section(dashboard.build_board(
+        make_snapshot(unit_test_timing=_legacy_unit(), import_time=_legacy_import()),
+        make_verdict(), now=FRESH_NOW), "unit_test_timing")
+    assert plain.details == []
+
+    board = dashboard.build_board(
+        make_snapshot(unit_test_timing=_legacy_unit(), import_time=_legacy_import(),
+                      unit_timings=_unit_timings_slice()),
+        make_verdict(), now=FRESH_NOW)
+    unit = _section(board, "unit_test_timing")
+    # Worst wall-clock first, with the slowest test in the suite beside it.
+    assert unit.details == [
+        "RepoA py3.12: 1500 tests 7m  slowest test_x 12.5s",
+        "RepoB py3.12: 200 tests 30s",
+    ]
+    imports = _section(board, "import_time")
+    # A null-seconds import has no number, so it gets no line — never a 0.00s.
+    assert imports.details == ["pkg_a py3.12: 3.60s"]
+    # ...and neither section's state came from the new lines.
+    assert unit.state == dashboard.OK and imports.state == dashboard.OK
+
+
+def test_board_json_carries_the_unit_block_only_when_observed():
+    old = dashboard.build_board(_perf_snapshot(), make_verdict(), now=FRESH_NOW)
+    assert "unit" not in old.performance
+
+    snap = make_snapshot(ci_timing=_ci_timing_slice(), no_run_census=_no_run_slice(),
+                         unit_timings=_unit_timings_slice())
+    new = dashboard.build_board(snap, make_verdict(), now=FRESH_NOW)
+    unit = new.performance["unit"]
+    assert unit["schema"] == 1
+    assert unit["tests"][0]["prompt"] == "/hygiene perf: x"
+    assert unit["imports"][0]["state"] == "red"
+    assert len(unit["repos"]) == 2
+    # The rest of the block is byte-identical: `unit` is purely additive.
+    assert json.dumps(old.performance, sort_keys=True) == json.dumps(
+        {k: v for k, v in new.performance.items() if k != "unit"}, sort_keys=True)
+
+
+def test_unit_timings_alone_still_yields_a_performance_block():
+    board = dashboard.build_board(make_snapshot(unit_timings=_unit_timings_slice()),
+                                  make_verdict(), now=FRESH_NOW)
+    assert board.performance["unit"]["repos"]
+    assert board.performance["gates"] == [] and board.performance["no_run"]["rows"] == []
+
+
+def test_malformed_unit_timings_slices_never_break_the_board():
+    for snap in (make_snapshot(unit_timings="nope"),
+                 make_snapshot(unit_timings=[]),
+                 make_snapshot(unit_timings={"repos": None, "imports": "nope"}),
+                 make_snapshot(unit_test_timing=_legacy_unit(),
+                               import_time=_legacy_import(),
+                               unit_timings={"repos": [None, "x", {"slowest": "no"}],
+                                             "imports": [None, "x", {}]})):
+        for fmt in ("term", "md", "html", "json"):
+            assert isinstance(dashboard.render(snap, make_verdict(), fmt=fmt,
+                                               now=FRESH_NOW), str)

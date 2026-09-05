@@ -17,6 +17,11 @@ name: Library Tests (reusable)
 # triggers it. Dependency-aware (conf→none, fit/array→conf, galaxy→conf+fit+array,
 # lens→all) so lightweight libs don't install the heavy stack. GitHub-hosted +
 # pip caching.
+#
+# The `unittest` job also publishes a `unit-timings-<py>` artifact — pytest's
+# junit XML (every test's duration) plus a fresh-process import time — which is
+# the standing dataset the Heart's `unit_timings` check ingests daily into the
+# board's Unit-test timing and Import timing rows (PyAutoHeart#206).
 
 on:
   workflow_call:
@@ -94,6 +99,63 @@ jobs:
             pip install "./$r[${{ steps.map.outputs.extras }}]"
           done
 
+      # The cold import cost the developer loop actually pays: a FRESH process
+      # importing the package once, not the warm in-process cost a test session
+      # amortises over hundreds of tests. Measured here rather than inferred
+      # from the suite's wall-clock, which is dominated by the tests.
+      #
+      # `seconds: null` when the import failed or timed out — never a
+      # fabricated 0, which in a timing dataset would read as an instant import
+      # rather than as no measurement at all. The returncode travels with it so
+      # the ingest can say WHY there is no number.
+      #
+      # continue-on-error: this is a dataset, not a gate. A package that cannot
+      # be imported will fail the suite two steps down on its own merits; it
+      # must never be this step that reds six libraries' required check.
+      - name: Time a fresh-process import (unit-timings dataset)
+        continue-on-error: true
+        working-directory: ${{ steps.map.outputs.repo }}
+        env:
+          # The package name reaches Python through the ENVIRONMENT, never
+          # interpolated into the source: a `${{ }}` expansion inside the
+          # heredoc would be substituted before python ever parsed the line.
+          PKG: ${{ inputs.package }}
+        run: |
+          python - <<'PY'
+          import datetime, json, os, pathlib, subprocess, sys, time
+
+          pkg = os.environ["PKG"]
+          seconds = None
+          returncode = None
+          start = time.perf_counter()
+          try:
+              proc = subprocess.run(
+                  [sys.executable, "-c", f"import {pkg}"],
+                  capture_output=True, timeout=600,
+              )
+          except subprocess.TimeoutExpired:
+              # No number, and no returncode either: the process never finished.
+              pass
+          else:
+              returncode = proc.returncode
+              if proc.returncode == 0:
+                  seconds = round(time.perf_counter() - start, 3)
+              else:
+                  sys.stderr.write(proc.stderr.decode("utf-8", "replace")[-2000:])
+
+          out = pathlib.Path("test-results")
+          out.mkdir(parents=True, exist_ok=True)
+          (out / "import_time.json").write_text(json.dumps({
+              "schema": "import_time/1",
+              "package": pkg,
+              "python": "%d.%d" % sys.version_info[:2],
+              "seconds": seconds,
+              "returncode": returncode,
+              "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+          }, sort_keys=True) + "\n")
+          print(f"import {pkg}: {seconds}s (returncode {returncode})")
+          PY
+
       - name: Run tests
         run: |
           export JAX_ENABLE_X64=True
@@ -102,7 +164,33 @@ jobs:
             export PYTHONPATH="$PYTHONPATH:$ROOT/$r"
           done
           pushd "${{ steps.map.outputs.repo }}"
-          pytest --cov ${{ inputs.package }} --cov-report xml:coverage.xml
+          # --junitxml is pytest's BUILT-IN machine-readable per-test record:
+          # one <testcase> per test with `time` = setup+call+teardown. That is
+          # why not `--durations`, which is a console tail of the slowest N that
+          # has to be scraped out of a log that expires with the run.
+          pytest --cov ${{ inputs.package }} --cov-report xml:coverage.xml \
+                 --junitxml=test-results/junit.xml
+
+      # The standing dataset the Heart's `unit_timings` check ingests: per-test
+      # durations from the junit XML plus the fresh-process import time above.
+      # In the job log that data evaporates with the log retention and is only
+      # recovered by hand-scraping; as an artifact it becomes a record the board
+      # can compare run to run, across every library at once.
+      #
+      # if: always() + if-no-files-found: ignore are both load-bearing, exactly
+      # as in smoke-tests.yml. A red suite still wrote its junit XML and those
+      # timings are worth keeping; a leg that died before the first write (a
+      # failed install) leaves no test-results/ at all, and an upload that
+      # failed closed would turn "we collected no timings" into "the PR is red",
+      # which is backwards. No retention-days: the dataset is the point, so it
+      # keeps the repo's full default artifact retention.
+      - name: Upload the unit timings (per-test durations + import time)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-timings-${{ matrix.python-version }}
+          path: ${{ steps.map.outputs.repo }}/test-results/
+          if-no-files-found: ignore
 
       - name: Upload coverage to Codecov
         if: always()
