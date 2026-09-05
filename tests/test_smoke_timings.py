@@ -439,8 +439,13 @@ def test_main_writes_sidecar_then_aggregates(tmp_path, monkeypatch, capsys):
     prev = tmp_path / "board.json"
     prev.write_text(json.dumps(_prev_board([_prev_row(10.0)])))
     roll_path = tmp_path / "smoke_timings.json"
+    # An EMPTY record dir, so the test exercises the previous-board fallback it
+    # was written for. Without it the call falls through to the repo's live
+    # timings/ (#208: the first daily record commit landed and this test went
+    # red on main — a test-isolation hole, not a regression).
     assert smt.main(["--aggregate", "--per-repo-dir", str(per_repo),
                      "--prev-board", str(prev), "--ts", "T",
+                     "--record-dir", str(tmp_path / "empty-record"),
                      "--out", str(roll_path)]) == 0
     roll = json.loads(roll_path.read_text())
     assert roll["rows"][0]["repo"] == REPO and roll["rows"][0]["state"] == "warn"

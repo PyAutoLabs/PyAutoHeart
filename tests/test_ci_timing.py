@@ -432,8 +432,11 @@ def test_main_writes_sidecar_then_aggregates(tmp_path, monkeypatch, capsys):
     assert side["workflows"]["Tests"]["median_s"] == 600.0
 
     out = tmp_path / "ci_timing.json"
+    # An EMPTY record dir keeps this hermetic: without it the call reads the
+    # repo's live timings/gates.jsonl as its history (#208).
     rc = ct.main(["--aggregate", "--per-repo-dir", str(per_repo), "--ts", "T",
-                  "--today", "2026-08-24", "--out", str(out)])
+                  "--today", "2026-08-24", "--record-dir", str(tmp_path / "empty-record"),
+                  "--out", str(out)])
     assert rc == 0
     roll = json.loads(out.read_text())
     assert roll["gates"][0]["repo"] == "LibA"
