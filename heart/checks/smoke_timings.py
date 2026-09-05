@@ -48,6 +48,11 @@ Deliberate choices, each one a recorded lesson:
   self-carried through the published board, so a re-render on the same day sees
   the same run's rows. Every row carries its ``run_id``; a previous row from
   the SAME run yields ``ok`` with no ratio rather than a reassuring 1.0×.
+* **The previous observation comes from the committed record first.**
+  ``timings/scripts/<repo>.jsonl`` (see ``heart/timings.py``) is durable and
+  keyed by ``(python, run_id)``; the published board is the same artifact this
+  render produces, so a Pages gap loses it. The board stays as the fallback,
+  and the ``performance.scripts.rows`` block is written either way.
 * **Drift is advisory.** Rows are ``ok`` or ``warn``, never ``fail``; only
   TIMEOUT entries are hard rows. The readiness verdict is untouched — this is
   a dashboard leg, not a gate.
@@ -80,8 +85,9 @@ Per-repo sidecar schema (``<name>.smoke_timings.json``)::
 Global rollup schema (``smoke_timings.json``)::
 
     {"ts",
-     "repos":  [{repo, python, run_id, run_url, head_branch, at, entries,
-                 timed, total_s, error, slowest: [...]}],
+     "repos":  [{repo, python, run_id, run_url, head_branch, head_sha,
+                 env_profile, at, entries, timed, total_s, error,
+                 slowest: [...]}],
      "rows":   [{repo, python, entry, kind, status, seconds, cap_s, exit_code,
                  run_id, run_url, prev_s, prev_run_id, ratio, delta_s, state,
                  prompt}],
@@ -513,10 +519,19 @@ def aggregate(
     prev_board: Any,
     ts: str,
     thresholds: dict[str, float] | None = None,
+    record_prev_rows: dict[tuple[str, str, str], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Fold the per-repo sidecars + the previous board into the global rollup."""
+    """Fold the per-repo sidecars + the previous observation into the rollup.
+
+    ``record_prev_rows`` is the COMMITTED record (``timings/scripts/``, via
+    ``heart.timings.previous_script_rows``) in the same
+    ``(repo, python, entry) -> row`` shape ``prev_rows_of`` returns, and is
+    preferred whenever it is non-empty. The published board stays as the
+    fallback: it is the same artifact this render produces, so a Pages gap
+    costs the comparison, while the record does not.
+    """
     thr = dict(thresholds or DEFAULT_SMOKE_TIMINGS_THRESHOLDS)
-    prev_rows = prev_rows_of(prev_board)
+    prev_rows = dict(record_prev_rows) if record_prev_rows else prev_rows_of(prev_board)
     top_n = int(thr.get("top_n", 5) or 5)
 
     repos: list[dict[str, Any]] = []
@@ -605,6 +620,10 @@ def aggregate(
                 "run_id": run_id,
                 "run_url": run_url,
                 "head_branch": str(leg.get("head_branch") or ""),
+                # Provenance the committed record stores per observation: which
+                # commit was measured, and under which environment profile.
+                "head_sha": str(leg.get("head_sha") or ""),
+                "env_profile": str(leg.get("env_profile") or ""),
                 "at": at,
                 "entries": len(entries),
                 "timed": timed if timed is not None else len(leg_rows),
@@ -757,6 +776,10 @@ def main(argv: list[str] | None = None) -> int:
                          "missing/unreadable => no comparison, never an error")
     ap.add_argument("--per-repo-dir", default="",
                     help="where the sidecars live (default: $HEART_STATE_DIR/per-repo)")
+    ap.add_argument("--record-dir", default="",
+                    help="the committed timing record (default: HEART_HOME/timings); "
+                         "its scripts/ files are the preferred previous "
+                         "observation, the previous board.json only the fallback")
     ap.add_argument("--fetch-error", default="",
                     help="reason the artifacts listing fetch failed; recorded "
                          "instead of a bogus quiet repo")
@@ -780,11 +803,14 @@ def main(argv: list[str] | None = None) -> int:
     if ns.aggregate:
         sys.path.insert(0, str(HEART_HOME))
         from heart import state as _state
+        from heart import timings as _timings
 
         per_repo = Path(ns.per_repo_dir) if ns.per_repo_dir else _state.HEART_PER_REPO_DIR
+        record_dir = Path(ns.record_dir) if ns.record_dir else _timings.TIMINGS_DIR
         rollup = aggregate(
             read_sidecars(per_repo), read_prev_board(ns.prev_board), ts,
             load_thresholds(),
+            record_prev_rows=_timings.previous_script_rows(record_dir / "scripts"),
         )
         _write(Path(ns.out), rollup)
         print(summary_line(rollup))
