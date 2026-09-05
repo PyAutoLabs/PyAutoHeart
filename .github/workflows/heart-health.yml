@@ -4,9 +4,9 @@ name: Heart Health
 # the ONE unified health dashboard (heart/dashboard.py) alongside the existing
 # alerting.
 #
-# It runs the four checks that need only the GitHub API (no local working tree) —
-# CI status, open PRs, CI wall-clock timing and the NO_RUN census — across every
-# polled repo, then:
+# It runs the five checks that need only the GitHub API (no local working tree) —
+# CI status, open PRs, CI wall-clock timing, the NO_RUN census and the
+# per-script smoke timings — across every polled repo, then:
 #   1. renders the unified board (one renderer, many formats) and publishes it
 #      three ways, all from the SAME snapshot so they cannot disagree:
 #        * GitHub Pages   — self-contained fmt="html" + a shields badge.json
@@ -37,11 +37,15 @@ on:
 # contents: write  → commit the README badge/block into Heart's OWN README
 # issues:   write  → the [heart-health] tracking issue
 # pages/id-token   → publish the Pages board
+# actions:  read   → list and download workflow artifacts (smoke_timings). The
+#                    artifact endpoints need this scope even for the repo's own
+#                    artifacts, and the default token grant does not include it.
 permissions:
   contents: write
   issues: write
   pages: write
   id-token: write
+  actions: read
 
 # Never let two runs publish Pages at once. cancel-in-progress is false so a
 # newer run QUEUES behind an in-progress one rather than cancelling it — we don't
@@ -81,21 +85,33 @@ jobs:
       - name: Install PyYAML
         run: pip install --quiet pyyaml
 
-      - name: Run cloud-safe checks (ci_status, open_prs, ci_timing, no_run_census)
+      - name: Run cloud-safe checks (ci_status, open_prs, ci_timing, no_run_census, smoke_timings)
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The repo-scoped GITHUB_TOKEN is enough for every check here except
+          # the artifact /zip downloads smoke_timings makes against OTHER repos:
+          # actions/download-artifact documents a cross-repo download as needing
+          # a token with actions:read ON THAT REPO, and the default token has no
+          # standing there — the endpoint answers 403. The check records that
+          # per repo as an honest error rather than a quiet-looking empty
+          # result, and the remedy is a secret, never a code change: a
+          # fine-grained PAT (Actions: read on the workspace repos) stored as
+          # HEART_TIMINGS_TOKEN. Absent that secret this falls back to the
+          # auto-provisioned token and Heart's own artifacts still ingest.
+          GH_TOKEN: ${{ secrets.HEART_TIMINGS_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          # Four API-only checks: CI conclusions and open PRs (health), then CI
-          # wall-clock and the NO_RUN census (the ⏱ performance surface).
-          # ci_timing's aggregate step re-reads the board.json published by the
-          # previous run to carry its own per-gate history forward; a fetch
-          # failure there costs a sparkline, never the render. `set +e` keeps a
-          # single broken check from aborting the board.
+          # Five API-only checks: CI conclusions and open PRs (health), then CI
+          # wall-clock, the NO_RUN census and the per-script smoke timings (the
+          # ⏱ performance surface). ci_timing's and smoke_timings' aggregate
+          # steps re-read the board.json published by the previous run to carry
+          # their own history/previous observation forward; a fetch failure
+          # there costs a sparkline or a comparison, never the render. `set +e`
+          # keeps a single broken check from aborting the board.
           set +e
           bash heart/checks/ci_status.sh
           bash heart/checks/open_prs.sh
           bash heart/checks/ci_timing.sh
           bash heart/checks/no_run_census.sh
+          bash heart/checks/smoke_timings.sh
           exit 0
 
       - name: Aggregate snapshot + compute readiness verdict

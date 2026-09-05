@@ -267,11 +267,11 @@ class Board:
     # 📋 buttons, the md links, and the json consumers act on.
     blockers: list[dict] = field(default_factory=list)
     # The ⏱ performance surface: CI wall-clock gates + their history, hang/kill
-    # events, and the NO_RUN census — the block the Brain board consumes
-    # verbatim. Every actionable row inside carries its own ready-to-paste
-    # prompt; the consumer never re-derives one. None when neither timing slice
-    # was observed (an absent block is honest; an empty one implies "measured,
-    # nothing there").
+    # events, the per-SCRIPT smoke timings, and the NO_RUN census — the block
+    # the Brain board consumes verbatim. Every actionable row inside carries its
+    # own ready-to-paste prompt; the consumer never re-derives one. None when no
+    # timing slice was observed (an absent block is honest; an empty one implies
+    # "measured, nothing there").
     performance: dict | None = None
     # {count, command, prompt}: one copyable plan that closes EVERY current
     # evidence gap, so a STALE board is one tap from being cleared instead of
@@ -766,8 +766,8 @@ def build_board(
                 details.append(f"{stale_n} stale parked script(s)")
             sections.append(Section("test_run", "Test run", st, summary, details))
 
-    # CI wall-clock + the NO_RUN census (the ⏱ performance surface) -----------
-    # Both are CLOUD-observed (the Actions API + the contents API), so they are
+    # CI wall-clock, per-script smoke timings + the NO_RUN census (⏱) ---------
+    # All three are CLOUD-observed (the Actions API + the contents API), so they are
     # deliberately NOT in LOCAL_ONLY_FAMILIES: the scheduled job measures them
     # first-hand and must not mark them "not observed here". Timing rows are
     # advisory — they never move the readiness verdict.
@@ -946,6 +946,60 @@ def _ci_timing_section(ct: dict, gates: list[dict], events: list[dict],
                    links=links, action=action)
 
 
+def _smoke_timings_section(st: dict, repos: list[dict], rows: list[dict],
+                           slowed: list[dict], events: list[dict],
+                           errors: list) -> Section:
+    """The per-script row: which script inside the gate is spending the time."""
+    # A TIMEOUT is a killed script — the only hard row here. A slowed script,
+    # like a slowed gate, is advisory by construction: this measurement rides on
+    # whatever PRs happened to run, so an alarm on jitter would cry wolf.
+    if events:
+        state = FAIL
+    elif slowed or errors:
+        state = WARN
+    else:
+        state = OK
+
+    repo_names = {str(r.get("repo") or "") for r in repos if r.get("repo")}
+    bits = [f"{len(rows)} scripts timed across {len(repo_names)} repos"]
+    slowest = max(rows, key=lambda r: r.get("seconds") or 0, default=None)
+    if slowest:
+        bits.append(f"slowest {slowest.get('repo')} {slowest.get('entry')} "
+                    f"{_dur(slowest.get('seconds'))}")
+    if slowed:
+        bits.append(f"{len(slowed)} slowed")
+    if events:
+        bits.append(f"{len(events)} timeout" + ("" if len(events) == 1 else "s"))
+    if errors:
+        bits.append(f"{len(errors)} unavailable")
+
+    details = []
+    for r in sorted(repos, key=lambda r: r.get("total_s") or 0, reverse=True)[:6]:
+        top = [s for s in (r.get("slowest") or []) if isinstance(s, dict)][:3]
+        head = " · ".join(f"{s.get('entry')} {_dur(s.get('seconds'))}" for s in top)
+        # Coverage beside time, always: a leg that got faster by running less
+        # must not read as a leg that got faster.
+        tail = f"({_as_int(r.get('timed'))} scripts, {_dur(r.get('total_s'))} total)"
+        prefix = f"{r.get('repo')} py{r.get('python') or '?'}:"
+        details.append(f"{prefix} {head}  {tail}" if head else f"{prefix} {tail}")
+
+    links = [
+        {"label": f"{e.get('repo')} {e.get('entry')} TIMEOUT",
+         "url": str(e.get("run_url")), "prompt": str(e.get("prompt") or "")}
+        for e in events if e.get("run_url")
+    ][:4]
+
+    # Same rule as the gate row: a single slowed script's prompt rides the row's
+    # 📋; more than one and the board would have to pick a favourite, so they
+    # all stay in the `performance` block where each carries its own prompt.
+    action = None
+    if len(slowed) == 1 and slowed[0].get("prompt"):
+        action = {"label": "copy the slowdown prompt", "payload": str(slowed[0]["prompt"])}
+
+    return Section("smoke_timings", "Smoke scripts", state, " · ".join(bits), details,
+                   links=links, action=action)
+
+
 def _no_run_section(totals: dict, rows: list[dict], repo_rows: list[dict]) -> Section:
     """The NO_RUN census row: what the release run is not running, and why."""
     slow = _as_int(totals.get("slow"))
@@ -979,18 +1033,25 @@ def _no_run_section(totals: dict, rows: list[dict], repo_rows: list[dict]) -> Se
 
 
 def _performance_sections(snapshot: dict, sections: list[Section]) -> dict | None:
-    """Append the two ⏱ rows (when observed) and return the `performance` block.
+    """Append the ⏱ rows (when observed) and return the `performance` block.
 
     The block is the contract the Brain board consumes verbatim: every
-    actionable row inside it — a slowed gate, a hang event, a marker row —
-    carries its own ready-to-paste prompt string, written by the producer and
-    never re-derived by a renderer.
+    actionable row inside it — a slowed gate, a slowed script, a hang event, a
+    TIMEOUT, a marker row — carries its own ready-to-paste prompt string,
+    written by the producer and never re-derived by a renderer.
+
+    `scripts` is emitted ONLY when the smoke_timings slice was observed, so a
+    snapshot taken before this check existed still renders a byte-identical
+    block — and so the next render can tell "no per-script timing observed"
+    from "observed, nothing there" when it reads its own previous rows back.
     """
     ct = snapshot.get("ci_timing")
     ct = ct if isinstance(ct, dict) else {}
     nr = snapshot.get("no_run_census")
     nr = nr if isinstance(nr, dict) else {}
-    if not ct and not nr:
+    st = snapshot.get("smoke_timings")
+    st = st if isinstance(st, dict) else {}
+    if not ct and not nr and not st:
         return None
 
     gates = [g for g in (ct.get("gates") or []) if isinstance(g, dict)]
@@ -1001,12 +1062,21 @@ def _performance_sections(snapshot: dict, sections: list[Section]) -> dict | Non
     rows = [r for r in (nr.get("rows") or []) if isinstance(r, dict)]
     repo_rows = [r for r in (nr.get("repos") or []) if isinstance(r, dict)]
 
+    st_repos = [r for r in (st.get("repos") or []) if isinstance(r, dict)]
+    st_rows = [r for r in (st.get("rows") or []) if isinstance(r, dict)]
+    st_slowed = [r for r in (st.get("slowed") or []) if isinstance(r, dict)]
+    st_events = [e for e in (st.get("events") or []) if isinstance(e, dict)]
+    st_errors = list(st.get("errors") or [])
+
     if ct:
         sections.append(_ci_timing_section(ct, gates, events, errors, history))
+    if st:
+        sections.append(_smoke_timings_section(st, st_repos, st_rows, st_slowed,
+                                               st_events, st_errors))
     if nr:
         sections.append(_no_run_section(totals, rows, repo_rows))
 
-    return {
+    block = {
         "schema": 1,
         "gates": [
             {
@@ -1032,6 +1102,19 @@ def _performance_sections(snapshot: dict, sections: list[Section]) -> dict | Non
             "rows": rows[:10],
         },
     }
+    if st:
+        # The rows the NEXT render reads back as its previous observation —
+        # carried whole, run id and all, so a re-render never compares a run
+        # against itself.
+        block["scripts"] = {
+            "schema": 1,
+            "repos": st_repos,
+            "rows": st_rows,
+            "slowed": st_slowed,
+            "events": st_events,
+            "errors": st_errors,
+        }
+    return block
 
 
 def _unobs_section(key: str, title: str) -> Section:
