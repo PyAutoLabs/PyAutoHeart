@@ -624,3 +624,145 @@ def test_main_aggregate_compares_only_inside_the_current_epoch(tmp_path,
     assert rows["3.12"]["prev_s"] is None and rows["3.12"]["state"] == "ok"
     assert rows["3.13"]["prev_s"] == 28.0 and rows["3.13"]["prev_run_id"] == 6
     capsys.readouterr()
+
+
+# --- the cache-state sidecar (hot or cold) ----------------------------------
+# The smoke workflow restores a JAX compile cache and the simulated datasets
+# between runs and writes `cache_state.json` beside the timings dataset. A run
+# that recompiled everything is not a slower run, it is a differently
+# conditioned one, and the comparison has to be able to tell them apart.
+
+def _cache_state(*, jax_hit=True, ds_hit=False, epoch="1",
+                 schema="cache_state/1", jax_key="pyauto-jax-...-e1-"):
+    return json.dumps({
+        "schema": schema,
+        "epoch": epoch,
+        "jax": {"path": "/w/.pyauto_jax_cache", "restored_key":
+                jax_key if jax_hit else "", "hit": jax_hit, "exact": False,
+                "size_mb_before": 40, "size_mb_after": 55,
+                "entries_before": 120, "entries_after": 180},
+        "datasets": {"path": "workspace/dataset", "restored_key":
+                     "pyauto-datasets-...-" if ds_hit else "", "hit": ds_hit,
+                     "exact": False, "size_mb_before": 0, "size_mb_after": 90,
+                     "entries_before": 0, "entries_after": 12},
+    })
+
+
+def _with_cache(directory, **kw):
+    """Drop a cache_state.json beside an already-extracted dataset."""
+    (directory / smt.CACHE_STATE_FILENAME).write_text(_cache_state(**kw))
+    return directory
+
+
+def test_cache_state_parses_hit_and_miss_per_section():
+    state, err = smt.parse_cache_state(_cache_state(jax_hit=True, ds_hit=False))
+    assert err == ""
+    assert state["jax"] == "hit" and state["datasets"] == "miss"
+    assert state["epoch"] == "1"
+    assert state["jax_restored_key"].startswith("pyauto-jax-")
+    assert state["datasets_restored_key"] == ""
+
+
+def test_cache_state_rejects_a_foreign_or_broken_sidecar():
+    """Written by another organ on a runner we do not control: a surprise
+    degrades to no state, never to an exception out of an unattended check."""
+    for text in ("{", "[]", '"nope"', _cache_state(schema="cache_state/0")):
+        state, err = smt.parse_cache_state(text)
+        assert state is None and err
+
+
+def test_a_missing_section_is_a_miss_not_a_hit():
+    """The workflow writes both sections every run, so an absent one is not
+    evidence that anything was restored."""
+    state, err = smt.parse_cache_state(json.dumps({"schema": "cache_state/1"}))
+    assert err == "" and state["jax"] == "miss" and state["datasets"] == "miss"
+
+
+def test_a_leg_carries_its_cache_state_when_the_sidecar_rode_along(tmp_path):
+    directory = _with_cache(_extracted(tmp_path, [_entry()]))
+    entries, err, meta = smt.read_downloaded_leg(directory)
+    assert err == "" and entries
+    assert meta["cache"] == {"jax": "hit", "datasets": "miss", "epoch": "1"}
+
+
+def test_a_leg_without_the_sidecar_is_unknown_never_a_miss(tmp_path):
+    """Every artifact older than the sidecar. "We do not know" must stay
+    distinguishable from "nothing was restored"."""
+    entries, err, meta = smt.read_downloaded_leg(_extracted(tmp_path, [_entry()]))
+    assert err == "" and meta["cache"] == {"jax": "unknown",
+                                           "datasets": "unknown", "epoch": ""}
+
+
+def test_an_unparseable_sidecar_reads_unknown_and_loses_no_timings(tmp_path):
+    directory = _extracted(tmp_path, [_entry()])
+    (directory / smt.CACHE_STATE_FILENAME).write_text("{ not json")
+    entries, err, meta = smt.read_downloaded_leg(directory)
+    assert entries and err == "" and meta["cache"]["jax"] == "unknown"
+
+
+def test_the_sidecar_leg_and_the_rollup_carry_the_cache_state(tmp_path):
+    legs = [{"artifact": _selected(),
+             "dir": _with_cache(_extracted(tmp_path, [_entry(seconds=12.0)])),
+             "error": ""}]
+    side = smt.build_sidecar(REPO, "workspaces", OWNER, legs, "T")
+    (leg,) = side["legs"]
+    assert leg["cache"] == {"jax": "hit", "datasets": "miss", "epoch": "1"}
+
+    roll = smt.aggregate([side], {}, "T", smt.DEFAULT_SMOKE_TIMINGS_THRESHOLDS)
+    assert roll["repos"][0]["cache"] == leg["cache"]
+    (row,) = roll["rows"]
+    assert row["cache_jax"] == "hit" and row["prev_cache_jax"] == "unknown"
+
+
+def test_a_failed_leg_has_no_cache_state_either(tmp_path):
+    side = smt.build_sidecar(REPO, "workspaces", OWNER, [
+        {"artifact": _selected(), "dir": None, "error": "HTTP 403"},
+    ], "T")
+    (leg,) = side["legs"]
+    assert leg["cache"] == {"jax": "unknown", "datasets": "unknown", "epoch": ""}
+
+
+def test_drift_is_never_classified_across_two_known_cache_states():
+    """A cold run against a hot baseline is a recompile; a hot run against a
+    cold one is the cache landing. Neither is a change anybody made."""
+    thr = {"slow_factor": 2.0, "min_delta_s": 5}
+    hot = dict(_prev_row(10.0), cache_jax="hit")
+    assert smt.classify_drift(30.0, hot, thr, run_id=7, cache="miss") == (
+        "ok", None, None)
+    cold = dict(_prev_row(30.0), cache_jax="miss")
+    assert smt.classify_drift(10.0, cold, thr, run_id=7, cache="hit") == (
+        "ok", None, None)
+
+
+def test_drift_is_classified_normally_for_equal_or_unknown_cache_states():
+    """Two cold runs are comparable, and an unknown on either side compares
+    exactly as it did before the sidecar existed."""
+    thr = {"slow_factor": 2.0, "min_delta_s": 5}
+    same = dict(_prev_row(10.0), cache_jax="miss")
+    assert smt.classify_drift(30.0, same, thr, run_id=7, cache="miss")[0] == "warn"
+    unknown_prev = dict(_prev_row(10.0), cache_jax="unknown")
+    assert smt.classify_drift(30.0, unknown_prev, thr, run_id=7, cache="hit")[0] == "warn"
+    assert smt.classify_drift(30.0, _prev_row(10.0), thr, run_id=7,
+                              cache="hit")[0] == "warn"
+    assert smt.classify_drift(30.0, dict(_prev_row(10.0), cache_jax="hit"),
+                              thr, run_id=7)[0] == "warn"
+
+
+def test_the_board_fallback_carries_the_cache_state_through(tmp_path):
+    """The published board is the other source of a previous row, so the state
+    a baseline was measured under has to survive that path too."""
+    rows = smt.prev_rows_of(_prev_board([dict(_prev_row(), cache_jax="hit")]))
+    assert rows[(REPO, "3.12", "imaging/x.py")]["cache_jax"] == "hit"
+
+    legs = [{"artifact": _selected(),
+             "dir": _with_cache(_extracted(tmp_path, [_entry(seconds=30.0)]),
+                                jax_hit=False),
+             "error": ""}]
+    side = smt.build_sidecar(REPO, "workspaces", OWNER, legs, "T")
+    roll = smt.aggregate([side], _prev_board([dict(_prev_row(10.0), cache_jax="hit")]),
+                         "T", {"slow_factor": 2.0, "min_delta_s": 5, "top_n": 5})
+    (row,) = roll["rows"]
+    # 10s → 30s is a 3x, and it is not reported: the baseline ran hot.
+    assert row["cache_jax"] == "miss" and row["prev_cache_jax"] == "hit"
+    assert row["state"] == "ok" and row["ratio"] is None
+    assert roll["slowed"] == []

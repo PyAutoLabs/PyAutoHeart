@@ -63,6 +63,7 @@ joined to its `rows` (the timed entries):
 {"date":"2026-09-05","at":"2026-09-04T10:00:00Z","python":"3.12","run_id":7,
  "run_url":"https://ci.invalid/OwnerX/RepoA/actions/runs/7",
  "head_branch":"feat/x","head_sha":"abc123","env_profile":"smoke",
+ "cache":{"jax":"hit","datasets":"miss"},
  "entries":{"imaging/x.py":[12.5,"passed",600.0]}}
 ```
 
@@ -77,6 +78,24 @@ joined to its `rows` (the timed entries):
   fabricated zero-second row in a dataset whose whole purpose is timing.
 * `head_sha` and `env_profile` are `""` when the rollup that produced the line
   predates them, so every line in a file carries the same keys either way.
+* **`cache` is the condition the measurement was taken under**, not a
+  measurement of its own: `jax` and `datasets` are each `hit`, `miss` or
+  `unknown`, read from the `cache_state.json` sidecar the smoke workflow
+  uploads beside the timings dataset. The CI job restores a JAX compilation
+  cache and the workspace's simulated `dataset/` tree between runs, so two
+  otherwise identical legs can differ by the whole cost of recompiling or
+  re-simulating. A line recorded before the sidecar existed reads `unknown` on
+  both sides — the honest absence, never a fabricated `miss`.
+
+  From this follows the one rule the comparison obeys:
+
+  > **Drift is never classified across two known but different jax cache
+  > states.** A cold run against a hot baseline is a recompile; a hot run
+  > against a cold one is the cache landing. Neither is a change anybody made,
+  > so `smoke_timings.classify_drift` returns `ok` with no ratio rather than
+  > crying wolf on exactly the runs where the cache is doing its job. An
+  > `unknown` on either side compares exactly as it did before the field
+  > existed.
 
 ### `unit/<repo>.jsonl` — one line per leg per run
 

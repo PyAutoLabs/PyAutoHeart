@@ -393,6 +393,27 @@ def gates_history(
 
 
 # --- scripts -----------------------------------------------------------------
+UNKNOWN_CACHE_STATE = "unknown"
+_CACHE_STATES = ("hit", "miss")
+
+
+def _cache_pair(cache: Any) -> dict[str, str]:
+    """``{"jax", "datasets"}`` out of a rollup leg's cache block.
+
+    Two keys, not three: the epoch is a property of the *keys* the workflow
+    used, not of the measurement, and the record's job is to say what the
+    measurement was taken under. Anything that is not one of the two known
+    states records ``unknown`` — a rollup from before the sidecar existed, a
+    leg the download failed on — never a fabricated miss.
+    """
+    src = cache if isinstance(cache, dict) else {}
+    out = {}
+    for key in ("jax", "datasets"):
+        value = str(src.get(key) or "")
+        out[key] = value if value in _CACHE_STATES else UNKNOWN_CACHE_STATE
+    return out
+
+
 def scripts_lines_from_rollup(
     rollup: Any, today: str
 ) -> dict[str, list[dict[str, Any]]]:
@@ -452,6 +473,12 @@ def scripts_lines_from_rollup(
             # every line in the file has the same keys.
             "head_sha": str(leg.get("head_sha") or ""),
             "env_profile": str(leg.get("env_profile") or ""),
+            # Whether the leg ran hot or cold. Recorded beside the seconds
+            # because a measurement taken with a restored compile cache and one
+            # taken without it are not the same measurement — and a baseline
+            # that cannot say which it was is a baseline nothing can use.
+            # "unknown" on both sides for a rollup that predates the sidecar.
+            "cache": _cache_pair(leg.get("cache")),
             "entries": {name: entries[name] for name in sorted(entries)},
         })
     for repo in out:
@@ -492,8 +519,9 @@ def previous_script_rows(
     """``{(repo, python, entry): prev_row}`` — the last recorded observation.
 
     The shape is exactly what ``smoke_timings.classify_drift`` expects of a
-    previous row (``seconds``/``run_id``/``run_url``), so the record can stand
-    in for ``performance.scripts.rows`` off the published board.
+    previous row (``seconds``/``run_id``/``run_url``/``cache_jax``), so the
+    record can stand in for ``performance.scripts.rows`` off the published
+    board.
 
     The *latest* line per python leg wins, and "latest" is file order: the file
     is append-only, so the last line for a leg is the most recently recorded
@@ -532,6 +560,11 @@ def previous_script_rows(
                     "run_url": str(record.get("run_url") or ""),
                     "status": str(triple[1]) if len(triple) > 1 else "",
                     "cap_s": _as_float(triple[2]) if len(triple) > 2 else None,
+                    # The cache state this baseline was measured under, so
+                    # `classify_drift` can refuse a comparison across two known
+                    # but different states. A line recorded before the field
+                    # existed reads "unknown" and compares as it always did.
+                    "cache_jax": _cache_pair(record.get("cache"))["jax"],
                 }
     return out
 

@@ -35,6 +35,21 @@ name: Smoke Tests (reusable)
 # organism reuse this workflow without modification.
 #
 # The workflow filename is intentionally stable for downstream callers.
+#
+# TWO CACHES ride this workflow, both added as non-fatal steps and both keyed
+# on a manual epoch salt (PYAUTO_CACHE_EPOCH) so all of them can be invalidated
+# at once. The JAX persistent compilation cache is restored and saved per
+# (runner OS x python leg x jaxlib): the runner copies the job env into every
+# script subprocess, so every script's JAX writes to and reads from the one
+# directory named below. The workspace's simulated `dataset/` tree is restored
+# and saved per (simulator-script hash x dependency-chain SHAs), with NO
+# broader fallback — a different simulator or library commit must miss rather
+# than restore FITS this run would not have written. Both are measured before
+# and after the run into `test-results/cache_state.json`, the sidecar that
+# rides the smoke-timings artifact: every per-script timing row the Heart
+# ingests can then say whether that script ran hot or cold, instead of reading
+# a first cache hit as a 4x speedup and its first invalidation as a 4x
+# regression.
 
 on:
   workflow_call:
@@ -125,6 +140,11 @@ jobs:
     needs: changes
     if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
+    # The manual salt carried by every cache key below. Bump it to invalidate
+    # every cache at once — a runner-image change, a cache-format change — in
+    # one edit instead of hand-editing each key and hoping none was missed.
+    env:
+      PYAUTO_CACHE_EPOCH: "1"
     strategy:
       fail-fast: false
       matrix:
@@ -172,6 +192,99 @@ jobs:
           pip install pyyaml
           bash workspace/.github/scripts/smoke_install.sh
 
+      - name: Resolve cache keys
+        # Three components, each one a thing that MUST invalidate a cache:
+        #   jaxlib — a cached compilation is a jaxlib-specific artefact, so a
+        #     jaxlib bump must never read the previous wheel's entries;
+        #   chain  — the dependency-chain commit SHAs, because a library commit
+        #     can change what a simulator writes into dataset/;
+        #   sims   — the hash of every simulator script in the workspace,
+        #     because an edit to one changes the datasets it produces.
+        # Non-fatal like every step this workflow gained: an unresolvable key
+        # degrades to a cache miss, never to a red gate.
+        id: keys
+        continue-on-error: true
+        env:
+          # Via env, never interpolated into the script body — the clone step
+          # above records why: `chain` is caller-supplied text.
+          CHAIN: ${{ inputs.chain }}
+          # hashFiles() is an expression, not a shell command, so it resolves
+          # here and the script reads it back as a plain variable.
+          SIMS_HASH: ${{ hashFiles('workspace/**/simulator*.py', 'workspace/**/simulator/**', 'workspace/**/simulators/**') }}
+        run: |
+          jaxlib="$(python -c 'import jaxlib; print(jaxlib.__version__)' 2>/dev/null || echo nojax)"
+          chain="$(for dep in $CHAIN; do git -C "$dep" rev-parse HEAD; done | sha256sum | cut -c1-16)"
+          {
+            echo "jaxlib=${jaxlib:-nojax}"
+            echo "chain=$chain"
+            echo "sims=$SIMS_HASH"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Restore the JAX compile cache
+        # The run-id suffix makes every save a fresh SUPERSET of what was
+        # restored (the accumulating-cache pattern): the exact key never hits,
+        # the restore-keys prefix takes the newest previous entry, and the save
+        # writes the merged directory back under a new key. Traced code that
+        # changed simply misses its own entries and recompiles them, so this
+        # cache needs no invalidation rule of its own. And a PR run reads the
+        # default branch's caches under GitHub's cache scoping — which is
+        # exactly what a contributor wants: a first push that is already warm.
+        uses: actions/cache/restore@v4
+        id: jax-cache
+        continue-on-error: true
+        with:
+          path: ${{ github.workspace }}/.pyauto_jax_cache
+          key: pyauto-jax-${{ runner.os }}-py${{ matrix.python-version }}-jaxlib${{ steps.keys.outputs.jaxlib }}-e${{ env.PYAUTO_CACHE_EPOCH }}-${{ github.run_id }}
+          restore-keys: |
+            pyauto-jax-${{ runner.os }}-py${{ matrix.python-version }}-jaxlib${{ steps.keys.outputs.jaxlib }}-e${{ env.PYAUTO_CACHE_EPOCH }}-
+
+      - name: Restore simulated datasets
+        # ONE fallback line and no broader one, deliberately: a different
+        # simulator script or a different library commit MUST miss, because the
+        # FITS it would restore are not the FITS this run would have written.
+        # Correctness over hit rate.
+        #
+        # Not keyed on the python leg: simulated FITS do not depend on the
+        # interpreter's minor version, so both legs share one entry.
+        #
+        # Restoring is safe whatever lands here — `should_simulate` keeps a
+        # restored dataset only while its resolution regime matches the one in
+        # force, and deletes and re-simulates it when it does not.
+        uses: actions/cache/restore@v4
+        id: dataset-cache
+        continue-on-error: true
+        with:
+          path: workspace/dataset
+          key: pyauto-datasets-${{ runner.os }}-e${{ env.PYAUTO_CACHE_EPOCH }}-sim${{ steps.keys.outputs.sims }}-chain${{ steps.keys.outputs.chain }}-${{ github.run_id }}
+          restore-keys: |
+            pyauto-datasets-${{ runner.os }}-e${{ env.PYAUTO_CACHE_EPOCH }}-sim${{ steps.keys.outputs.sims }}-chain${{ steps.keys.outputs.chain }}-
+
+      - name: Measure the caches before the run
+        # The "before" half of the sidecar: what a restore actually put on disk,
+        # as against what the run leaves behind. A missing path measures as
+        # zero rather than failing — a cold cache is a measurement, not a fault.
+        id: cache-before
+        continue-on-error: true
+        env:
+          JAX_PATH: ${{ github.workspace }}/.pyauto_jax_cache
+          DS_PATH: workspace/dataset
+        run: |
+          measure() {
+            mb="$(du -sm "$1" 2>/dev/null | cut -f1)"
+            n="$(find "$1" -type f 2>/dev/null | wc -l)"
+            echo "${mb:-0} ${n:-0}"
+          }
+          set -- $(measure "$JAX_PATH")
+          jax_mb="$1"; jax_n="$2"
+          set -- $(measure "$DS_PATH")
+          ds_mb="$1"; ds_n="$2"
+          {
+            echo "jax_mb=$jax_mb"
+            echo "jax_n=$jax_n"
+            echo "ds_mb=$ds_mb"
+            echo "ds_n=$ds_n"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Prepare cache dirs
         run: mkdir -p /tmp/numba_cache /tmp/matplotlib
 
@@ -214,6 +327,12 @@ jobs:
           NUMBA_CACHE_DIR: /tmp/numba_cache
           MPLCONFIGDIR: /tmp/matplotlib
           PYTHONPATH: ${{ github.workspace }}/PyAutoHands/autohands
+          # autonerves defaults this to ~/.cache/pyauto_jax when it is unset; an
+          # explicit workspace path is the one the cache steps above and below
+          # can name. The runner copies this job env into every script
+          # subprocess, so each script's JAX writes to and reads from the same
+          # compilation cache instead of one per-process temporary.
+          JAX_COMPILATION_CACHE_DIR: ${{ github.workspace }}/.pyauto_jax_cache
           # Via env, never interpolated into the script body: these inputs reach
           # here from a caller's workflow_dispatch, and `${{ }}` inside `run:`
           # would splice their text straight into the shell.
@@ -229,6 +348,106 @@ jobs:
             export BUILD_SCRIPT_TIMEOUT="$SCRIPT_TIMEOUT"
           fi
           python "$RUNNER" $RUNNER_ARGS
+
+      - name: Record cache state (rides the smoke-timings artifact)
+        # This file is the unit of measurement for the whole cache story: every
+        # per-script timing row the Heart ingests from the artifact below can
+        # then say whether that script ran hot or cold. Without it a timing
+        # dataset reads a cache landing as a 4x speedup and its invalidation as
+        # a 4x regression, and neither is a change anybody made.
+        #
+        # if: always() — a red run's cache state is exactly as interesting as a
+        # green one's, and the artifact is uploaded either way.
+        id: cache-state
+        if: always()
+        continue-on-error: true
+        env:
+          EPOCH: ${{ env.PYAUTO_CACHE_EPOCH }}
+          JAX_PATH: ${{ github.workspace }}/.pyauto_jax_cache
+          JAX_KEY_RESTORED: ${{ steps.jax-cache.outputs.cache-matched-key }}
+          JAX_EXACT: ${{ steps.jax-cache.outputs.cache-hit }}
+          JAX_MB_BEFORE: ${{ steps.cache-before.outputs.jax_mb }}
+          JAX_N_BEFORE: ${{ steps.cache-before.outputs.jax_n }}
+          DS_PATH: workspace/dataset
+          DS_KEY_RESTORED: ${{ steps.dataset-cache.outputs.cache-matched-key }}
+          DS_EXACT: ${{ steps.dataset-cache.outputs.cache-hit }}
+          DS_MB_BEFORE: ${{ steps.cache-before.outputs.ds_mb }}
+          DS_N_BEFORE: ${{ steps.cache-before.outputs.ds_n }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+
+          def as_int(text):
+              try:
+                  return int(str(text).strip())
+              except (TypeError, ValueError):
+                  return 0
+
+
+          def measure(path):
+              """(size in MiB, file count) for a path that may not exist."""
+              if not path or not os.path.isdir(path):
+                  return 0, 0
+              proc = subprocess.run(["du", "-sm", path], capture_output=True,
+                                    text=True)
+              head = proc.stdout.split()
+              size = as_int(head[0]) if head else 0
+              return size, sum(len(files) for _r, _d, files in os.walk(path))
+
+
+          def section(path, key, exact, mb_before, n_before):
+              mb_after, n_after = measure(path)
+              mb_before, n_before = as_int(mb_before), as_int(n_before)
+              return {
+                  "path": path,
+                  # A restored key at all is a hit; the EXACT key is the
+                  # accumulating pattern's never-case, kept separate so a
+                  # reader is not left guessing which one "hit" meant.
+                  "restored_key": key,
+                  "hit": bool(key),
+                  "exact": exact == "true",
+                  "size_mb_before": mb_before,
+                  "size_mb_after": mb_after,
+                  "entries_before": n_before,
+                  "entries_after": n_after,
+              }, (mb_after != mb_before or n_after != n_before)
+
+
+          env = os.environ.get
+          jax, jax_changed = section(
+              env("JAX_PATH", ""), env("JAX_KEY_RESTORED", ""),
+              env("JAX_EXACT", ""), env("JAX_MB_BEFORE", ""),
+              env("JAX_N_BEFORE", ""),
+          )
+          datasets, ds_changed = section(
+              env("DS_PATH", ""), env("DS_KEY_RESTORED", ""),
+              env("DS_EXACT", ""), env("DS_MB_BEFORE", ""),
+              env("DS_N_BEFORE", ""),
+          )
+          payload = {
+              "schema": "cache_state/1",
+              "epoch": env("EPOCH", ""),
+              "jax": jax,
+              "datasets": datasets,
+          }
+          out = Path("workspace/test-results")
+          out.mkdir(parents=True, exist_ok=True)
+          (out / "cache_state.json").write_text(
+              json.dumps(payload, sort_keys=True, indent=2) + "\n")
+          print(json.dumps(payload, sort_keys=True))
+
+          github_output = env("GITHUB_OUTPUT")
+          if github_output:
+              with open(github_output, "a", encoding="utf-8") as handle:
+                  handle.write("jax_changed=%s\n"
+                               % ("true" if jax_changed else "false"))
+                  handle.write("ds_changed=%s\n"
+                               % ("true" if ds_changed else "false"))
+          PY
 
       - name: Upload the smoke report dir (per-script timings)
         # PyAutoHands#264. The runner writes a consolidated smoke_timings.json
@@ -264,6 +483,30 @@ jobs:
             workspace/test-results/
             workspace/**/smoke_timings.json
           if-no-files-found: ignore
+
+      - name: Save the JAX compile cache
+        # Saved even on a RED run: a compilation-cache entry is complete or
+        # absent, never half-written, so the compiling a failing run did is
+        # still worth keeping for the next attempt. The `jax_changed` guard is
+        # the no-op case — an unchanged cache is not re-uploaded under a new key.
+        if: always() && steps.cache-state.outputs.jax_changed == 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ github.workspace }}/.pyauto_jax_cache
+          key: pyauto-jax-${{ runner.os }}-py${{ matrix.python-version }}-jaxlib${{ steps.keys.outputs.jaxlib }}-e${{ env.PYAUTO_CACHE_EPOCH }}-${{ github.run_id }}
+
+      - name: Save simulated datasets
+        # ONLY on a green run, unlike the compile cache above: a simulator
+        # killed mid-write leaves a truncated FITS on disk, `should_simulate`
+        # would keep it (its regime matches), and caching it would poison every
+        # later run that restored it. Same no-op guard as above.
+        if: success() && steps.cache-state.outputs.ds_changed == 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: workspace/dataset
+          key: pyauto-datasets-${{ runner.os }}-e${{ env.PYAUTO_CACHE_EPOCH }}-sim${{ steps.keys.outputs.sims }}-chain${{ steps.keys.outputs.chain }}-${{ github.run_id }}
 
       - name: Slack notify on failure
         if: ${{ failure() }}

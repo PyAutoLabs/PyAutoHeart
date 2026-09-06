@@ -1502,3 +1502,51 @@ def test_a_half_written_epoch_is_no_epoch_at_all():
                           timings_record=census),
             v, now=FRESH_NOW)
         assert "epoch" not in _section(board, "ci_timing").details[-1]
+
+
+# --- hot or cold, on the line the numbers are on ----------------------------
+# The smoke gate restores a JAX compile cache between runs, so two legs of the
+# same repo can differ by the whole cost of recompiling. A reader looking at a
+# jump needs that beside the seconds, not a click away.
+
+def _cached_scripts_snapshot(jax="hit", **kw):
+    slice_ = _smoke_timings_slice(**kw)
+    if jax is not None:
+        slice_["repos"][0]["cache"] = {"jax": jax, "datasets": "miss",
+                                       "epoch": "1"}
+    return make_snapshot(ci_timing=_ci_timing_slice(),
+                         no_run_census=_no_run_slice(), smoke_timings=slice_)
+
+
+def test_a_known_cache_state_is_bracketed_on_the_per_repo_line():
+    for state in ("hit", "miss"):
+        sec = _section(dashboard.build_board(_cached_scripts_snapshot(state),
+                                             make_verdict(), now=FRESH_NOW),
+                       "smoke_timings")
+        assert sec.details[0].startswith(f"RepoA py3.12 [jax cache {state}]:")
+        # Everything after the prefix is untouched.
+        assert sec.details[0].endswith("imaging/x.py 30s · imaging/y.py 5s"
+                                       "  (2 scripts, 35s total)")
+
+
+def test_an_unknown_or_absent_cache_state_leaves_the_line_unchanged():
+    """A leg from before the cache-state sidecar existed renders exactly as it
+    always did — no bracket, and certainly no claim that it ran cold."""
+    unchanged = ("RepoA py3.12: imaging/x.py 30s · imaging/y.py 5s"
+                 "  (2 scripts, 35s total)")
+    for snap in (_cached_scripts_snapshot(None),
+                 _cached_scripts_snapshot("unknown"),
+                 _cached_scripts_snapshot("warm")):
+        sec = _section(dashboard.build_board(snap, make_verdict(), now=FRESH_NOW),
+                       "smoke_timings")
+        assert sec.details[0] == unchanged
+
+
+def test_the_scripts_block_inherits_the_cache_state_with_no_renderer_change():
+    """`performance.scripts` carries the repos verbatim, so the Brain board and
+    the next render's fallback read the field without this file knowing it."""
+    d = json.loads(dashboard.render(_cached_scripts_snapshot("hit"), make_verdict(),
+                                    fmt="json", now=FRESH_NOW))
+    assert d["performance"]["scripts"]["repos"][0]["cache"] == {
+        "jax": "hit", "datasets": "miss", "epoch": "1"}
+    assert d["schema_version"] == dashboard.SCHEMA_VERSION   # purely additive
