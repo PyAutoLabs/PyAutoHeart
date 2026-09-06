@@ -776,15 +776,19 @@ def test_main_show_prints_the_epoch_keys_too(tmp_path, capsys):
     assert "'label': 'legacy'" in out and "'date': '2026-09-05'" in out
 
 
-def test_the_committed_record_carries_exactly_the_legacy_boundary():
+def test_the_committed_record_carries_the_legacy_and_fast_tests_boundaries():
     """Declared data in the record, read the way the config tests read
     config/repos.yaml: the `legacy` boundary labels the pre-rebuild reference
-    round, and the phase that lands the rebuild appends the NEXT one."""
+    round, and `fast-tests` is the one the rebuild phases appended when they
+    landed (the day after). Readers take `since` from the newest one."""
     epochs = timings.read_epochs(timings.EPOCHS_FILE)
-    assert len(epochs) == 1
-    assert epochs[0]["date"] == "2026-09-05" and epochs[0]["label"] == "legacy"
-    assert epochs[0]["note"]
-    assert len(timings.EPOCHS_FILE.read_text().splitlines()) == 1
+    assert [(e["date"], e["label"]) for e in epochs] == [
+        ("2026-09-05", "legacy"),
+        ("2026-09-06", "fast-tests"),
+    ]
+    assert all(e["note"] for e in epochs)
+    assert len(timings.EPOCHS_FILE.read_text().splitlines()) == 2
+    assert timings.current_epoch(epochs)["label"] == "fast-tests"
 
 
 # --- the cache state a measurement was taken under --------------------------
