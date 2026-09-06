@@ -672,11 +672,17 @@ def main(argv: list[str] | None = None) -> int:
         today = ns.today or datetime.datetime.now(datetime.timezone.utc).date().isoformat()
         thr = load_thresholds()
         record_dir = Path(ns.record_dir) if ns.record_dir else _timings.TIMINGS_DIR
+        # compare within the current epoch only — a boundary in
+        # timings/epochs.jsonl is where the world changed (a rebuild, a runner
+        # change), and a baseline from before it is not a baseline.
+        epochs = _timings.read_epochs(record_dir / "epochs.jsonl")
+        since = ((_timings.current_epoch(epochs) or {}).get("date") or "")
         rollup = aggregate(
             read_sidecars(per_repo), read_prev_board(ns.prev_board), today, ts,
             thr,
             record_history=_timings.gates_history(
-                record_dir / "gates.jsonl", int(thr.get("history_cap", 30))
+                record_dir / "gates.jsonl", int(thr.get("history_cap", 30)),
+                since=since,
             ),
         )
         _write(Path(ns.out), rollup)

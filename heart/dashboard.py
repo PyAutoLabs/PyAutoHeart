@@ -986,15 +986,25 @@ def _record_lines(record: Any) -> tuple[str, str]:
     Empty strings when the census is absent — a snapshot taken before the
     record existed must render byte-identically to how it always did, so the
     caller appends nothing rather than a line saying "0 days".
+
+    When the census carries an epoch, both lines say which one: the readers
+    compare inside it and nothing before it is visible to them, so the history
+    a row claims to stand on is the history *since that boundary*. A census
+    without one adds no suffix, and renders exactly as it always did.
     """
     if not isinstance(record, dict) or not record:
         return "", ""
     days = _as_int(record.get("gates_days"))
     obs = _as_int(record.get("scripts_observations"))
     repos = _as_int(record.get("repos"))
+    epoch = record.get("epoch")
+    suffix = ""
+    if isinstance(epoch, dict) and epoch.get("label") and epoch.get("date"):
+        suffix = f" · epoch {epoch['label']} since {epoch['date']}"
     return (
-        f"record: timings/gates.jsonl — {days} days",
-        f"record: timings/scripts/ — {obs} observations across {repos} repos",
+        f"record: timings/gates.jsonl — {days} days{suffix}",
+        f"record: timings/scripts/ — {obs} observations across {repos} repos"
+        f"{suffix}",
     )
 
 
@@ -1257,6 +1267,15 @@ def _performance_sections(snapshot: dict, sections: list[Section]) -> dict | Non
                                if isinstance(r, dict)],
             "errors": list(ut.get("errors") or []),
         }
+    epoch = record.get("epoch")
+    if isinstance(epoch, dict) and epoch.get("label") and epoch.get("date"):
+        # Additive, and emitted ONLY when there is a boundary in force (#208):
+        # the Brain board reads this block verbatim, so a census without an
+        # epoch must leave it byte-identical to what it always was. It says
+        # which epoch every `prev_*` figure above was drawn from — a reader
+        # comparing two boards across a boundary needs to know the baseline
+        # changed underneath them.
+        block["epoch"] = {"label": str(epoch["label"]), "date": str(epoch["date"])}
     return block
 
 

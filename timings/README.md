@@ -1,10 +1,13 @@
 # `timings/` — the permanent CI timing record
 
-This directory is PyAutoHeart's **append-only record of how long CI takes**. It
-is written by exactly one thing — the daily `heart-health.yml` cloud job, which
-commits it beside the README board block, one commit a day — and read by the
-timing checks as the first source for their baselines (for `unit_timings` it is
-the *only* source: the board never carried per-test rows).
+This directory is PyAutoHeart's **append-only record of how long CI takes**. Its
+observations are written by exactly one thing — the daily `heart-health.yml`
+cloud job, which commits them beside the README board block, one commit a day —
+and read by the timing checks as the first source for their baselines (for
+`unit_timings` it is the *only* source: the board never carried per-test rows).
+The one exception is [`epochs.jsonl`](#epochsjsonl--where-the-world-changed),
+which a **human** writes in a PR: a boundary is a judgement about the world, not
+an observation, and it decides how far back every baseline here can see.
 
 It exists because the alternative did not last. `ci_timing` and `smoke_timings`
 both carried their history in the `board.json` published to Pages by the
@@ -21,6 +24,8 @@ carries the same rules for a reader who arrives from the Python side.
 
 ```
 timings/README.md            # this file — doctrine, not data
+timings/legacy_round_2026-09.md  # the digest of the first (legacy) round — prose, not data
+timings/epochs.jsonl         # one line per epoch boundary  — a human writes it
 timings/gates.jsonl          # one line per UTC date
 timings/scripts/<repo>.jsonl # one line per (python leg, run id)  — smoke scripts
 timings/unit/<repo>.jsonl    # one line per (python leg, run id)  — unit tests + import
@@ -130,19 +135,72 @@ Keyed on the day, that writes seven copies of one measurement — the
 to be re-derived — and a flat week reads as a week of measurements. Keyed on
 the run, a quiet week records nothing, which is the truth.
 
-## Reserved: `epochs.jsonl`
+## `epochs.jsonl` — where the world changed
 
-`timings/epochs.jsonl` is **reserved** for a future labelled epoch boundary:
+One JSON object per line, one **boundary** per line, sorted by date:
 
 ```json
-{"date":"2026-09-05","label":"runners moved to 8 cores","note":"..."}
+{"date":"2026-09-05","label":"legacy","note":"why this is a boundary"}
 ```
 
-A reader could then tell a step change in the world from a regression in the
-code. Nothing writes it, and the file deliberately does not exist yet —
-`heart/timings.py` names the path (`EPOCHS_FILE`) so the reservation lives in
-the code as well as here. An epoch is a human's judgement about the world, not
-something a daily job can observe.
+* `date` is `YYYY-MM-DD` and nothing else — the record sorts these as strings,
+  and an unpadded `2026-9-5` would sort *after* `2026-12-01`.
+* `label` is the short name the board shows (`legacy`, `fast-tests`). A line
+  with no date or no label is not a boundary and is dropped on read: one could
+  not be compared against, the other could not be named on a row.
+* `note` is the reasoning a later reader cannot re-derive — *why* this is a
+  boundary, not a restatement of the label.
+
+**Readers compare within the current epoch** — the latest boundary dated on or
+before today. Records dated before it are invisible to every baseline:
+`gates_history`, `previous_script_rows`, `previous_unit_rows` and
+`import_history` each take a `since` and drop the earlier lines *before* they
+pick the latest observation per leg or take the median window. A number
+measured before the world changed is not a baseline for a run after it — it is
+a different experiment. A record line with **no** date counts as older than any
+boundary: the record cannot place it after the change, and a baseline that
+might predate the change is not a baseline. No boundaries at all means one
+unbroken epoch, which is exactly how this record read before the file existed.
+
+A boundary dated in the **future** is not in force yet, which is what lets a PR
+append the boundary for the change it is landing without blinding every
+baseline the moment it merges.
+
+### Who writes it
+
+A **human**, in a PR, through the verb:
+
+```bash
+PYTHONPATH="$PWD" python -m heart.timings epoch \
+  --date 2026-09-05 --label legacy --note "why this is a boundary"
+```
+
+Never the daily job. `heart.timings append` writes observations and does not
+touch this file — an epoch boundary is a *judgement about the world* (a
+rebuild, a runner change, a cap change), and a daily job cannot observe one.
+The verb is append-only like every other writer here: it refuses a duplicate
+`(date, label)` and prints `epoch already recorded: …`, so re-running it is a
+no-op rather than a second boundary for the same judgement.
+
+### The standing instruction
+
+**The phase that lands a rebuild appends the next boundary, in its own PR.**
+That is the whole mechanism: the post-rebuild history starts fresh, because
+from the boundary's date onwards no reader can see a single pre-rebuild number.
+A rebuild that lands without its boundary leaves every baseline comparing two
+different worlds and reporting the difference as a regression — the failure
+mode this file exists to prevent. For the `ci-timing-fast-tests` epic the next
+one is `label: fast-tests`, appended by the phase that lands the rebuild.
+
+### The current content
+
+One boundary:
+
+* **`legacy` @ 2026-09-05** — the pre-rebuild reference round of the
+  `ci-timing-fast-tests` epic. Phases 5–7 of that epic change `_test` script
+  content, datasets, pinned likelihoods and CI caches; everything recorded up
+  to and including this date measured the world as it stood *before* those
+  changes, and comparisons must not cross the boundary.
 
 ## Growth
 
@@ -152,6 +210,8 @@ something a daily job can observe.
   practice far fewer — a line lands only when a new run produced a new
   artifact. Two legs per repo is the current shape, so ≤ 2 lines/day/repo, and
   a quiet repo contributes nothing at all.
+* `epochs.jsonl`: a handful of lines a year at most — a boundary is written
+  only when the world actually changed.
 * `unit/<repo>.jsonl`: the same shape and the same cap — ≤ 2 lines/day/repo,
   and only when a new run produced a new artifact. A line is larger than a
   scripts line (the slowest N tests plus the suite totals) but bounded by
@@ -166,7 +226,8 @@ exchange for nothing.
 ## Reading it
 
 ```bash
-# The one-screen answer: days recorded, observations, repos, holes.
+# The one-screen answer: days recorded, observations, repos, holes — and the
+# epoch every reader is currently comparing inside of.
 PYTHONPATH="$PWD" python -m heart.timings show
 
 # One gate's daily p50s.

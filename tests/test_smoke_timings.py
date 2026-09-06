@@ -439,8 +439,13 @@ def test_main_writes_sidecar_then_aggregates(tmp_path, monkeypatch, capsys):
     prev = tmp_path / "board.json"
     prev.write_text(json.dumps(_prev_board([_prev_row(10.0)])))
     roll_path = tmp_path / "smoke_timings.json"
+    # An EMPTY record dir, so the test exercises the previous-board fallback it
+    # was written for. Without it the call falls through to the repo's live
+    # timings/ (#208: the first daily record commit landed and this test went
+    # red on main — a test-isolation hole, not a regression).
     assert smt.main(["--aggregate", "--per-repo-dir", str(per_repo),
                      "--prev-board", str(prev), "--ts", "T",
+                     "--record-dir", str(tmp_path / "empty-record"),
                      "--out", str(roll_path)]) == 0
     roll = json.loads(roll_path.read_text())
     assert roll["rows"][0]["repo"] == REPO and roll["rows"][0]["state"] == "warn"
@@ -562,4 +567,60 @@ def test_main_aggregate_reads_the_record_directory(tmp_path, monkeypatch, capsys
                      "--out", str(out)]) == 0
     (row,) = _json.loads(out.read_text())["rows"]
     assert row["state"] == "warn" and row["prev_s"] == 10.0 and row["prev_run_id"] == 6
+    capsys.readouterr()
+
+
+def test_main_aggregate_compares_only_inside_the_current_epoch(tmp_path,
+                                                               monkeypatch,
+                                                               capsys):
+    """#208: a script's seconds recorded before a boundary in
+    timings/epochs.jsonl measured a different world — the 3.12 leg here was
+    last recorded before the rebuild, so it has no baseline at all rather than
+    a stale one, while the 3.13 leg is compared against its post-boundary
+    observation."""
+    import json as _json
+
+    monkeypatch.setenv("HEART_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("NO_COLOR", "1")
+    per_repo = tmp_path / "per-repo"
+    per_repo.mkdir()
+    legs = [
+        {"artifact": _selected(name="smoke-timings-3.12", id_=11),
+         "dir": _extracted(tmp_path, [_entry("imaging/x.py", seconds=30.0)],
+                           sub="a12", python="3.12"),
+         "error": ""},
+        {"artifact": _selected(name="smoke-timings-3.13", id_=12),
+         "dir": _extracted(tmp_path, [_entry("imaging/x.py", seconds=30.0)],
+                           sub="a13", python="3.13"),
+         "error": ""},
+    ]
+    side = smt.build_sidecar(REPO, "workspaces", OWNER, legs, "T")
+    (per_repo / f"{REPO}.smoke_timings.json").write_text(_json.dumps(side))
+
+    record = tmp_path / "timings"
+    (record / "scripts").mkdir(parents=True)
+    (record / "epochs.jsonl").write_text(_json.dumps({
+        "date": "2026-09-05", "label": "legacy",
+        "note": "the reference round before the rebuild",
+    }) + "\n")
+
+    def _line(date, python, run_id, seconds):
+        return {"date": date, "at": "", "python": python, "run_id": run_id,
+                "run_url": PREV_RUN_URL, "head_branch": "", "head_sha": "",
+                "env_profile": "smoke",
+                "entries": {"imaging/x.py": [seconds, "passed", 600.0]}}
+
+    (record / "scripts" / f"{REPO}.jsonl").write_text("".join(
+        _json.dumps(line) + "\n" for line in (
+            _line("2026-09-03", "3.12", 5, 10.0),     # before the boundary
+            _line("2026-09-05", "3.13", 6, 28.0),     # after it
+        )))
+
+    out = tmp_path / "smoke_timings.json"
+    assert smt.main(["--aggregate", "--per-repo-dir", str(per_repo), "--ts", "T",
+                     "--record-dir", str(record), "--out", str(out)]) == 0
+    rows = {r["python"]: r for r in _json.loads(out.read_text())["rows"]}
+    # 30s against a pre-boundary 10s would have read as a 3x regression.
+    assert rows["3.12"]["prev_s"] is None and rows["3.12"]["state"] == "ok"
+    assert rows["3.13"]["prev_s"] == 28.0 and rows["3.13"]["prev_run_id"] == 6
     capsys.readouterr()

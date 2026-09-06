@@ -690,3 +690,63 @@ def test_summary_lines_are_honest_about_unavailability(monkeypatch):
     assert "UNAVAILABLE" in ut.repo_summary_line(dead)
     roll = ut.aggregate([dead], "T", THRESHOLDS)
     assert "1 unavailable" in ut.summary_line(roll)
+
+
+def test_main_aggregate_compares_only_inside_the_current_epoch(tmp_path,
+                                                               monkeypatch,
+                                                               capsys):
+    """#208: the record is the only baseline here, so a boundary in
+    timings/epochs.jsonl decides what that baseline is. The pre-boundary
+    observations measured a different world: they are neither the previous
+    seconds a test is judged against nor part of the import median window."""
+    monkeypatch.setenv("HEART_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("NO_COLOR", "1")
+    per_repo = tmp_path / "per-repo"
+    per_repo.mkdir()
+    side = _sidecar(tmp_path, junit=_junit(_case(time="6.0")),
+                    imports=_import_json(seconds=6.0))
+    (per_repo / f"{REPO}.unit_timings.json").write_text(json.dumps(side))
+
+    record = tmp_path / "timings"
+    (record / "unit").mkdir(parents=True)
+    (record / "epochs.jsonl").write_text(json.dumps({
+        "date": "2026-09-05", "label": "legacy",
+        "note": "the reference round before the rebuild",
+    }) + "\n")
+
+    def _line(date, run_id, seconds, import_s):
+        return {"date": date, "at": "", "python": "3.12", "run_id": run_id,
+                "run_url": PREV_RUN_URL, "head_branch": "", "head_sha": "",
+                "package": PACKAGE, "import_s": import_s,
+                "suite": {"tests": 2, "failures": 0, "errors": 0, "skipped": 0,
+                          "wall_s": 40.0},
+                "slowest": {NODEID: seconds}}
+
+    (record / "unit" / f"{REPO}.jsonl").write_text("".join(
+        json.dumps(line) + "\n" for line in (
+            _line("2026-09-02", 3, 1.0, 1.0),     # three fast observations,
+            _line("2026-09-03", 4, 1.0, 1.0),     # all before the boundary —
+            _line("2026-09-04", 5, 1.0, 1.0),     # a median of a lost world
+            _line("2026-09-05", 6, 5.0, 5.0),     # the only one after it
+        )))
+
+    legacy = tmp_path / "legacy"
+    out = tmp_path / "unit_timings.json"
+    assert ut.main(["--aggregate", "--per-repo-dir", str(per_repo), "--ts", "T",
+                    "--record-dir", str(record), "--legacy-dir", str(legacy),
+                    "--out", str(out)]) == 0
+    roll = json.loads(out.read_text())
+    # 6.0s against the post-boundary 5.0s is jitter; against the pre-boundary
+    # 1.0s it would have been a 6x regression.
+    (row,) = roll["tests"]
+    assert row["prev_s"] == 5.0 and row["prev_run_id"] == 6 and row["state"] == "ok"
+    # ...and the import window holds one observation, not four, so the import
+    # is still building rather than judged against a median of a lost world.
+    # Four observations, one epoch: the window holds the single post-boundary
+    # one, so the import is still BUILDING rather than judged against a median
+    # of a lost world.
+    (imp,) = roll["imports"]
+    assert imp["samples"] == 1 and imp["state"] == "building"
+    assert json.loads(
+        (legacy / "import_time.json").read_text())["new_packages_no_baseline"] == 1
+    capsys.readouterr()
