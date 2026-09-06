@@ -627,12 +627,14 @@ def test_main_aggregate_compares_only_inside_the_current_epoch(tmp_path,
 
 
 # --- the cache-state sidecar (hot or cold) ----------------------------------
-# The smoke workflow restores a JAX compile cache and the simulated datasets
-# between runs and writes `cache_state.json` beside the timings dataset. A run
-# that recompiled everything is not a slower run, it is a differently
-# conditioned one, and the comparison has to be able to tell them apart.
+# The smoke workflow restores a JAX compile cache, a numba function cache and
+# the simulated datasets between runs and writes `cache_state.json` beside the
+# timings dataset; the libraries' workflow writes the same sidecar with the jax
+# and numba sections only. A run that recompiled everything is not a slower
+# run, it is a differently conditioned one, and the comparison has to be able
+# to tell them apart.
 
-def _cache_state(*, jax_hit=True, ds_hit=False, epoch="1",
+def _cache_state(*, jax_hit=True, ds_hit=False, numba_hit=True, epoch="1",
                  schema="cache_state/1", jax_key="pyauto-jax-...-e1-"):
     return json.dumps({
         "schema": schema,
@@ -645,7 +647,18 @@ def _cache_state(*, jax_hit=True, ds_hit=False, epoch="1",
                      "pyauto-datasets-...-" if ds_hit else "", "hit": ds_hit,
                      "exact": False, "size_mb_before": 0, "size_mb_after": 90,
                      "entries_before": 0, "entries_after": 12},
+        "numba": {"path": "/w/.numba_cache", "restored_key":
+                  "pyauto-numba-...-" if numba_hit else "", "hit": numba_hit,
+                  "exact": False, "size_mb_before": 3, "size_mb_after": 9,
+                  "entries_before": 30, "entries_after": 61},
     })
+
+
+def _cache_state_without_numba(**kw):
+    """A sidecar from the emitter that predates the numba cache."""
+    payload = json.loads(_cache_state(**kw))
+    payload.pop("numba")
+    return json.dumps(payload)
 
 
 def _with_cache(directory, **kw):
@@ -655,12 +668,19 @@ def _with_cache(directory, **kw):
 
 
 def test_cache_state_parses_hit_and_miss_per_section():
-    state, err = smt.parse_cache_state(_cache_state(jax_hit=True, ds_hit=False))
+    state, err = smt.parse_cache_state(
+        _cache_state(jax_hit=True, ds_hit=False, numba_hit=True))
     assert err == ""
     assert state["jax"] == "hit" and state["datasets"] == "miss"
+    assert state["numba"] == "hit"
     assert state["epoch"] == "1"
     assert state["jax_restored_key"].startswith("pyauto-jax-")
     assert state["datasets_restored_key"] == ""
+    assert state["numba_restored_key"].startswith("pyauto-numba-")
+
+    cold, err = smt.parse_cache_state(_cache_state(numba_hit=False))
+    assert err == "" and cold["numba"] == "miss"
+    assert cold["numba_restored_key"] == ""
 
 
 def test_cache_state_rejects_a_foreign_or_broken_sidecar():
@@ -672,17 +692,48 @@ def test_cache_state_rejects_a_foreign_or_broken_sidecar():
 
 
 def test_a_missing_section_is_a_miss_not_a_hit():
-    """The workflow writes both sections every run, so an absent one is not
-    evidence that anything was restored."""
+    """Both workflows have written `jax` and `datasets` on every run since the
+    sidecar existed, so an absent one is not evidence that anything was
+    restored."""
     state, err = smt.parse_cache_state(json.dumps({"schema": "cache_state/1"}))
     assert err == "" and state["jax"] == "miss" and state["datasets"] == "miss"
+
+
+def test_a_missing_numba_section_is_unknown_not_a_miss():
+    """`numba` is ADDITIVE to the schema. A sidecar without it is an older
+    EMITTER, not a run that restored nothing — reading it as a miss would
+    date-stamp every earlier artifact cold and suppress its comparisons."""
+    state, err = smt.parse_cache_state(_cache_state_without_numba(jax_hit=True))
+    assert err == ""
+    # The two original sections are untouched by the addition.
+    assert state["jax"] == "hit" and state["datasets"] == "miss"
+    assert state["numba"] == "unknown"
+    assert state["numba_restored_key"] == ""
+    # A section that is present but not an object is no section at all.
+    payload = json.loads(_cache_state())
+    payload["numba"] = "yes"
+    state, err = smt.parse_cache_state(json.dumps(payload))
+    assert err == "" and state["numba"] == "unknown"
+
+
+def test_the_cache_view_carries_the_numba_state_beside_the_other_two():
+    view = smt.cache_view({"jax": "hit", "datasets": "miss", "numba": "miss",
+                           "epoch": "1"})
+    assert view == {"jax": "hit", "datasets": "miss", "numba": "miss",
+                    "epoch": "1"}
+    # Anything that is not one of the two known states reads unknown, numba
+    # included — and no sidecar at all is unknown on every side.
+    assert smt.cache_view({"jax": "hit", "numba": "warm"})["numba"] == "unknown"
+    assert smt.cache_view(None) == {"jax": "unknown", "datasets": "unknown",
+                                    "numba": "unknown", "epoch": ""}
 
 
 def test_a_leg_carries_its_cache_state_when_the_sidecar_rode_along(tmp_path):
     directory = _with_cache(_extracted(tmp_path, [_entry()]))
     entries, err, meta = smt.read_downloaded_leg(directory)
     assert err == "" and entries
-    assert meta["cache"] == {"jax": "hit", "datasets": "miss", "epoch": "1"}
+    assert meta["cache"] == {"jax": "hit", "datasets": "miss",
+                             "numba": "hit", "epoch": "1"}
 
 
 def test_a_leg_without_the_sidecar_is_unknown_never_a_miss(tmp_path):
@@ -690,7 +741,8 @@ def test_a_leg_without_the_sidecar_is_unknown_never_a_miss(tmp_path):
     distinguishable from "nothing was restored"."""
     entries, err, meta = smt.read_downloaded_leg(_extracted(tmp_path, [_entry()]))
     assert err == "" and meta["cache"] == {"jax": "unknown",
-                                           "datasets": "unknown", "epoch": ""}
+                                           "datasets": "unknown",
+                                           "numba": "unknown", "epoch": ""}
 
 
 def test_an_unparseable_sidecar_reads_unknown_and_loses_no_timings(tmp_path):
@@ -706,7 +758,8 @@ def test_the_sidecar_leg_and_the_rollup_carry_the_cache_state(tmp_path):
              "error": ""}]
     side = smt.build_sidecar(REPO, "workspaces", OWNER, legs, "T")
     (leg,) = side["legs"]
-    assert leg["cache"] == {"jax": "hit", "datasets": "miss", "epoch": "1"}
+    assert leg["cache"] == {"jax": "hit", "datasets": "miss",
+                            "numba": "hit", "epoch": "1"}
 
     roll = smt.aggregate([side], {}, "T", smt.DEFAULT_SMOKE_TIMINGS_THRESHOLDS)
     assert roll["repos"][0]["cache"] == leg["cache"]
@@ -719,7 +772,8 @@ def test_a_failed_leg_has_no_cache_state_either(tmp_path):
         {"artifact": _selected(), "dir": None, "error": "HTTP 403"},
     ], "T")
     (leg,) = side["legs"]
-    assert leg["cache"] == {"jax": "unknown", "datasets": "unknown", "epoch": ""}
+    assert leg["cache"] == {"jax": "unknown", "datasets": "unknown",
+                            "numba": "unknown", "epoch": ""}
 
 
 def test_drift_is_never_classified_across_two_known_cache_states():
@@ -746,6 +800,25 @@ def test_drift_is_classified_normally_for_equal_or_unknown_cache_states():
                               cache="hit")[0] == "warn"
     assert smt.classify_drift(30.0, dict(_prev_row(10.0), cache_jax="hit"),
                               thr, run_id=7)[0] == "warn"
+
+
+def test_the_drift_rule_can_be_told_which_field_the_baseline_keeps_it_in():
+    """The scripts rows compare on the JAX cache alone (`cache_jax`, the
+    default); the unit rows compare on jax and numba COMBINED and keep that
+    under `cache_state`, because calling a combined state `cache_jax` would
+    name it after half of what it means."""
+    thr = {"slow_factor": 2.0, "min_delta_s": 5}
+    unit_prev = dict(_prev_row(10.0), cache_state="hit")
+    assert smt.classify_drift(30.0, unit_prev, thr, run_id=7, cache="miss",
+                              prev_cache_key="cache_state") == ("ok", None, None)
+    # Read under the DEFAULT key that row does not carry, the same pair
+    # compares normally — which is the point of naming the field explicitly.
+    assert smt.classify_drift(30.0, unit_prev, thr, run_id=7,
+                              cache="miss")[0] == "warn"
+    # Equal states compare normally under either name.
+    same = dict(_prev_row(10.0), cache_state="miss")
+    assert smt.classify_drift(30.0, same, thr, run_id=7, cache="miss",
+                              prev_cache_key="cache_state")[0] == "warn"
 
 
 def test_the_board_fallback_carries_the_cache_state_through(tmp_path):

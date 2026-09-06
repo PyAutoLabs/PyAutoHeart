@@ -1509,11 +1509,11 @@ def test_a_half_written_epoch_is_no_epoch_at_all():
 # same repo can differ by the whole cost of recompiling. A reader looking at a
 # jump needs that beside the seconds, not a click away.
 
-def _cached_scripts_snapshot(jax="hit", **kw):
+def _cached_scripts_snapshot(jax="hit", numba="unknown", **kw):
     slice_ = _smoke_timings_slice(**kw)
     if jax is not None:
         slice_["repos"][0]["cache"] = {"jax": jax, "datasets": "miss",
-                                       "epoch": "1"}
+                                       "numba": numba, "epoch": "1"}
     return make_snapshot(ci_timing=_ci_timing_slice(),
                          no_run_census=_no_run_slice(), smoke_timings=slice_)
 
@@ -1527,6 +1527,23 @@ def test_a_known_cache_state_is_bracketed_on_the_per_repo_line():
         # Everything after the prefix is untouched.
         assert sec.details[0].endswith("imaging/x.py 30s · imaging/y.py 5s"
                                        "  (2 scripts, 35s total)")
+
+
+def test_a_known_numba_state_joins_the_same_bracket():
+    """The gate restores two caches, so the line says both — and stays exactly
+    `[jax cache hit]` for a leg whose numba state is unknown, which is every
+    artifact from before that cache existed."""
+    sec = _section(dashboard.build_board(
+        _cached_scripts_snapshot("hit", numba="miss"), make_verdict(),
+        now=FRESH_NOW), "smoke_timings")
+    assert sec.details[0].startswith("RepoA py3.12 [jax cache hit, numba miss]:")
+    sec = _section(dashboard.build_board(
+        _cached_scripts_snapshot("miss", numba="hit"), make_verdict(),
+        now=FRESH_NOW), "smoke_timings")
+    assert sec.details[0].startswith("RepoA py3.12 [jax cache miss, numba hit]:")
+    # Everything after the prefix is untouched.
+    assert sec.details[0].endswith("imaging/x.py 30s · imaging/y.py 5s"
+                                   "  (2 scripts, 35s total)")
 
 
 def test_an_unknown_or_absent_cache_state_leaves_the_line_unchanged():
@@ -1548,5 +1565,44 @@ def test_the_scripts_block_inherits_the_cache_state_with_no_renderer_change():
     d = json.loads(dashboard.render(_cached_scripts_snapshot("hit"), make_verdict(),
                                     fmt="json", now=FRESH_NOW))
     assert d["performance"]["scripts"]["repos"][0]["cache"] == {
-        "jax": "hit", "datasets": "miss", "epoch": "1"}
+        "jax": "hit", "datasets": "miss", "numba": "unknown", "epoch": "1"}
     assert d["schema_version"] == dashboard.SCHEMA_VERSION   # purely additive
+
+
+# --- the same bracket, on the unit suite line --------------------------------
+# The libraries' gate restores a JAX compile cache and a numba function cache
+# too, so a suite's wall-clock is only readable beside what it ran under.
+
+def _unit_cached_snapshot(cache):
+    slice_ = _unit_timings_slice()
+    if cache is not None:
+        slice_["repos"][0]["cache"] = cache
+    return make_snapshot(unit_test_timing=_legacy_unit(),
+                         import_time=_legacy_import(), unit_timings=slice_)
+
+
+def _unit_line(cache):
+    board = dashboard.build_board(_unit_cached_snapshot(cache), make_verdict(),
+                                  now=FRESH_NOW)
+    return _section(board, "unit_test_timing").details[0]
+
+
+def test_a_known_unit_cache_state_is_bracketed_on_the_suite_line():
+    """Same format as the scripts row, in the shorter wording a unit line can
+    afford — and the numbers after it are untouched."""
+    assert _unit_line({"jax": "hit", "numba": "miss", "epoch": "1"}) == (
+        "RepoA py3.12 [jax hit, numba miss]: 1500 tests 7m  slowest test_x 12.5s")
+    assert _unit_line({"jax": "miss", "numba": "miss", "epoch": "1"}) == (
+        "RepoA py3.12 [jax miss, numba miss]: 1500 tests 7m  slowest test_x 12.5s")
+    # One known half is still worth saying; the unknown half is simply absent.
+    assert _unit_line({"jax": "hit", "numba": "unknown"}) == (
+        "RepoA py3.12 [jax hit]: 1500 tests 7m  slowest test_x 12.5s")
+
+
+def test_an_unknown_or_absent_unit_cache_state_leaves_the_line_unchanged():
+    """A leg from before the sidecar existed renders exactly as it always did —
+    no bracket, and certainly no claim that it ran cold."""
+    unchanged = "RepoA py3.12: 1500 tests 7m  slowest test_x 12.5s"
+    for cache in (None, {}, {"jax": "unknown", "numba": "unknown"},
+                  {"jax": "warm", "numba": None}, "nonsense"):
+        assert _unit_line(cache) == unchanged

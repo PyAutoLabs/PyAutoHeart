@@ -433,6 +433,15 @@ quadrature node.
 | `lib-tests.yml` | has **no** JAX cache, **no** numba cache, and no `NUMBA_CACHE_DIR`. It sets `JAX_ENABLE_X64=True` and runs `pytest --cov <pkg> --cov-report xml --junitxml=…` serially |
 | phase 8 diagnosis | cold numba was "the whole of the 86 s → 18 s step" on a pixelization script; the same class, on the other workflow |
 
+**2026-09-06 correction:** `smoke-tests.yml` cached the JAX compile cache and the
+simulated datasets only; numba was at `/tmp/numba_cache` with no restore and no save, so
+every run recompiled it. PyAutoHeart#215 adds the numba cache to **both** workflows —
+`lib-tests.yml` gains a JAX compile cache and a numba cache with `smoke-tests.yml`'s
+discipline, `smoke-tests.yml` gains the numba half it never had — plus the mtime
+content-stamp that makes it hit: numba stamps each entry with its source's
+`(st_mtime, st_size)`, which a fresh clone or a fresh `pip install` changes, so without
+the stamp a restored numba cache would miss every entry it holds.
+
 ### 5.4 `model.info` / `replace_promise` — agreed, and already fixed
 
 Recorded here because it is the model case of the three sides agreeing. Phase 8 measured

@@ -15,8 +15,9 @@ from __future__ import annotations
 
 import json
 
-from heart import dashboard
+from heart import dashboard, timings
 from heart.checks import import_time as legacy_import
+from heart.checks import smoke_timings as smt
 from heart.checks import unit_test_timing as legacy_unit
 from heart.checks import unit_timings as ut
 
@@ -76,10 +77,32 @@ def _import_json(*, seconds=3.6, returncode=0, schema="import_time/1",
     })
 
 
-def _extracted(tmp_path, *, sub="art", junit=..., imports=...):
+def _cache_state(*, jax_hit=True, numba_hit=False, epoch="1"):
+    """The sidecar `lib-tests.yml` writes: jax and numba, no datasets section.
+
+    The libraries' gate has no dataset cache, so it writes no `datasets`
+    section — and the reader must not turn that into a claim about one.
+    """
+    return json.dumps({
+        "schema": smt.CACHE_STATE_SCHEMA,
+        "epoch": epoch,
+        "jax": {"path": "/w/.pyauto_jax_cache", "hit": jax_hit,
+                "restored_key": "pyauto-jax-...-e1-" if jax_hit else "",
+                "exact": False, "size_mb_before": 40, "size_mb_after": 55,
+                "entries_before": 120, "entries_after": 180},
+        "numba": {"path": "/w/.numba_cache", "hit": numba_hit,
+                  "restored_key": "pyauto-numba-...-e1-" if numba_hit else "",
+                  "exact": False, "size_mb_before": 3, "size_mb_after": 9,
+                  "entries_before": 30, "entries_after": 61},
+    })
+
+
+def _extracted(tmp_path, *, sub="art", junit=..., imports=..., cache=None):
     """An extracted-artifact directory holding either/both dataset files."""
     d = tmp_path / sub
     d.mkdir(parents=True, exist_ok=True)
+    if cache is not None:
+        (d / smt.CACHE_STATE_FILENAME).write_text(cache)
     if junit is ...:
         junit = _junit()
     if imports is ...:
@@ -750,3 +773,92 @@ def test_main_aggregate_compares_only_inside_the_current_epoch(tmp_path,
     assert json.loads(
         (legacy / "import_time.json").read_text())["new_packages_no_baseline"] == 1
     capsys.readouterr()
+
+
+# --- the cache state a suite was measured under ------------------------------
+# `lib-tests.yml` restores a JAX compile cache and a numba function cache and
+# writes the same `cache_state.json` sidecar the smoke gate writes, in the same
+# artifact. A suite that recompiled everything is not a slower suite, it is a
+# differently conditioned one.
+
+def test_a_leg_carries_its_cache_state_when_the_sidecar_rode_along(tmp_path):
+    tests, suite, imported, err, meta = ut.read_downloaded_leg(
+        _extracted(tmp_path, cache=_cache_state(jax_hit=True, numba_hit=False)))
+    # The datasets read is the sidecar's own — the libraries' gate has no such
+    # cache, and the unit consumers do not read that key.
+    assert err == "" and tests and imported is not None
+    assert meta["cache"]["jax"] == "hit" and meta["cache"]["numba"] == "miss"
+    assert meta["cache"]["epoch"] == "1"
+
+
+def test_a_leg_without_the_sidecar_is_unknown_never_a_miss(tmp_path):
+    """Every artifact older than the sidecar. "We do not know" must stay
+    distinguishable from "nothing was restored"."""
+    *_, meta = ut.read_downloaded_leg(_extracted(tmp_path))
+    assert meta["cache"] == {"jax": "unknown", "datasets": "unknown",
+                             "numba": "unknown", "epoch": ""}
+
+
+def test_a_leg_with_neither_dataset_is_still_the_no_dataset_error(tmp_path):
+    """A sidecar with no timings beside it is cache state for a measurement
+    that does not exist: the leg's verdict is unchanged by the addition."""
+    directory = _extracted(tmp_path, junit=None, imports=None,
+                           cache=_cache_state())
+    tests, suite, imported, err, meta = ut.read_downloaded_leg(directory)
+    assert err == ut.NO_DATASET_ERROR
+    assert tests == [] and suite == {} and imported is None and meta == {}
+
+
+def test_the_sidecar_leg_and_the_rollup_carry_the_cache_state(tmp_path):
+    side = _sidecar(tmp_path, cache=_cache_state(jax_hit=True, numba_hit=True))
+    (leg,) = side["legs"]
+    assert leg["cache"]["jax"] == "hit" and leg["cache"]["numba"] == "hit"
+    roll = ut.aggregate([side], "T", THRESHOLDS)
+    assert roll["repos"][0]["cache"] == leg["cache"]
+
+
+def test_a_failed_leg_has_no_cache_state_either(tmp_path):
+    side = ut.build_sidecar(REPO, "libraries", OWNER, [
+        {"artifact": _selected(), "dir": None, "error": "HTTP 403"},
+    ], "T")
+    (leg,) = side["legs"]
+    assert leg["cache"] == {"jax": "unknown", "datasets": "unknown",
+                            "numba": "unknown", "epoch": ""}
+
+
+def test_the_combined_state_is_hit_only_when_both_caches_were():
+    """The truth table the unit drift rule turns on: half-hot against half-cold
+    is not a comparison anybody can read."""
+    assert timings.unit_cache_state({"jax": "hit", "numba": "hit"}) == "hit"
+    assert timings.unit_cache_state({"jax": "miss", "numba": "miss"}) == "miss"
+    for mixed in ({"jax": "hit", "numba": "miss"},
+                  {"jax": "miss", "numba": "hit"},
+                  {"jax": "hit", "numba": "unknown"},
+                  {"jax": "hit"}, {}, None):
+        assert timings.unit_cache_state(mixed) == "unknown", mixed
+
+
+def test_drift_is_never_classified_across_two_known_cache_states(tmp_path):
+    """A cold suite against a hot baseline is a recompile; a hot one against a
+    cold baseline is the cache landing. Neither is a change anybody made."""
+    side = _sidecar(tmp_path,
+                    junit=_junit(_case(time="12.0")),
+                    cache=_cache_state(jax_hit=False, numba_hit=False))
+    hot_prev = {(REPO, "3.12", NODEID): {
+        "seconds": 1.5, "run_id": 6, "run_url": PREV_RUN_URL,
+        "cache_state": "hit"}}
+    (row,) = ut.aggregate([side], "T", THRESHOLDS,
+                          record_prev_rows=hot_prev)["tests"]
+    # 1.5s → 12.0s is an 8x, and it is not reported: the baseline ran hot.
+    assert row["state"] == "ok" and row["ratio"] is None
+
+    # Two cold runs are comparable, and so is a baseline of unknown state.
+    cold_prev = {(REPO, "3.12", NODEID): {
+        "seconds": 1.5, "run_id": 6, "run_url": PREV_RUN_URL,
+        "cache_state": "miss"}}
+    (row,) = ut.aggregate([side], "T", THRESHOLDS,
+                          record_prev_rows=cold_prev)["tests"]
+    assert row["state"] == "warn" and row["ratio"] == 8.0
+    (row,) = ut.aggregate([side], "T", THRESHOLDS,
+                          record_prev_rows=_prev_rows(1.5))["tests"]
+    assert row["state"] == "warn"

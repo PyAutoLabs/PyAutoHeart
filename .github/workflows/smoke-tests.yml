@@ -36,17 +36,22 @@ name: Smoke Tests (reusable)
 #
 # The workflow filename is intentionally stable for downstream callers.
 #
-# TWO CACHES ride this workflow, both added as non-fatal steps and both keyed
+# THREE CACHES ride this workflow, all added as non-fatal steps and all keyed
 # on a manual epoch salt (PYAUTO_CACHE_EPOCH) so all of them can be invalidated
 # at once. The JAX persistent compilation cache is restored and saved per
 # (runner OS x python leg x jaxlib): the runner copies the job env into every
 # script subprocess, so every script's JAX writes to and reads from the one
-# directory named below. The workspace's simulated `dataset/` tree is restored
+# directory named below. The numba on-disk function cache is restored and saved
+# per (runner OS x full python version); numba stamps every entry with its
+# source file's (mtime, size) — which a fresh `pip install` changes — so a
+# `Stamp source mtimes from content` step rewrites every installed .py's mtime
+# as a hash of its CONTENT, and identical content then hits while changed
+# content misses. The workspace's simulated `dataset/` tree is restored
 # and saved per (simulator-script hash x dependency-chain SHAs), with NO
 # broader fallback — a different simulator or library commit must miss rather
-# than restore FITS this run would not have written. Both are measured before
-# and after the run into `test-results/cache_state.json`, the sidecar that
-# rides the smoke-timings artifact: every per-script timing row the Heart
+# than restore FITS this run would not have written. All three are measured
+# before and after the run into `test-results/cache_state.json`, the sidecar
+# that rides the smoke-timings artifact: every per-script timing row the Heart
 # ingests can then say whether that script ran hot or cold, instead of reading
 # a first cache hit as a 4x speedup and its first invalidation as a 4x
 # regression.
@@ -193,9 +198,12 @@ jobs:
           bash workspace/.github/scripts/smoke_install.sh
 
       - name: Resolve cache keys
-        # Three components, each one a thing that MUST invalidate a cache:
+        # Four components, each one a thing that MUST invalidate a cache:
         #   jaxlib — a cached compilation is a jaxlib-specific artefact, so a
         #     jaxlib bump must never read the previous wheel's entries;
+        #   pyfull — the FULL python version, because numba keys every cache
+        #     entry on the directory its source was found in and the
+        #     site-packages path carries the patch version;
         #   chain  — the dependency-chain commit SHAs, because a library commit
         #     can change what a simulator writes into dataset/;
         #   sims   — the hash of every simulator script in the workspace,
@@ -213,9 +221,11 @@ jobs:
           SIMS_HASH: ${{ hashFiles('workspace/**/simulator*.py', 'workspace/**/simulator/**', 'workspace/**/simulators/**') }}
         run: |
           jaxlib="$(python -c 'import jaxlib; print(jaxlib.__version__)' 2>/dev/null || echo nojax)"
+          pyfull="$(python -c 'import sys; print(sys.version.split()[0])')"
           chain="$(for dep in $CHAIN; do git -C "$dep" rev-parse HEAD; done | sha256sum | cut -c1-16)"
           {
             echo "jaxlib=${jaxlib:-nojax}"
+            echo "pyfull=$pyfull"
             echo "chain=$chain"
             echo "sims=$SIMS_HASH"
           } >> "$GITHUB_OUTPUT"
@@ -259,6 +269,23 @@ jobs:
           restore-keys: |
             pyauto-datasets-${{ runner.os }}-e${{ env.PYAUTO_CACHE_EPOCH }}-sim${{ steps.keys.outputs.sims }}-chain${{ steps.keys.outputs.chain }}-
 
+      - name: Restore the numba cache
+        # Same accumulating pattern as the compile cache above, and the prefix
+        # fallback is SAFE for the reason the stamp step below exists: a numba
+        # entry carries its source file's (mtime, size), the stamp makes that
+        # mtime a function of the file's content, so a changed file misses its
+        # own entry however old the restored directory is. That is why this key
+        # names no library commit — and a numba version bump invalidates its own
+        # index format on its own terms.
+        uses: actions/cache/restore@v4
+        id: numba-cache
+        continue-on-error: true
+        with:
+          path: ${{ github.workspace }}/.numba_cache
+          key: pyauto-numba-${{ runner.os }}-py${{ steps.keys.outputs.pyfull }}-e${{ env.PYAUTO_CACHE_EPOCH }}-${{ github.run_id }}
+          restore-keys: |
+            pyauto-numba-${{ runner.os }}-py${{ steps.keys.outputs.pyfull }}-e${{ env.PYAUTO_CACHE_EPOCH }}-
+
       - name: Measure the caches before the run
         # The "before" half of the sidecar: what a restore actually put on disk,
         # as against what the run leaves behind. A missing path measures as
@@ -267,6 +294,7 @@ jobs:
         continue-on-error: true
         env:
           JAX_PATH: ${{ github.workspace }}/.pyauto_jax_cache
+          NUMBA_PATH: ${{ github.workspace }}/.numba_cache
           DS_PATH: workspace/dataset
         run: |
           measure() {
@@ -276,17 +304,86 @@ jobs:
           }
           set -- $(measure "$JAX_PATH")
           jax_mb="$1"; jax_n="$2"
+          set -- $(measure "$NUMBA_PATH")
+          numba_mb="$1"; numba_n="$2"
           set -- $(measure "$DS_PATH")
           ds_mb="$1"; ds_n="$2"
           {
             echo "jax_mb=$jax_mb"
             echo "jax_n=$jax_n"
+            echo "numba_mb=$numba_mb"
+            echo "numba_n=$numba_n"
             echo "ds_mb=$ds_mb"
             echo "ds_n=$ds_n"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Stamp source mtimes from content
+        # numba stamps every cache entry with its source file's
+        # (st_mtime, st_size) and stores it under a directory named for the
+        # source's own directory. The workspace's own `smoke_install.sh` does a
+        # `pip install ./<lib>` per library, which gives every installed .py a
+        # brand-new mtime, so a restored numba cache would miss EVERY entry it
+        # holds — it would cost upload time and buy nothing. This step rewrites
+        # each mtime as a function of the file's CONTENT, so an unchanged file
+        # stamps identically on every runner and a changed one stamps
+        # differently: exactly the invalidation numba wants, expressed in the
+        # one field it already checks.
+        #
+        # Non-fatal like the rest: a file we could not stat or touch costs one
+        # cache entry, never the gate.
+        id: stamp
+        continue-on-error: true
+        env:
+          # Nothing here but the installed packages, found below: the chain is
+          # `pip install`ed by the workspace's epilogue and the runner's own
+          # PYTHONPATH names only PyAutoHands, so the clones are not what the
+          # scripts import. Via env, never interpolated into the script body —
+          # the same house rule the key resolver and the recorder follow.
+          STAMP_DIRS: ""
+        run: |
+          python - <<'PY'
+          import hashlib
+          import importlib.util
+          import os
+          import pathlib
+
+          roots = [pathlib.Path(d) for d in os.environ.get("STAMP_DIRS", "").split()]
+          # The INSTALLED copies, which is what every script imports.
+          # `find_spec` on a top-level name resolves it WITHOUT importing it, so
+          # a package this workspace does not install simply drops out instead
+          # of raising.
+          for pkg in ("autonerves", "autofit", "autoarray", "autogalaxy",
+                      "autolens", "autocti", "autoreduce"):
+              try:
+                  spec = importlib.util.find_spec(pkg)
+              except (ImportError, ValueError):
+                  continue
+              if spec is None:
+                  continue
+              roots.extend(pathlib.Path(p)
+                           for p in (spec.submodule_search_locations or []))
+
+          stamped = 0
+          for root in roots:
+              if not root.is_dir():
+                  continue
+              for path in root.rglob("*.py"):
+                  try:
+                      digest = hashlib.sha1(path.read_bytes()).digest()
+                      mtime = 1_000_000_000 + int.from_bytes(digest[:4], "big")
+                      os.utime(path, (mtime, mtime))
+                  except OSError:
+                      continue
+                  stamped += 1
+          print(f"stamped {stamped} source files under {len(roots)} roots")
+          PY
+
       - name: Prepare cache dirs
-        run: mkdir -p /tmp/numba_cache /tmp/matplotlib
+        # numba's directory is no longer among these: it is the restored and
+        # saved cache above, under the workspace, and the cache action creates
+        # it. Matplotlib's stays — it is scratch, wanted only so the backend
+        # does not try to write into a read-only home.
+        run: mkdir -p /tmp/matplotlib
 
       - name: Validate env profiles (strict — PyAutoHands#161 step 5)
         # Binding PR-time config gate for every workspace that carries a smoke
@@ -324,7 +421,11 @@ jobs:
           # This runner is the other surface that executes workspace scripts
           # under JAX, so it needs the same treatment.
           JAX_TRACEBACK_FILTERING: "off"
-          NUMBA_CACHE_DIR: /tmp/numba_cache
+          # The restored-and-saved directory, not a per-run temporary: the
+          # runner copies this job env into every script subprocess, so all
+          # of them share the one numba cache the steps above and below
+          # carry between runs.
+          NUMBA_CACHE_DIR: ${{ github.workspace }}/.numba_cache
           MPLCONFIGDIR: /tmp/matplotlib
           PYTHONPATH: ${{ github.workspace }}/PyAutoHands/autohands
           # autonerves defaults this to ~/.cache/pyauto_jax when it is unset; an
@@ -368,6 +469,11 @@ jobs:
           JAX_EXACT: ${{ steps.jax-cache.outputs.cache-hit }}
           JAX_MB_BEFORE: ${{ steps.cache-before.outputs.jax_mb }}
           JAX_N_BEFORE: ${{ steps.cache-before.outputs.jax_n }}
+          NUMBA_PATH: ${{ github.workspace }}/.numba_cache
+          NUMBA_KEY_RESTORED: ${{ steps.numba-cache.outputs.cache-matched-key }}
+          NUMBA_EXACT: ${{ steps.numba-cache.outputs.cache-hit }}
+          NUMBA_MB_BEFORE: ${{ steps.cache-before.outputs.numba_mb }}
+          NUMBA_N_BEFORE: ${{ steps.cache-before.outputs.numba_n }}
           DS_PATH: workspace/dataset
           DS_KEY_RESTORED: ${{ steps.dataset-cache.outputs.cache-matched-key }}
           DS_EXACT: ${{ steps.dataset-cache.outputs.cache-hit }}
@@ -423,15 +529,24 @@ jobs:
               env("JAX_EXACT", ""), env("JAX_MB_BEFORE", ""),
               env("JAX_N_BEFORE", ""),
           )
+          numba, numba_changed = section(
+              env("NUMBA_PATH", ""), env("NUMBA_KEY_RESTORED", ""),
+              env("NUMBA_EXACT", ""), env("NUMBA_MB_BEFORE", ""),
+              env("NUMBA_N_BEFORE", ""),
+          )
           datasets, ds_changed = section(
               env("DS_PATH", ""), env("DS_KEY_RESTORED", ""),
               env("DS_EXACT", ""), env("DS_MB_BEFORE", ""),
               env("DS_N_BEFORE", ""),
           )
+          # The schema string does not move: a `numba` section is ADDITIVE, and
+          # an ingest that predates it reads the two sections it knows and the
+          # absence of the third honestly (see heart/checks/smoke_timings.py).
           payload = {
               "schema": "cache_state/1",
               "epoch": env("EPOCH", ""),
               "jax": jax,
+              "numba": numba,
               "datasets": datasets,
           }
           out = Path("workspace/test-results")
@@ -445,6 +560,8 @@ jobs:
               with open(github_output, "a", encoding="utf-8") as handle:
                   handle.write("jax_changed=%s\n"
                                % ("true" if jax_changed else "false"))
+                  handle.write("numba_changed=%s\n"
+                               % ("true" if numba_changed else "false"))
                   handle.write("ds_changed=%s\n"
                                % ("true" if ds_changed else "false"))
           PY
@@ -495,6 +612,17 @@ jobs:
         with:
           path: ${{ github.workspace }}/.pyauto_jax_cache
           key: pyauto-jax-${{ runner.os }}-py${{ matrix.python-version }}-jaxlib${{ steps.keys.outputs.jaxlib }}-e${{ env.PYAUTO_CACHE_EPOCH }}-${{ github.run_id }}
+
+      - name: Save the numba cache
+        # Saved on a red run for the same reason as the compile cache: a numba
+        # cache entry is an index line plus a complete compiled artefact, or it
+        # is absent. Same no-op guard as above.
+        if: always() && steps.cache-state.outputs.numba_changed == 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ github.workspace }}/.numba_cache
+          key: pyauto-numba-${{ runner.os }}-py${{ steps.keys.outputs.pyfull }}-e${{ env.PYAUTO_CACHE_EPOCH }}-${{ github.run_id }}
 
       - name: Save simulated datasets
         # ONLY on a green run, unlike the compile cache above: a simulator
