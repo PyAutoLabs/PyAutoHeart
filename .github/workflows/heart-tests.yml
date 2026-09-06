@@ -29,6 +29,12 @@ on:
   push:
     branches: [main]
   pull_request:
+  # A manual door. Measured 2026-09-05 (PyAutoHeart#209): a PR opened while
+  # main's tip was the daily `[skip ci]` record commit got NO pull_request run
+  # at all, and without this trigger nothing could run the suite on that head
+  # short of pushing to it. Dispatch it on the branch; the check runs land on
+  # the head sha like any other run.
+  workflow_dispatch:
 
 concurrency:
   group: heart-tests-${{ github.ref }}
