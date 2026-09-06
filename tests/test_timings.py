@@ -227,7 +227,7 @@ def test_previous_script_rows_takes_the_latest_line_per_leg_and_drives_drift(tmp
     prev = timings.previous_script_rows(scripts_dir)
     assert prev[("RepoA", "3.12", "imaging/x.py")] == {
         "seconds": 40.0, "run_id": 8, "run_url": RUN_URL,
-        "status": "passed", "cap_s": 600.0,
+        "status": "passed", "cap_s": 600.0, "cache_jax": "unknown",
     }
     assert prev[("RepoA", "3.11", "imaging/x.py")]["seconds"] == 5.0
 
@@ -785,3 +785,64 @@ def test_the_committed_record_carries_exactly_the_legacy_boundary():
     assert epochs[0]["date"] == "2026-09-05" and epochs[0]["label"] == "legacy"
     assert epochs[0]["note"]
     assert len(timings.EPOCHS_FILE.read_text().splitlines()) == 1
+
+
+# --- the cache state a measurement was taken under --------------------------
+# A leg that ran with a restored JAX compile cache and one that recompiled from
+# scratch are not the same measurement. The record stores which it was, because
+# a baseline that cannot say is a baseline nothing can compare against.
+
+def _cached_rollup(jax="hit", datasets="miss", **kw):
+    rollup = _smoke_rollup(**kw)
+    rollup["repos"][0]["cache"] = {"jax": jax, "datasets": datasets, "epoch": "1"}
+    return rollup
+
+
+def test_the_scripts_line_records_the_cache_state_beside_the_seconds():
+    (line,) = timings.scripts_lines_from_rollup(_cached_rollup(), TODAY)["RepoA"]
+    # Two keys, not three: the epoch is a property of the workflow's keys, not
+    # of the measurement.
+    assert line["cache"] == {"jax": "hit", "datasets": "miss"}
+
+
+def test_a_rollup_from_before_the_sidecar_records_unknown_not_a_miss():
+    """Every rollup older than the cache work. "We do not know" must stay
+    distinguishable from "nothing was restored"."""
+    (line,) = timings.scripts_lines_from_rollup(_smoke_rollup(), TODAY)["RepoA"]
+    assert line["cache"] == {"jax": "unknown", "datasets": "unknown"}
+    junk = _smoke_rollup()
+    junk["repos"][0]["cache"] = {"jax": "warm", "datasets": None}
+    (line,) = timings.scripts_lines_from_rollup(junk, TODAY)["RepoA"]
+    assert line["cache"] == {"jax": "unknown", "datasets": "unknown"}
+
+
+def test_previous_script_rows_hands_the_cache_state_to_the_drift_rule(tmp_path):
+    scripts_dir = tmp_path / "scripts"
+    path = timings.scripts_file("RepoA", tmp_path)
+    timings.append_scripts(path, timings.scripts_lines_from_rollup(
+        _cached_rollup(jax="hit", seconds=10.0), TODAY)["RepoA"])
+    prev = timings.previous_script_rows(scripts_dir)
+    row = prev[("RepoA", "3.12", "imaging/x.py")]
+    assert row["cache_jax"] == "hit"
+    # 10s → 30s is a 3x, and it is not reported: the baseline ran hot.
+    thr = {"slow_factor": 2.0, "min_delta_s": 5}
+    assert smoke_timings.classify_drift(30.0, row, thr, run_id=9,
+                                        cache="miss") == ("ok", None, None)
+    assert smoke_timings.classify_drift(30.0, row, thr, run_id=9,
+                                        cache="hit")[0] == "warn"
+
+
+def test_a_legacy_record_line_reads_unknown_and_compares_as_it_always_did(tmp_path):
+    """The record is append-only and full of lines written before this field
+    existed; they must keep comparing exactly as they did."""
+    scripts_dir = tmp_path / "scripts"
+    path = timings.scripts_file("RepoA", tmp_path)
+    (line,) = timings.scripts_lines_from_rollup(_smoke_rollup(seconds=10.0),
+                                                TODAY)["RepoA"]
+    line.pop("cache")
+    timings.append_scripts(path, [line])
+    row = timings.previous_script_rows(scripts_dir)[("RepoA", "3.12", "imaging/x.py")]
+    assert row["cache_jax"] == "unknown"
+    thr = {"slow_factor": 2.0, "min_delta_s": 5}
+    assert smoke_timings.classify_drift(30.0, row, thr, run_id=9,
+                                        cache="hit")[0] == "warn"

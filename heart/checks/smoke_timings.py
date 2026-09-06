@@ -53,6 +53,13 @@ Deliberate choices, each one a recorded lesson:
   keyed by ``(python, run_id)``; the published board is the same artifact this
   render produces, so a Pages gap loses it. The board stays as the fallback,
   and the ``performance.scripts.rows`` block is written either way.
+* **Drift is never classified across two known but different cache states.**
+  The smoke workflow restores a JAX compile cache and the simulated datasets,
+  and writes ``cache_state.json`` beside the timings dataset in the same
+  artifact. A cold run against a hot baseline is a recompile and a hot run
+  against a cold one is the cache landing; neither is a change anybody made, so
+  both yield ``ok`` with no ratio. An ``unknown`` on either side — every
+  artifact older than the sidecar — compares exactly as it always did.
 * **Drift is advisory.** Rows are ``ok`` or ``warn``, never ``fail``; only
   TIMEOUT entries are hard rows. The readiness verdict is untouched — this is
   a dashboard leg, not a gate.
@@ -73,6 +80,7 @@ Per-repo sidecar schema (``<name>.smoke_timings.json``)::
          "head_branch": "feat/x", "head_sha": "abc...",
          "at": "2026-09-01T10:00:00Z",   # the artifact's created_at
          "env_profile": "smoke", "error": "",
+         "cache": {"jax": "hit", "datasets": "miss", "epoch": "1"},
          "entries": [{"entry": "imaging/x.py", "kind": "script",
                       "status": "passed", "seconds": 12.5, "cap_s": 600.0,
                       "exit_code": 0}],
@@ -86,11 +94,11 @@ Global rollup schema (``smoke_timings.json``)::
 
     {"ts",
      "repos":  [{repo, python, run_id, run_url, head_branch, head_sha,
-                 env_profile, at, entries, timed, total_s, error,
+                 env_profile, cache, at, entries, timed, total_s, error,
                  slowest: [...]}],
      "rows":   [{repo, python, entry, kind, status, seconds, cap_s, exit_code,
-                 run_id, run_url, prev_s, prev_run_id, ratio, delta_s, state,
-                 prompt}],
+                 run_id, run_url, prev_s, prev_run_id, cache_jax,
+                 prev_cache_jax, ratio, delta_s, state, prompt}],
      "slowed": [...], "events": [...], "errors": [{repo, error}],
      "thresholds": {...}}
 
@@ -125,6 +133,19 @@ ARTIFACT_RE = re.compile(r"^smoke-timings-(\d+\.\d+)$")
 
 TIMINGS_FILENAME = "smoke_timings.json"
 TIMINGS_SCHEMA = "smoke_timings/1"
+
+# The cache-state sidecar the smoke workflow writes beside the timings dataset
+# and uploads in the same artifact: whether this leg ran with a restored JAX
+# compile cache and a restored dataset tree, or cold. A run that recompiled
+# everything is not a slower run, it is a differently-conditioned one.
+CACHE_STATE_FILENAME = "cache_state.json"
+CACHE_STATE_SCHEMA = "cache_state/1"
+
+# What every consumer sees when no sidecar rode along: not "miss", which would
+# be a claim, but "unknown", which is the honest absence. Older artifacts
+# predate the sidecar entirely and must keep comparing exactly as they did.
+UNKNOWN_CACHE_STATE = "unknown"
+CACHE_STATES = ("hit", "miss")
 
 # Statuses the producer emits; counted per leg so the coverage behind a total
 # stays visible next to it.
@@ -300,7 +321,85 @@ def parse_timings(text: str) -> tuple[dict[str, Any] | None, str]:
     )
 
 
-def read_downloaded_leg(directory: Path | str) -> tuple[list[dict[str, Any]], str, dict[str, str]]:
+def parse_cache_state(text: str) -> tuple[dict[str, Any] | None, str]:
+    """One ``cache_state.json`` → (state, "") or (None, reason).
+
+    The same defensive shape as ``parse_timings``: the file is written by
+    another organ on a runner we do not control, so a surprising value degrades
+    to a miss rather than raising out of an unattended check. A section is a
+    ``hit`` exactly when it says so — an absent or malformed section is a miss,
+    because the workflow writes both sections on every run and their absence is
+    not evidence that anything was restored.
+    """
+    try:
+        data = json.loads(text)
+    except (TypeError, ValueError):
+        return None, f"{CACHE_STATE_FILENAME} was not valid JSON"
+    if not isinstance(data, dict):
+        return None, f"{CACHE_STATE_FILENAME} was not an object"
+    if str(data.get("schema") or "") != CACHE_STATE_SCHEMA:
+        return None, f"not a {CACHE_STATE_SCHEMA} sidecar"
+
+    def _section(key: str) -> tuple[str, str]:
+        block = data.get(key)
+        block = block if isinstance(block, dict) else {}
+        return ("hit" if block.get("hit") else "miss",
+                str(block.get("restored_key") or ""))
+
+    jax_state, jax_key = _section("jax")
+    ds_state, ds_key = _section("datasets")
+    return (
+        {
+            "jax": jax_state,
+            "datasets": ds_state,
+            # The manual salt in force. A bump means every key changed at once,
+            # so a miss on both sides is expected rather than a finding.
+            "epoch": str(data.get("epoch") or ""),
+            "jax_restored_key": jax_key,
+            "datasets_restored_key": ds_key,
+        },
+        "",
+    )
+
+
+def cache_view(cache: Any) -> dict[str, str]:
+    """A cache state normalised to the three keys every consumer carries.
+
+    Anything that is not one of the two known states reads ``unknown``: a leg
+    from before the sidecar existed, a truncated file, a future schema. The
+    epoch rides along because a comparison across an epoch bump is comparing
+    two different worlds, and the reader needs to be able to see that.
+    """
+    src = cache if isinstance(cache, dict) else {}
+
+    def _state(key: str) -> str:
+        value = str(src.get(key) or "")
+        return value if value in CACHE_STATES else UNKNOWN_CACHE_STATE
+
+    return {"jax": _state("jax"), "datasets": _state("datasets"),
+            "epoch": str(src.get("epoch") or "")}
+
+
+def read_cache_state(directory: Path | str) -> dict[str, str]:
+    """The first parseable ``cache_state.json`` under one extracted artifact.
+
+    Sorted path order, first file that parses wins — the same rule the timings
+    datasets merge under, so an artifact carrying several report dirs resolves
+    deterministically. No sidecar at all is ``unknown``, never a miss.
+    """
+    for path in sorted(Path(directory).rglob(CACHE_STATE_FILENAME)):
+        try:
+            text = path.read_text()
+        except OSError:
+            continue
+        state, err = parse_cache_state(text)
+        if state is None or err:
+            continue
+        return cache_view(state)
+    return cache_view(None)
+
+
+def read_downloaded_leg(directory: Path | str) -> tuple[list[dict[str, Any]], str, dict[str, Any]]:
     """Every ``smoke_timings.json`` under one extracted artifact → (entries, error, meta).
 
     An artifact may hold more than one dataset (a report dir per project, the
@@ -313,10 +412,14 @@ def read_downloaded_leg(directory: Path | str) -> tuple[list[dict[str, Any]], st
     unreadable get the SAME honest error: what we have is no usable dataset
     either way, and the leg keeps its provenance so the board can say which run
     it could not read.
+
+    ``meta["cache"]`` is the leg's cache state, read from the ``cache_state.json``
+    sidecar the workflow uploads in the same artifact — ``unknown`` on both
+    sides when no sidecar rode along, which is every artifact older than it.
     """
     root = Path(directory)
     entries: dict[str, dict[str, Any]] = {}
-    meta: dict[str, str] = {}
+    meta: dict[str, Any] = {}
     for path in sorted(root.rglob(TIMINGS_FILENAME)):
         try:
             text = path.read_text()
@@ -335,6 +438,7 @@ def read_downloaded_leg(directory: Path | str) -> tuple[list[dict[str, Any]], st
             entries.setdefault(entry["entry"], entry)
     if not entries and not meta:
         return [], NO_DATASET_ERROR, {}
+    meta["cache"] = read_cache_state(root)
     return [entries[key] for key in sorted(entries)], "", meta
 
 
@@ -425,7 +529,7 @@ def build_sidecar(
         )
         leg_error = str(leg.get("error") or "")
         entries: list[dict[str, Any]] = []
-        meta: dict[str, str] = {}
+        meta: dict[str, Any] = {}
         if not leg_error:
             directory = leg.get("dir")
             if directory:
@@ -444,6 +548,9 @@ def build_sidecar(
                 "head_sha": str(art.get("head_sha") or ""),
                 "at": str(art.get("created_at") or ""),
                 "env_profile": meta.get("env_profile", ""),
+                # Whether this leg ran hot or cold. A leg we could not read has
+                # no cache state either — "unknown", not a fabricated miss.
+                "cache": cache_view(meta.get("cache")),
                 "error": leg_error,
                 "entries": entries,
                 "counts": counts,
@@ -465,6 +572,9 @@ def prev_rows_of(prev_board: Any) -> dict[tuple[str, str, str], dict[str, Any]]:
     Anything unexpected (a 404 page, an older board with no scripts block, a
     rows list of nulls) degrades to no previous observation: a publish gap
     costs a comparison, never a render.
+
+    The row is carried WHOLE, so ``cache_jax`` reaches ``classify_drift`` with
+    it on this fallback path exactly as it does on the committed-record path.
     """
     out: dict[tuple[str, str, str], dict[str, Any]] = {}
     if not isinstance(prev_board, dict):
@@ -496,6 +606,7 @@ def classify_drift(
     prev_row: Any,
     thresholds: dict[str, float],
     run_id: Any = None,
+    cache: Any = None,
 ) -> tuple[str, float | None, float | None]:
     """(state, ratio, delta_s) — ``warn`` needs BOTH gates, else ``ok``.
 
@@ -504,6 +615,14 @@ def classify_drift(
     render, so a second render of the same day sees the same run's rows, and
     comparing a run against itself would report a reassuring 1.0× that means
     nothing. Never ``fail`` — a slowed script is advisory by construction.
+
+    ``cache`` is THIS run's JAX cache state (``"hit"``/``"miss"``/``"unknown"``)
+    and is compared against the previous row's ``cache_jax``. Two KNOWN and
+    DIFFERENT states are not a comparison: a cold run against a hot baseline is
+    a recompile, and a hot run against a cold one is the cache landing. Neither
+    is a change anybody made, and reporting either as drift would cry wolf on
+    exactly the runs where the cache is doing its job. An unknown on either
+    side compares as it always did — every artifact older than the sidecar.
     """
     now = _as_float(seconds)
     if not isinstance(prev_row, dict):
@@ -513,6 +632,11 @@ def classify_drift(
         return "ok", None, None
     prev_run = prev_row.get("run_id")
     if run_id is not None and prev_run is not None and prev_run == run_id:
+        return "ok", None, None
+    now_cache = str(cache or "")
+    prev_cache = str(prev_row.get("cache_jax") or "")
+    if (now_cache in CACHE_STATES and prev_cache in CACHE_STATES
+            and now_cache != prev_cache):
         return "ok", None, None
     ratio = round(now / prev, 2)
     delta = round(now - prev, 1)
@@ -568,6 +692,7 @@ def aggregate(
             run_url = str(leg.get("run_url") or "")
             at = str(leg.get("at") or "")
             leg_error = str(leg.get("error") or "")
+            leg_cache = cache_view(leg.get("cache"))
             if leg_error:
                 # Provenance survives: which run we could not read, and why.
                 errors.append({"repo": repo, "error": f"{python or '?'}: {leg_error}"})
@@ -595,7 +720,10 @@ def aggregate(
                     # `null` means the entry never ran. Not a zero-second row.
                     continue
                 prev_row = prev_rows.get((repo, python, name))
-                state, ratio, delta = classify_drift(seconds, prev_row, thr, run_id=run_id)
+                state, ratio, delta = classify_drift(
+                    seconds, prev_row, thr, run_id=run_id,
+                    cache=leg_cache["jax"],
+                )
                 prev_s = _as_float((prev_row or {}).get("seconds"))
                 prev_run_id = (prev_row or {}).get("run_id")
                 prev_run_url = str((prev_row or {}).get("run_url") or "")
@@ -612,6 +740,12 @@ def aggregate(
                     "run_url": run_url,
                     "prev_s": prev_s,
                     "prev_run_id": prev_run_id,
+                    # Both sides of the cache comparison ride the row, so the
+                    # next render reads back the state its baseline was
+                    # measured under instead of re-deriving it.
+                    "cache_jax": leg_cache["jax"],
+                    "prev_cache_jax": str((prev_row or {}).get("cache_jax")
+                                          or UNKNOWN_CACHE_STATE),
                     "ratio": ratio,
                     "delta_s": delta,
                     "state": state,
@@ -632,6 +766,7 @@ def aggregate(
                 # commit was measured, and under which environment profile.
                 "head_sha": str(leg.get("head_sha") or ""),
                 "env_profile": str(leg.get("env_profile") or ""),
+                "cache": leg_cache,
                 "at": at,
                 "entries": len(entries),
                 "timed": timed if timed is not None else len(leg_rows),

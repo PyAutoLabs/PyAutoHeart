@@ -1102,7 +1102,15 @@ def _smoke_timings_section(st: dict, repos: list[dict], rows: list[dict],
         # Coverage beside time, always: a leg that got faster by running less
         # must not read as a leg that got faster.
         tail = f"({_as_int(r.get('timed'))} scripts, {_dur(r.get('total_s'))} total)"
-        prefix = f"{r.get('repo')} py{r.get('python') or '?'}:"
+        # Hot or cold, said on the line the numbers are on: a leg that ran with
+        # a restored JAX compile cache is not comparable to one that recompiled,
+        # and a reader looking at a jump needs that beside the seconds rather
+        # than a click away. Said only when it is KNOWN — a leg from before the
+        # cache-state sidecar existed renders exactly as it always did.
+        cache = r.get("cache") if isinstance(r.get("cache"), dict) else {}
+        jax = str(cache.get("jax") or "")
+        bracket = f" [jax cache {jax}]" if jax in ("hit", "miss") else ""
+        prefix = f"{r.get('repo')} py{r.get('python') or '?'}{bracket}:"
         details.append(f"{prefix} {head}  {tail}" if head else f"{prefix} {tail}")
     # Same as the gate row: how much durable history stands behind the
     # run-to-run comparisons. Absent census adds no line at all.
