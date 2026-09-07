@@ -826,6 +826,39 @@ def test_a_rollup_from_before_the_sidecar_records_unknown_not_a_miss():
                              "numba": "unknown"}
 
 
+# --- the gate's fixed overhead, recorded beside the seconds -----------------
+# A fifth of every `_test` leg is spent before the first script runs. The
+# record carries it so a leg whose total fell while its setup rose cannot read
+# as a leg that got faster.
+
+def test_the_scripts_line_records_the_setup_seconds_beside_the_cache():
+    rollup = _cached_rollup()
+    rollup["repos"][0]["cache"]["setup_s"] = 104.0
+    (line,) = timings.scripts_lines_from_rollup(rollup, TODAY)["RepoA"]
+    assert line["setup_s"] == 104.0
+    # Beside `cache`, not inside it: `cache` says what the measurement was
+    # taken UNDER and every value in it is a state string; this is a
+    # measurement of its own, of the part no script is responsible for.
+    assert "setup_s" not in line["cache"]
+
+
+def test_a_line_whose_rollup_never_measured_the_setup_records_null():
+    """Every rollup older than the mark steps, and every leg whose marks did
+    not survive. A fabricated 0 would claim a gate with no fixed cost."""
+    (line,) = timings.scripts_lines_from_rollup(_smoke_rollup(), TODAY)["RepoA"]
+    assert line["setup_s"] is None
+    for junk in ("104", True, -5, float("nan"), None):
+        rollup = _cached_rollup()
+        rollup["repos"][0]["cache"]["setup_s"] = junk
+        (line,) = timings.scripts_lines_from_rollup(rollup, TODAY)["RepoA"]
+        assert line["setup_s"] is None, junk
+    # Zero is a reading, not an absence.
+    rollup = _cached_rollup()
+    rollup["repos"][0]["cache"]["setup_s"] = 0
+    (line,) = timings.scripts_lines_from_rollup(rollup, TODAY)["RepoA"]
+    assert line["setup_s"] == 0.0
+
+
 # --- the unit record: jax and numba, combined --------------------------------
 # A library suite is conditioned by two caches at once, so a comparison is only
 # safe when both sides ran the same way — and the combined state has its own

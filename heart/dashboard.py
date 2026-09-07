@@ -360,6 +360,24 @@ def _dur(seconds: Any) -> str:
 UNIT_DETAIL_CAP = 6
 
 
+def _setup_seconds(cache):
+    """A leg's measured setup seconds out of its cache block, or ``None``.
+
+    The block is read straight off the published board or a fresh snapshot, so
+    it may be anything at all: only a finite non-negative number is a
+    measurement, and everything else — absent, a string, a bool — is the
+    honest unknown that renders nothing.
+    """
+    src = cache if isinstance(cache, dict) else {}
+    value = src.get("setup_s")
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    seconds = float(value)
+    if seconds != seconds or seconds in (float("inf"), float("-inf")):
+        return None
+    return seconds if seconds >= 0 else None
+
+
 def _cache_bracket(cache: Any, jax_label: str = "jax") -> str:
     """`` [jax hit, numba miss]`` for the states that are KNOWN, else ``""``.
 
@@ -1128,6 +1146,16 @@ def _smoke_timings_section(st: dict, repos: list[dict], rows: list[dict],
         # Coverage beside time, always: a leg that got faster by running less
         # must not read as a leg that got faster.
         tail = f"({_as_int(r.get('timed'))} scripts, {_dur(r.get('total_s'))} total)"
+        # The fixed overhead the scripts are not responsible for: checkout,
+        # dependency-chain clone, python setup, install. It sits after the
+        # coverage tail because it is not part of it — a leg whose total fell
+        # while its setup rose has not got faster. Rendered ONLY when the
+        # sidecar measured it; a leg from an emitter that did not (every
+        # artifact from before the marks existed) reads exactly as it always
+        # did, with no line about a number nobody took.
+        setup_s = _setup_seconds(r.get("cache"))
+        if setup_s is not None:
+            tail = f"{tail} · setup {_as_int(setup_s)}s"
         # Hot or cold, said on the line the numbers are on. `[jax cache hit]`
         # for a leg whose numba state is unknown — every artifact from before
         # that cache existed, rendering exactly as it always did — and

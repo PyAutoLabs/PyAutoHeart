@@ -65,7 +65,12 @@ Deliberate choices, each one a recorded lesson:
   The sidecar carries one section per cache (``jax``, ``numba``, ``datasets``),
   each ``{"hit", "exact", "restored_key", "size_mb_before/after",
   "entries_before/after"}``, plus the ``epoch`` salt those keys were built
-  with. ``jax`` and ``datasets`` have been written on every run since the
+  with and ``setup_s`` — the seconds from job start to the first script, i.e.
+  this gate's FIXED overhead (checkout, dependency-chain clone, python setup,
+  install), measured by the workflow's two mark steps and differenced by its
+  recorder. It rides here rather than in the timings dataset because it is a
+  property of the leg, not of any script in it, and because it is the number
+  the cache work is judged on. ``null``/absent is ``None``, never 0. ``jax`` and ``datasets`` have been written on every run since the
   sidecar existed, so a MISSING section of either is a miss; ``numba`` was
   added later, so a missing ``numba`` section is ``unknown`` — an older
   emitter, not a run that restored nothing. Which cache a comparison turns on
@@ -337,6 +342,22 @@ def parse_timings(text: str) -> tuple[dict[str, Any] | None, str]:
     )
 
 
+def _setup_seconds(value: Any) -> float | None:
+    """A sidecar's ``setup_s`` as a float, or ``None`` for every other reading.
+
+    Written by another organ on a runner we do not control, so the same
+    defensive shape as everything else here: a bool, a string, a NaN, a
+    negative difference or an absent field are all "we do not know how long
+    this leg spent getting ready", which is exactly what ``None`` says.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    seconds = float(value)
+    if seconds != seconds or seconds in (float("inf"), float("-inf")):
+        return None
+    return seconds if seconds >= 0 else None
+
+
 def parse_cache_state(text: str) -> tuple[dict[str, Any] | None, str]:
     """One ``cache_state.json`` → (state, "") or (None, reason).
 
@@ -354,6 +375,12 @@ def parse_cache_state(text: str) -> tuple[dict[str, Any] | None, str]:
     ``unknown``. Reading it as a miss would date-stamp every pre-numba artifact
     as cold and quietly suppress the drift comparisons those legs can still
     make.
+
+    ``setup_s`` follows the same additive rule and the same honesty: a float
+    when the emitter measured the gate's fixed overhead, ``None`` when it did
+    not (an older emitter, a mark step that could not write) or when the value
+    is not a finite non-negative number. Never 0 — a gate with no fixed cost is
+    not a thing that happens, so a fabricated zero would be a claim.
     """
     try:
         data = json.loads(text)
@@ -385,6 +412,7 @@ def parse_cache_state(text: str) -> tuple[dict[str, Any] | None, str]:
             "jax": jax_state,
             "datasets": ds_state,
             "numba": numba_state,
+            "setup_s": _setup_seconds(data.get("setup_s")),
             # The manual salt in force. A bump means every key changed at once,
             # so a miss on both sides is expected rather than a finding.
             "epoch": str(data.get("epoch") or ""),
@@ -396,8 +424,8 @@ def parse_cache_state(text: str) -> tuple[dict[str, Any] | None, str]:
     )
 
 
-def cache_view(cache: Any) -> dict[str, str]:
-    """A cache state normalised to the four keys every consumer carries.
+def cache_view(cache: Any) -> dict[str, Any]:
+    """A cache state normalised to the five keys every consumer carries.
 
     Anything that is not one of the two known states reads ``unknown``: a leg
     from before the sidecar existed, a truncated file, a future schema, a
@@ -409,6 +437,11 @@ def cache_view(cache: Any) -> dict[str, str]:
     workflow has no dataset cache at all: it is the sidecar's own reading, and
     the unit consumers simply do not read that key (see
     ``heart.timings.unit_cache_state``).
+
+    ``setup_s`` rides the same block for the same reason the states do — it is
+    a property of the leg, taken at the same moment, by the same emitter — and
+    is ``None`` wherever it is absent or unreadable. It is the only non-string
+    value here, so a consumer that renders this block reads it by name.
     """
     src = cache if isinstance(cache, dict) else {}
 
@@ -417,10 +450,11 @@ def cache_view(cache: Any) -> dict[str, str]:
         return value if value in CACHE_STATES else UNKNOWN_CACHE_STATE
 
     return {"jax": _state("jax"), "datasets": _state("datasets"),
-            "numba": _state("numba"), "epoch": str(src.get("epoch") or "")}
+            "numba": _state("numba"), "epoch": str(src.get("epoch") or ""),
+            "setup_s": _setup_seconds(src.get("setup_s"))}
 
 
-def read_cache_state(directory: Path | str) -> dict[str, str]:
+def read_cache_state(directory: Path | str) -> dict[str, Any]:
     """The first parseable ``cache_state.json`` under one extracted artifact.
 
     Sorted path order, first file that parses wins — the same rule the timings

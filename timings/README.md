@@ -63,7 +63,7 @@ joined to its `rows` (the timed entries):
 {"date":"2026-09-05","at":"2026-09-04T10:00:00Z","python":"3.12","run_id":7,
  "run_url":"https://ci.invalid/OwnerX/RepoA/actions/runs/7",
  "head_branch":"feat/x","head_sha":"abc123","env_profile":"smoke",
- "cache":{"jax":"hit","datasets":"miss","numba":"hit"},
+ "cache":{"jax":"hit","datasets":"miss","numba":"hit"},"setup_s":104,
  "entries":{"imaging/x.py":[12.5,"passed",600.0]}}
 ```
 
@@ -98,6 +98,20 @@ joined to its `rows` (the timed entries):
   > crying wolf on exactly the runs where the cache is doing its job. An
   > `unknown` on either side compares exactly as it did before the field
   > existed.
+* **`setup_s` is the gate's FIXED overhead**, in seconds: job start to the
+  first script — checkout, dependency-chain clone, python setup, install —
+  read from the same `cache_state.json` sidecar, which gets it by differencing
+  two `date +%s` marks the smoke workflow writes at the top of the job and
+  immediately before the runner. It sits beside `cache` rather than inside it
+  because `cache` says what a measurement was taken *under* and every value in
+  it is a state string; this is a measurement of its own, of the part of the
+  gate no script is responsible for. It is what makes a leg whose `total_s`
+  fell while its install got slower readable as what it is.
+
+  `null` for every line recorded before the marks existed, and for every leg
+  where either mark did not survive — **never 0**, which would claim a gate
+  that spent no time getting ready. The board renders it as `· setup 104s`
+  after the coverage tail, and only when it is known.
 
 ### `unit/<repo>.jsonl` — one line per leg per run
 

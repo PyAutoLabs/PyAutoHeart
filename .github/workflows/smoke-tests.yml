@@ -55,6 +55,21 @@ name: Smoke Tests (reusable)
 # ingests can then say whether that script ran hot or cold, instead of reading
 # a first cache hit as a 4x speedup and its first invalidation as a 4x
 # regression.
+#
+# A FOURTH cache, and the same rules: pip's own wheel cache under ~/.cache/pip.
+# It is what the FIXED overhead of this gate is made of. Measured over the six
+# most recent smoke runs of one `_test` workspace (12 legs), the seconds spent
+# before the first script runs are 104 s mean = 22.6% of the job, and inside
+# that: install 83.6 s (80%), the dependency-chain clone 16.5 s (16%),
+# everything else ~4 s. So the clones below are `--depth 1` and the wheels the
+# install downloads are cached across runs. The PyAuto libraries themselves
+# stay SOURCE installs from those clones — the wheels being cached are the
+# third-party ones underneath them (jax, numpy, scipy, matplotlib, astropy).
+#
+# That overhead is now DATA, not a thing to re-measure by hand: `setup_s` in
+# the sidecar is job start -> first script, stamped by the two `Mark ...` steps
+# below and differenced by the recorder. `null` when either mark is missing —
+# an unknown, never a fabricated zero.
 
 on:
   workflow_call:
@@ -155,23 +170,51 @@ jobs:
       matrix:
         python-version: ${{ fromJSON(inputs.python-versions) }}
     steps:
+      # The first half of `setup_s`: the wall clock at the top of the job,
+      # before anything this workflow does. Differenced against the second mark
+      # (immediately before the runner) by the recorder below, so how long this
+      # gate spends getting ready is a measured field in the sidecar rather
+      # than something a human re-derives from the Actions UI every time.
+      #
+      # Non-fatal and env-free, like the other measurement steps: a mark we
+      # could not write costs one `null` in the sidecar, never the gate.
+      - name: Mark job start
+        continue-on-error: true
+        shell: bash
+        run: date +%s > "$RUNNER_TEMP/job_start"
+
       - name: Checkout workspace (repo under test, at the PR ref)
         uses: actions/checkout@v4
         with:
           path: workspace
 
       - name: Clone dependency chain + PyAutoHands (matching branch if it exists)
+        # DEPTH 1, on the clone and on the matching-branch fetch alike: nothing
+        # downstream reads this history. The libraries are `pip install`ed from
+        # these trees by the workspace's own epilogue, their version comes from
+        # `setup.py`'s VERSION env default rather than from `git describe`, and
+        # the only other reader is `Resolve cache keys`, whose
+        # `git -C "$dep" rev-parse HEAD` answers on a shallow clone exactly as
+        # it does on a full one.
+        #
+        # The matching-branch fallback is UNCHANGED in meaning — a library PR
+        # must still be tested against its workspace — but a shallow clone is
+        # single-branch, so there is no `origin/$BRANCH` for `git checkout` to
+        # DWIM from and `checkout "$BRANCH"` fails with `did not match any
+        # file(s) known to git`. `--depth 1` fetch + `checkout -B "$BRANCH"
+        # FETCH_HEAD` is the sequence that works, verified against a scratch
+        # shallow clone.
         shell: bash
         run: |
           set -e
           BRANCH="${{ github.head_ref || github.ref_name }}"
           OWNER="${{ github.repository_owner }}"
           for dep in ${{ inputs.chain }} PyAutoHands; do
-            git clone "https://github.com/$OWNER/$dep" "$dep"
+            git clone --depth 1 "https://github.com/$OWNER/$dep" "$dep"
             if git -C "$dep" ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
               echo "Branch $BRANCH exists in $dep — checking it out"
-              git -C "$dep" fetch origin "$BRANCH"
-              git -C "$dep" checkout "$BRANCH"
+              git -C "$dep" fetch --depth 1 origin "$BRANCH"
+              git -C "$dep" checkout -B "$BRANCH" FETCH_HEAD
             fi
           done
 
@@ -179,6 +222,46 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+
+      - name: Restore the pip wheel cache
+        # The biggest single piece of this gate's fixed cost: the install step
+        # below is ~84 s per leg and almost all of it is PyPI download +
+        # wheel-build for the third-party stack under the PyAuto libraries
+        # (jax, numpy, scipy, matplotlib, astropy...). `~/.cache/pip` is where
+        # pip keeps those, so restoring it turns most of that step into a local
+        # copy. The PyAuto libraries themselves are unaffected: the epilogue
+        # `pip install ./<lib>`s them from the clones above, which pip does not
+        # cache, so a source install stays a source install.
+        #
+        # `actions/cache@v4` rather than `setup-python`'s own `cache: pip`, for
+        # three reasons, all of them properties this file already holds:
+        #   1. NON-FATAL. Eleven required checks ride this workflow and every
+        #      cache step here is `continue-on-error: true`. A `cache:` inside
+        #      setup-python cannot be, and a `cache-dependency-path` that
+        #      matches NO file is a hard error in that action ("No file in ...
+        #      matched to [...]") — while the chain is a caller-supplied input,
+        #      so the set of files that will exist is not this file's to know.
+        #   2. The EPOCH SALT. Every cache here is keyed on
+        #      PYAUTO_CACHE_EPOCH so all of them invalidate in one edit;
+        #      setup-python's key is its own and cannot carry it.
+        #   3. One key shape, read the same way as the other three.
+        #
+        # Keyed on the CONTENT of the dependency declarations (the libraries
+        # ship their dependencies in `pyproject.toml`, not in a requirements
+        # file — the globs below name both shapes plus any the workspace
+        # carries), so a dependency change misses and everything else hits.
+        # `hashFiles()` returns "" when nothing matches, which is a constant
+        # key rather than an error; the prefix fallback then carries the run.
+        # This step is AFTER the clone above, so the chain's files exist when
+        # the expression resolves.
+        uses: actions/cache@v4
+        id: pip-cache
+        continue-on-error: true
+        with:
+          path: ~/.cache/pip
+          key: pyauto-pip-${{ runner.os }}-py${{ matrix.python-version }}-e${{ env.PYAUTO_CACHE_EPOCH }}-${{ hashFiles('*/pyproject.toml', '*/setup.py', 'workspace/requirements*.txt', 'workspace/**/requirements*.txt') }}
+          restore-keys: |
+            pyauto-pip-${{ runner.os }}-py${{ matrix.python-version }}-e${{ env.PYAUTO_CACHE_EPOCH }}-
 
       # arcticpy is a stack-level system dependency with a fiddly, easy-to-drift
       # build recipe — it belongs to Heart, not to each workspace's epilogue.
@@ -412,6 +495,16 @@ jobs:
             echo "No config/build/profile_smoke.yaml — profile validation skipped."
           fi
 
+      # The second half of `setup_s`. Placed IMMEDIATELY before the runner and
+      # nowhere else: the runner step's own command is the one thing in this
+      # workflow that must stay byte-identical (a workspace owns its runner),
+      # so the mark cannot live inside it and every step between the two marks
+      # is honestly part of the setup being measured.
+      - name: Mark scripts start
+        continue-on-error: true
+        shell: bash
+        run: date +%s > "$RUNNER_TEMP/scripts_start"
+
       - name: Run the workspace runner (the smoke runner by default)
         env:
           JAX_ENABLE_X64: "True"
@@ -459,6 +552,11 @@ jobs:
         #
         # if: always() — a red run's cache state is exactly as interesting as a
         # green one's, and the artifact is uploaded either way.
+        #
+        # It also carries `setup_s`: the seconds from job start to the first
+        # script, differenced from the two `Mark ...` marks. The marks are
+        # non-fatal, so either may be absent; `null` then says so, because a
+        # fabricated 0 would read as a gate with no fixed cost at all.
         id: cache-state
         if: always()
         continue-on-error: true
@@ -523,6 +621,27 @@ jobs:
               }, (mb_after != mb_before or n_after != n_before)
 
 
+          def setup_seconds():
+              """Job start -> first script, in whole seconds, or None.
+
+              Both marks are written by non-fatal steps, so a missing or
+              unreadable one is an unknown rather than a zero. A negative or
+              absurd difference is discarded for the same reason: it would be
+              a clock we do not trust, not a measurement.
+              """
+              temp = os.environ.get("RUNNER_TEMP") or ""
+              if not temp:
+                  return None
+              stamps = []
+              for name in ("job_start", "scripts_start"):
+                  try:
+                      stamps.append(int(Path(temp, name).read_text().strip()))
+                  except (OSError, TypeError, ValueError):
+                      return None
+              delta = stamps[1] - stamps[0]
+              return delta if delta >= 0 else None
+
+
           env = os.environ.get
           jax, jax_changed = section(
               env("JAX_PATH", ""), env("JAX_KEY_RESTORED", ""),
@@ -548,6 +667,9 @@ jobs:
               "jax": jax,
               "numba": numba,
               "datasets": datasets,
+              # Additive like `numba` was: the schema string does not move, and
+              # an ingest that predates this field reads its absence honestly.
+              "setup_s": setup_seconds(),
           }
           out = Path("workspace/test-results")
           out.mkdir(parents=True, exist_ok=True)

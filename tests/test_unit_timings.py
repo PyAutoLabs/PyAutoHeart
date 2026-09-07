@@ -796,7 +796,8 @@ def test_a_leg_without_the_sidecar_is_unknown_never_a_miss(tmp_path):
     distinguishable from "nothing was restored"."""
     *_, meta = ut.read_downloaded_leg(_extracted(tmp_path))
     assert meta["cache"] == {"jax": "unknown", "datasets": "unknown",
-                             "numba": "unknown", "epoch": ""}
+                             "numba": "unknown", "epoch": "",
+                             "setup_s": None}
 
 
 def test_a_leg_with_neither_dataset_is_still_the_no_dataset_error(tmp_path):
@@ -823,7 +824,7 @@ def test_a_failed_leg_has_no_cache_state_either(tmp_path):
     ], "T")
     (leg,) = side["legs"]
     assert leg["cache"] == {"jax": "unknown", "datasets": "unknown",
-                            "numba": "unknown", "epoch": ""}
+                            "numba": "unknown", "epoch": "", "setup_s": None}
 
 
 def test_the_combined_state_is_hit_only_when_both_caches_were():
