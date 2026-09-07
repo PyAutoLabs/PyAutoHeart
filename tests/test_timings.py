@@ -437,7 +437,10 @@ def test_previous_unit_rows_takes_the_latest_line_per_leg_and_drives_drift(tmp_p
 
     prev = timings.previous_unit_rows(unit_dir)
     assert prev[("RepoA", "3.12", NODEID)] == {
-        "seconds": 4.0, "run_id": 8, "run_url": RUN_URL}
+        "seconds": 4.0, "run_id": 8, "run_url": RUN_URL,
+        # A rollup with no cache block: unknown, and it compares as it always
+        # did (below).
+        "cache_state": "unknown"}
     assert prev[("RepoA", "3.13", NODEID)]["seconds"] == 0.5
 
     thr = {"slow_factor": 2.0, "min_delta_s": 2}
@@ -796,28 +799,111 @@ def test_the_committed_record_carries_the_legacy_and_fast_tests_boundaries():
 # scratch are not the same measurement. The record stores which it was, because
 # a baseline that cannot say is a baseline nothing can compare against.
 
-def _cached_rollup(jax="hit", datasets="miss", **kw):
+def _cached_rollup(jax="hit", datasets="miss", numba="hit", **kw):
     rollup = _smoke_rollup(**kw)
-    rollup["repos"][0]["cache"] = {"jax": jax, "datasets": datasets, "epoch": "1"}
+    rollup["repos"][0]["cache"] = {"jax": jax, "datasets": datasets,
+                                   "numba": numba, "epoch": "1"}
     return rollup
 
 
 def test_the_scripts_line_records_the_cache_state_beside_the_seconds():
     (line,) = timings.scripts_lines_from_rollup(_cached_rollup(), TODAY)["RepoA"]
-    # Two keys, not three: the epoch is a property of the workflow's keys, not
-    # of the measurement.
-    assert line["cache"] == {"jax": "hit", "datasets": "miss"}
+    # One key per cache the smoke gate restores, and no epoch: that is a
+    # property of the workflow's keys, not of the measurement.
+    assert line["cache"] == {"jax": "hit", "datasets": "miss", "numba": "hit"}
 
 
 def test_a_rollup_from_before_the_sidecar_records_unknown_not_a_miss():
     """Every rollup older than the cache work. "We do not know" must stay
     distinguishable from "nothing was restored"."""
     (line,) = timings.scripts_lines_from_rollup(_smoke_rollup(), TODAY)["RepoA"]
-    assert line["cache"] == {"jax": "unknown", "datasets": "unknown"}
+    assert line["cache"] == {"jax": "unknown", "datasets": "unknown",
+                             "numba": "unknown"}
     junk = _smoke_rollup()
     junk["repos"][0]["cache"] = {"jax": "warm", "datasets": None}
     (line,) = timings.scripts_lines_from_rollup(junk, TODAY)["RepoA"]
-    assert line["cache"] == {"jax": "unknown", "datasets": "unknown"}
+    assert line["cache"] == {"jax": "unknown", "datasets": "unknown",
+                             "numba": "unknown"}
+
+
+# --- the unit record: jax and numba, combined --------------------------------
+# A library suite is conditioned by two caches at once, so a comparison is only
+# safe when both sides ran the same way — and the combined state has its own
+# field name because it means something different from the scripts record's
+# `cache_jax`.
+
+def _unit_cached_rollup(jax="hit", numba="hit", **kw):
+    rollup = _unit_rollup(**kw)
+    rollup["repos"][0]["cache"] = {"jax": jax, "datasets": "miss",
+                                   "numba": numba, "epoch": "1"}
+    return rollup
+
+
+def test_the_unit_line_records_the_two_caches_it_was_measured_under():
+    (line,) = timings.unit_lines_from_rollup(_unit_cached_rollup(numba="miss"),
+                                             TODAY)["RepoA"]
+    # Two keys, not the scripts record's three: the libraries' gate has no
+    # dataset cache, so a `datasets` field here could only say "unknown".
+    assert line["cache"] == {"jax": "hit", "numba": "miss"}
+
+
+def test_a_unit_rollup_from_before_the_sidecar_records_unknown_on_both():
+    (line,) = timings.unit_lines_from_rollup(_unit_rollup(), TODAY)["RepoA"]
+    assert line["cache"] == {"jax": "unknown", "numba": "unknown"}
+    junk = _unit_rollup()
+    junk["repos"][0]["cache"] = {"jax": "warm", "numba": None}
+    (line,) = timings.unit_lines_from_rollup(junk, TODAY)["RepoA"]
+    assert line["cache"] == {"jax": "unknown", "numba": "unknown"}
+
+
+def test_the_combined_unit_cache_state_is_hit_only_when_both_were():
+    """Half-hot against half-cold is not a comparison anybody can read, so
+    every mixture is unknown and compares exactly as it always did."""
+    state = timings.unit_cache_state
+    assert state({"jax": "hit", "numba": "hit"}) == "hit"
+    assert state({"jax": "miss", "numba": "miss"}) == "miss"
+    for mixed in ({"jax": "hit", "numba": "miss"},
+                  {"jax": "miss", "numba": "hit"},
+                  {"jax": "hit", "numba": "unknown"},
+                  {"jax": "unknown", "numba": "hit"},
+                  {"jax": "hit"}, {}, None, "nonsense"):
+        assert state(mixed) == "unknown", mixed
+
+
+def test_previous_unit_rows_hands_the_combined_state_to_the_drift_rule(tmp_path):
+    unit_dir = tmp_path / "unit"
+    path = timings.unit_file("RepoA", tmp_path)
+    timings.append_unit(path, timings.unit_lines_from_rollup(
+        _unit_cached_rollup(seconds=4.0), TODAY)["RepoA"])
+    row = timings.previous_unit_rows(unit_dir)[("RepoA", "3.12", NODEID)]
+    # Named for what it is — jax AND numba — not for half of it.
+    assert row["cache_state"] == "hit" and "cache_jax" not in row
+
+    thr = {"slow_factor": 2.0, "min_delta_s": 2}
+    # 4s → 12s is a 3x, and it is not reported: the baseline ran hot.
+    assert smoke_timings.classify_drift(
+        12.0, row, thr, run_id=9, cache="miss",
+        prev_cache_key="cache_state") == ("ok", None, None)
+    assert smoke_timings.classify_drift(
+        12.0, row, thr, run_id=9, cache="hit",
+        prev_cache_key="cache_state")[0] == "warn"
+
+
+def test_a_legacy_unit_line_reads_unknown_and_compares_as_it_always_did(tmp_path):
+    """The record is append-only and full of lines written before this field
+    existed; they must keep comparing exactly as they did."""
+    unit_dir = tmp_path / "unit"
+    path = timings.unit_file("RepoA", tmp_path)
+    (line,) = timings.unit_lines_from_rollup(_unit_cached_rollup(seconds=4.0),
+                                             TODAY)["RepoA"]
+    line.pop("cache")
+    timings.append_unit(path, [line])
+    row = timings.previous_unit_rows(unit_dir)[("RepoA", "3.12", NODEID)]
+    assert row["cache_state"] == "unknown"
+    thr = {"slow_factor": 2.0, "min_delta_s": 2}
+    assert smoke_timings.classify_drift(
+        12.0, row, thr, run_id=9, cache="hit",
+        prev_cache_key="cache_state")[0] == "warn"
 
 
 def test_previous_script_rows_hands_the_cache_state_to_the_drift_rule(tmp_path):

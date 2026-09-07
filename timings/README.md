@@ -63,7 +63,7 @@ joined to its `rows` (the timed entries):
 {"date":"2026-09-05","at":"2026-09-04T10:00:00Z","python":"3.12","run_id":7,
  "run_url":"https://ci.invalid/OwnerX/RepoA/actions/runs/7",
  "head_branch":"feat/x","head_sha":"abc123","env_profile":"smoke",
- "cache":{"jax":"hit","datasets":"miss"},
+ "cache":{"jax":"hit","datasets":"miss","numba":"hit"},
  "entries":{"imaging/x.py":[12.5,"passed",600.0]}}
 ```
 
@@ -79,13 +79,15 @@ joined to its `rows` (the timed entries):
 * `head_sha` and `env_profile` are `""` when the rollup that produced the line
   predates them, so every line in a file carries the same keys either way.
 * **`cache` is the condition the measurement was taken under**, not a
-  measurement of its own: `jax` and `datasets` are each `hit`, `miss` or
-  `unknown`, read from the `cache_state.json` sidecar the smoke workflow
+  measurement of its own: `jax`, `datasets` and `numba` are each `hit`, `miss`
+  or `unknown`, read from the `cache_state.json` sidecar the smoke workflow
   uploads beside the timings dataset. The CI job restores a JAX compilation
-  cache and the workspace's simulated `dataset/` tree between runs, so two
-  otherwise identical legs can differ by the whole cost of recompiling or
-  re-simulating. A line recorded before the sidecar existed reads `unknown` on
-  both sides — the honest absence, never a fabricated `miss`.
+  cache, a numba function cache and the workspace's simulated `dataset/` tree
+  between runs, so two otherwise identical legs can differ by the whole cost of
+  recompiling or re-simulating. A line recorded before the sidecar existed
+  reads `unknown` on every side — the honest absence, never a fabricated
+  `miss` — and so does `numba` on a line recorded before that cache was
+  added.
 
   From this follows the one rule the comparison obeys:
 
@@ -107,9 +109,20 @@ libraries' own CI feeds through
 {"date":"2026-09-05","at":"2026-09-04T10:00:00Z","python":"3.12","run_id":7,
  "run_url":"https://ci.invalid/OwnerX/RepoA/actions/runs/7",
  "head_branch":"feat/x","head_sha":"abc123","package":"pkg_a","import_s":3.62,
+ "cache":{"jax":"hit","numba":"miss"},
  "suite":{"tests":1500,"failures":0,"errors":0,"skipped":3,"wall_s":412.0},
  "slowest":{"tests/foo/test_bar.py::test_x":12.5}}
 ```
+
+* **`cache` is the condition this suite was measured under**, exactly as on a
+  scripts line, and for the same reason. Two keys, not three: the libraries'
+  gate restores a JAX compilation cache and a numba function cache, and it has
+  no dataset cache at all, so a `datasets` key here could only ever say
+  `unknown`. The drift rule turns on the two COMBINED — `hit` when the leg had
+  both, `miss` when it had neither, `unknown` for every mixture — carried into
+  the previous row as `cache_state` (`heart.timings.unit_cache_state`), which
+  is a different field name from the scripts record's `cache_jax` because it
+  means a different thing.
 
 * **Only the N slowest tests are recorded**, with the suite totals beside them.
   A library suite is ~1500 tests; recorded whole, one line would carry 1500

@@ -54,12 +54,24 @@ Deliberate choices, each one a recorded lesson:
   render produces, so a Pages gap loses it. The board stays as the fallback,
   and the ``performance.scripts.rows`` block is written either way.
 * **Drift is never classified across two known but different cache states.**
-  The smoke workflow restores a JAX compile cache and the simulated datasets,
-  and writes ``cache_state.json`` beside the timings dataset in the same
-  artifact. A cold run against a hot baseline is a recompile and a hot run
-  against a cold one is the cache landing; neither is a change anybody made, so
-  both yield ``ok`` with no ratio. An ``unknown`` on either side — every
-  artifact older than the sidecar — compares exactly as it always did.
+  The smoke workflow restores a JAX compile cache, a numba function cache and
+  the simulated datasets, and writes ``cache_state.json`` beside the timings
+  dataset in the same artifact. A cold run against a hot baseline is a
+  recompile and a hot run against a cold one is the cache landing; neither is a
+  change anybody made, so both yield ``ok`` with no ratio. An ``unknown`` on
+  either side — every artifact older than the sidecar — compares exactly as it
+  always did.
+
+  The sidecar carries one section per cache (``jax``, ``numba``, ``datasets``),
+  each ``{"hit", "exact", "restored_key", "size_mb_before/after",
+  "entries_before/after"}``, plus the ``epoch`` salt those keys were built
+  with. ``jax`` and ``datasets`` have been written on every run since the
+  sidecar existed, so a MISSING section of either is a miss; ``numba`` was
+  added later, so a missing ``numba`` section is ``unknown`` — an older
+  emitter, not a run that restored nothing. Which cache a comparison turns on
+  is the consumer's business: the script rows compare on ``jax`` alone
+  (``classify_drift``'s ``prev_cache_key``), the unit rows on jax and numba
+  combined (``heart.timings.unit_cache_state``).
 * **Drift is advisory.** Rows are ``ok`` or ``warn``, never ``fail``; only
   TIMEOUT entries are hard rows. The readiness verdict is untouched — this is
   a dashboard leg, not a gate.
@@ -80,7 +92,8 @@ Per-repo sidecar schema (``<name>.smoke_timings.json``)::
          "head_branch": "feat/x", "head_sha": "abc...",
          "at": "2026-09-01T10:00:00Z",   # the artifact's created_at
          "env_profile": "smoke", "error": "",
-         "cache": {"jax": "hit", "datasets": "miss", "epoch": "1"},
+         "cache": {"jax": "hit", "datasets": "miss", "numba": "hit",
+                   "epoch": "1"},
          "entries": [{"entry": "imaging/x.py", "kind": "script",
                       "status": "passed", "seconds": 12.5, "cap_s": 600.0,
                       "exit_code": 0}],
@@ -134,10 +147,13 @@ ARTIFACT_RE = re.compile(r"^smoke-timings-(\d+\.\d+)$")
 TIMINGS_FILENAME = "smoke_timings.json"
 TIMINGS_SCHEMA = "smoke_timings/1"
 
-# The cache-state sidecar the smoke workflow writes beside the timings dataset
-# and uploads in the same artifact: whether this leg ran with a restored JAX
-# compile cache and a restored dataset tree, or cold. A run that recompiled
-# everything is not a slower run, it is a differently-conditioned one.
+# The cache-state sidecar BOTH reusable workflows write beside their timings
+# dataset and upload in the same artifact: whether this leg ran with a restored
+# JAX compile cache, a restored numba function cache and (in the smoke gate) a
+# restored dataset tree, or cold. A run that recompiled everything is not a
+# slower run, it is a differently-conditioned one. The schema string is
+# unchanged by the numba section: it is purely additive, and an older sidecar
+# without it stays readable.
 CACHE_STATE_FILENAME = "cache_state.json"
 CACHE_STATE_SCHEMA = "cache_state/1"
 
@@ -327,9 +343,17 @@ def parse_cache_state(text: str) -> tuple[dict[str, Any] | None, str]:
     The same defensive shape as ``parse_timings``: the file is written by
     another organ on a runner we do not control, so a surprising value degrades
     to a miss rather than raising out of an unattended check. A section is a
-    ``hit`` exactly when it says so — an absent or malformed section is a miss,
-    because the workflow writes both sections on every run and their absence is
-    not evidence that anything was restored.
+    ``hit`` exactly when it says so — an absent or malformed ``jax`` or
+    ``datasets`` section is a miss, because the workflows have written both on
+    every run since the sidecar existed and their absence is not evidence that
+    anything was restored.
+
+    ``numba`` is the exception, and deliberately so: it was added to the
+    schema later, so a sidecar without it is an OLDER EMITTER rather than a run
+    that restored nothing, and the honest reading of its absence is
+    ``unknown``. Reading it as a miss would date-stamp every pre-numba artifact
+    as cold and quietly suppress the drift comparisons those legs can still
+    make.
     """
     try:
         data = json.loads(text)
@@ -348,27 +372,43 @@ def parse_cache_state(text: str) -> tuple[dict[str, Any] | None, str]:
 
     jax_state, jax_key = _section("jax")
     ds_state, ds_key = _section("datasets")
+    numba_block = data.get("numba")
+    if isinstance(numba_block, dict):
+        numba_state = "hit" if numba_block.get("hit") else "miss"
+        numba_key = str(numba_block.get("restored_key") or "")
+    else:
+        # Additive section, absent from every sidecar written before it: not a
+        # miss, which would be a claim about a cache the emitter never had.
+        numba_state, numba_key = UNKNOWN_CACHE_STATE, ""
     return (
         {
             "jax": jax_state,
             "datasets": ds_state,
+            "numba": numba_state,
             # The manual salt in force. A bump means every key changed at once,
             # so a miss on both sides is expected rather than a finding.
             "epoch": str(data.get("epoch") or ""),
             "jax_restored_key": jax_key,
             "datasets_restored_key": ds_key,
+            "numba_restored_key": numba_key,
         },
         "",
     )
 
 
 def cache_view(cache: Any) -> dict[str, str]:
-    """A cache state normalised to the three keys every consumer carries.
+    """A cache state normalised to the four keys every consumer carries.
 
     Anything that is not one of the two known states reads ``unknown``: a leg
-    from before the sidecar existed, a truncated file, a future schema. The
-    epoch rides along because a comparison across an epoch bump is comparing
-    two different worlds, and the reader needs to be able to see that.
+    from before the sidecar existed, a truncated file, a future schema, a
+    ``numba`` section the emitter did not write. The epoch rides along because
+    a comparison across an epoch bump is comparing two different worlds, and
+    the reader needs to be able to see that.
+
+    ``datasets`` is carried for every leg including the libraries', whose
+    workflow has no dataset cache at all: it is the sidecar's own reading, and
+    the unit consumers simply do not read that key (see
+    ``heart.timings.unit_cache_state``).
     """
     src = cache if isinstance(cache, dict) else {}
 
@@ -377,7 +417,7 @@ def cache_view(cache: Any) -> dict[str, str]:
         return value if value in CACHE_STATES else UNKNOWN_CACHE_STATE
 
     return {"jax": _state("jax"), "datasets": _state("datasets"),
-            "epoch": str(src.get("epoch") or "")}
+            "numba": _state("numba"), "epoch": str(src.get("epoch") or "")}
 
 
 def read_cache_state(directory: Path | str) -> dict[str, str]:
@@ -607,6 +647,7 @@ def classify_drift(
     thresholds: dict[str, float],
     run_id: Any = None,
     cache: Any = None,
+    prev_cache_key: str = "cache_jax",
 ) -> tuple[str, float | None, float | None]:
     """(state, ratio, delta_s) — ``warn`` needs BOTH gates, else ``ok``.
 
@@ -616,13 +657,23 @@ def classify_drift(
     comparing a run against itself would report a reassuring 1.0× that means
     nothing. Never ``fail`` — a slowed script is advisory by construction.
 
-    ``cache`` is THIS run's JAX cache state (``"hit"``/``"miss"``/``"unknown"``)
-    and is compared against the previous row's ``cache_jax``. Two KNOWN and
-    DIFFERENT states are not a comparison: a cold run against a hot baseline is
-    a recompile, and a hot run against a cold one is the cache landing. Neither
-    is a change anybody made, and reporting either as drift would cry wolf on
-    exactly the runs where the cache is doing its job. An unknown on either
-    side compares as it always did — every artifact older than the sidecar.
+    ``cache`` is THIS run's cache state (``"hit"``/``"miss"``/``"unknown"``)
+    and is compared against the previous row's, read under ``prev_cache_key``.
+    Two KNOWN and DIFFERENT states are not a comparison: a cold run against a
+    hot baseline is a recompile, and a hot run against a cold one is the cache
+    landing. Neither is a change anybody made, and reporting either as drift
+    would cry wolf on exactly the runs where the cache is doing its job. An
+    unknown on either side compares as it always did — every artifact older
+    than the sidecar.
+
+    ``prev_cache_key`` exists because the two callers turn on different
+    states and must say so in the row rather than in a comment. A script row's
+    baseline records the JAX cache alone under ``cache_jax`` (the default,
+    unchanged); a unit row's records jax and numba COMBINED under
+    ``cache_state``, and calling that field ``cache_jax`` would name it after
+    half of what it means. One parameter is the smaller honest change: the
+    alternative — writing the combined state into a field called ``cache_jax``
+    — would make every reader of the record wrong.
     """
     now = _as_float(seconds)
     if not isinstance(prev_row, dict):
@@ -634,7 +685,7 @@ def classify_drift(
     if run_id is not None and prev_run is not None and prev_run == run_id:
         return "ok", None, None
     now_cache = str(cache or "")
-    prev_cache = str(prev_row.get("cache_jax") or "")
+    prev_cache = str(prev_row.get(prev_cache_key) or "")
     if (now_cache in CACHE_STATES and prev_cache in CACHE_STATES
             and now_cache != prev_cache):
         return "ok", None, None

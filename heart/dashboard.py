@@ -360,6 +360,28 @@ def _dur(seconds: Any) -> str:
 UNIT_DETAIL_CAP = 6
 
 
+def _cache_bracket(cache: Any, jax_label: str = "jax") -> str:
+    """`` [jax hit, numba miss]`` for the states that are KNOWN, else ``""``.
+
+    Hot or cold, said on the line the numbers are on: a leg that ran with a
+    restored compile cache is not comparable to one that recompiled, and a
+    reader looking at a jump needs that beside the seconds rather than a click
+    away. Only known states are named — a leg from before the cache-state
+    sidecar existed, or from before the numba cache was added, renders exactly
+    as it always did.
+
+    ``jax_label`` is the scripts row's ``jax cache`` wording, kept verbatim so
+    that row is unchanged for every leg whose numba state is unknown.
+    """
+    src = cache if isinstance(cache, dict) else {}
+    parts = []
+    for key, label in (("jax", jax_label), ("numba", "numba")):
+        value = str(src.get(key) or "")
+        if value in ("hit", "miss"):
+            parts.append(f"{label} {value}")
+    return f" [{', '.join(parts)}]" if parts else ""
+
+
 def _unit_suite_details(slice_: Any) -> list[str]:
     """One line per ingested suite leg, slowest wall-clock first.
 
@@ -380,7 +402,11 @@ def _unit_suite_details(slice_: Any) -> list[str]:
         repo = str(leg.get("repo") or "?")
         python = str(leg.get("python") or "?")
         tests = _as_int(leg.get("tests"))
-        line = f"{repo} py{python}: {tests} tests {_dur(leg.get('wall_s'))}"
+        # Same bracket as the scripts row, in the shorter wording a unit line
+        # can afford: `RepoA py3.12 [jax hit, numba miss]: 1500 tests 6m52s`.
+        bracket = _cache_bracket(leg.get("cache"))
+        line = (f"{repo} py{python}{bracket}: "
+                f"{tests} tests {_dur(leg.get('wall_s'))}")
         slowest = [row for row in (leg.get("slowest") or []) if isinstance(row, dict)]
         if slowest:
             top = slowest[0]
@@ -1102,14 +1128,11 @@ def _smoke_timings_section(st: dict, repos: list[dict], rows: list[dict],
         # Coverage beside time, always: a leg that got faster by running less
         # must not read as a leg that got faster.
         tail = f"({_as_int(r.get('timed'))} scripts, {_dur(r.get('total_s'))} total)"
-        # Hot or cold, said on the line the numbers are on: a leg that ran with
-        # a restored JAX compile cache is not comparable to one that recompiled,
-        # and a reader looking at a jump needs that beside the seconds rather
-        # than a click away. Said only when it is KNOWN — a leg from before the
-        # cache-state sidecar existed renders exactly as it always did.
-        cache = r.get("cache") if isinstance(r.get("cache"), dict) else {}
-        jax = str(cache.get("jax") or "")
-        bracket = f" [jax cache {jax}]" if jax in ("hit", "miss") else ""
+        # Hot or cold, said on the line the numbers are on. `[jax cache hit]`
+        # for a leg whose numba state is unknown — every artifact from before
+        # that cache existed, rendering exactly as it always did — and
+        # `[jax cache hit, numba hit]` once the sidecar carries both.
+        bracket = _cache_bracket(r.get("cache"), jax_label="jax cache")
         prefix = f"{r.get('repo')} py{r.get('python') or '?'}{bracket}:"
         details.append(f"{prefix} {head}  {tail}" if head else f"{prefix} {tail}")
     # Same as the gate row: how much durable history stands behind the

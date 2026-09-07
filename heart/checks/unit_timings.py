@@ -45,6 +45,15 @@ Deliberate choices, each one a recorded lesson:
   literally the same function (``classify_test_drift`` IS
   ``smoke_timings.classify_drift``). Unit tests run 0.1–30 s, so the absolute
   floor in ``config/repos.yaml`` is 2 s rather than smoke's 5 s.
+* **Nor across two known but different cache states.** ``lib-tests.yml``
+  restores a JAX compile cache and a numba function cache and writes the same
+  ``cache_state.json`` sidecar the smoke gate writes, in the same artifact. A
+  leg is ``hit`` only when it had BOTH and ``miss`` only when it had NEITHER
+  (``heart.timings.unit_cache_state``); every mixture is ``unknown`` and
+  compares as it always did. The combined state rides the record — and
+  therefore the previous row — under ``cache_state``, which is why
+  ``classify_drift`` is called with ``prev_cache_key="cache_state"`` rather
+  than its scripts-side default of ``cache_jax``.
 * **A run is never compared against itself.** Every row carries its ``run_id``;
   a previous row from the SAME run yields ``ok`` with no ratio rather than a
   reassuring 1.0×.
@@ -78,6 +87,8 @@ Per-repo sidecar schema (``<name>.unit_timings.json``)::
          "head_branch": "feat/x", "head_sha": "abc...",
          "at": "2026-09-01T10:00:00Z",   # the artifact's created_at
          "error": "",
+         "cache": {"jax": "hit", "datasets": "miss", "numba": "hit",
+                   "epoch": "1"},
          "suite": {"tests": 1500, "failures": 0, "errors": 0, "skipped": 3,
                    "wall_s": 412.0},
          "slowest": [{"nodeid": "tests/foo/test_bar.py::test_x",
@@ -90,7 +101,8 @@ Global rollup schema (``unit_timings.json``)::
 
     {"ts",
      "repos":   [{repo, python, run_id, run_url, head_branch, head_sha, at,
-                  tests, wall_s, import_s, package, error, suite, slowest}],
+                  tests, wall_s, import_s, package, error, cache, suite,
+                  slowest}],
      "tests":   [{repo, python, nodeid, seconds, run_id, run_url, prev_s,
                   prev_run_id, ratio, delta_s, state, prompt}],
      "imports": [{repo, package, python, seconds, run_id, run_url, baseline_s,
@@ -98,8 +110,9 @@ Global rollup schema (``unit_timings.json``)::
      "slowed_tests": [...], "slowed_imports": [...],
      "errors": [{repo, error}], "thresholds": {...}}
 
-``repos[]`` carries ``suite`` and ``slowest`` whole so ``heart.timings`` can
-build the committed record from the rollup alone, without re-reading a sidecar.
+``repos[]`` carries ``suite``, ``slowest`` and ``cache`` whole so
+``heart.timings`` can build the committed record from the rollup alone, without
+re-reading a sidecar.
 
 Every actionable row — a slowed test, a slowed import — carries its own
 ready-to-paste prompt string. The producer writes the prompt; the renderer
@@ -121,8 +134,13 @@ from typing import Any
 # Reused, never duplicated: the both-gates drift rule and the artifact selector
 # are one implementation with two callers.
 from heart.checks.import_time import classify as _classify_ratio
+from heart.checks.smoke_timings import cache_view, read_cache_state
 from heart.checks.smoke_timings import classify_drift as classify_test_drift
 from heart.checks.smoke_timings import select_artifacts as _select_artifacts
+# `heart.timings` imports nothing from `heart`, so this direction is the one
+# with no cycle: the record owns the rule for combining the two cache states
+# because the record is what writes it into every previous row.
+from heart.timings import unit_cache_state
 
 HEART_HOME = Path(__file__).resolve().parents[2]
 CONFIG_PATH = HEART_HOME / "config" / "repos.yaml"
@@ -333,7 +351,7 @@ def parse_import_time(text: str) -> tuple[dict[str, Any] | None, str]:
 
 def read_downloaded_leg(
     directory: Path | str,
-) -> tuple[list[dict[str, Any]], dict[str, Any], dict[str, Any] | None, str, dict[str, str]]:
+) -> tuple[list[dict[str, Any]], dict[str, Any], dict[str, Any] | None, str, dict[str, Any]]:
     """One extracted artifact → ``(tests, suite, import_row, error, meta)``.
 
     The two halves are read independently ON PURPOSE. An install that died
@@ -341,7 +359,14 @@ def read_downloaded_leg(
     crashed leaves the junit and a null-seconds import row. Either half alone is
     still data, and losing it because its sibling is missing would be a hole in
     the record for no reason. Only when BOTH are absent is the artifact an
-    honest ``no unit-timings dataset``.
+    honest ``no unit-timings dataset`` — and that verdict is taken BEFORE the
+    cache sidecar is looked at, because a sidecar without a dataset beside it
+    is cache state for a measurement that does not exist.
+
+    ``meta["cache"]`` is the leg's cache state, read from the same
+    ``cache_state.json`` sidecar the smoke gate writes and by the same reader —
+    ``unknown`` throughout when no sidecar rode along, which is every artifact
+    older than it.
     """
     root = Path(directory)
     tests: list[dict[str, Any]] = []
@@ -373,7 +398,8 @@ def read_downloaded_leg(
 
     if not junit_paths and not import_paths:
         return [], {}, None, NO_DATASET_ERROR, {}
-    meta = {"python": str((import_row or {}).get("python") or "")}
+    meta = {"python": str((import_row or {}).get("python") or ""),
+            "cache": read_cache_state(root)}
     return tests, suite, import_row, "; ".join(errors), meta
 
 
@@ -454,7 +480,7 @@ def build_sidecar(
         tests: list[dict[str, Any]] = []
         suite: dict[str, Any] = {}
         import_row: dict[str, Any] | None = None
-        meta: dict[str, str] = {}
+        meta: dict[str, Any] = {}
         if not leg_error:
             directory = leg.get("dir")
             if directory:
@@ -472,6 +498,9 @@ def build_sidecar(
                 "head_sha": str(art.get("head_sha") or ""),
                 "at": str(art.get("created_at") or ""),
                 "error": leg_error,
+                # A leg whose download failed has no sidecar either: "unknown"
+                # on every side, never a fabricated miss.
+                "cache": meta.get("cache") or cache_view(None),
                 "suite": suite,
                 "slowest": slowest[: max(int(top_n or 0), 0)],
                 "import": (
@@ -573,6 +602,10 @@ def aggregate(
             run_url = str(leg.get("run_url") or "")
             at = str(leg.get("at") or "")
             leg_error = str(leg.get("error") or "")
+            leg_cache = cache_view(leg.get("cache"))
+            # jax AND numba, combined: a suite is comparable to its baseline
+            # only when both ran the same way (see `unit_cache_state`).
+            leg_cache_state = unit_cache_state(leg_cache)
             if leg_error:
                 # Provenance survives: which run we could not read, and why.
                 errors.append({"repo": repo, "error": f"{python or '?'}: {leg_error}"})
@@ -588,7 +621,8 @@ def aggregate(
                     continue
                 prev_row = prev_rows.get((repo, python, nodeid))
                 state, ratio, delta = classify_test_drift(
-                    seconds, prev_row, thr, run_id=run_id
+                    seconds, prev_row, thr, run_id=run_id,
+                    cache=leg_cache_state, prev_cache_key="cache_state",
                 )
                 prev_s = _as_float((prev_row or {}).get("seconds"))
                 prev_run_id = (prev_row or {}).get("run_id")
@@ -648,6 +682,7 @@ def aggregate(
                 "error": leg_error,
                 # Carried whole so `heart.timings` can build the committed
                 # record from the rollup alone, without re-reading a sidecar.
+                "cache": leg_cache,
                 "suite": dict(suite),
                 "slowest": [{"nodeid": str(row.get("nodeid") or ""),
                              "seconds": _as_float(row.get("seconds"))}

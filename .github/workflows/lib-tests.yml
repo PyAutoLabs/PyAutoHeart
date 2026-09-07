@@ -22,6 +22,21 @@ name: Library Tests (reusable)
 # junit XML (every test's duration) plus a fresh-process import time — which is
 # the standing dataset the Heart's `unit_timings` check ingests daily into the
 # board's Unit-test timing and Import timing rows (PyAutoHeart#206).
+#
+# TWO CACHES ride the `unittest` job, both added as non-fatal steps and both
+# keyed on a manual epoch salt (PYAUTO_CACHE_EPOCH) so they can be invalidated
+# together, exactly as smoke-tests.yml does it: the JAX persistent compilation
+# cache, per (runner OS x python leg x jaxlib), and the numba on-disk function
+# cache, per (runner OS x full python version). numba stamps every entry with
+# its source file's (mtime, size) — which a fresh clone and a fresh pip install
+# both change — so a `Stamp source mtimes from content` step rewrites every
+# .py's mtime as a hash of its CONTENT: identical content hits, changed content
+# misses, and the numba key therefore needs no library-commit component and can
+# safely carry a prefix fallback. Both caches are measured before and after the
+# run into `test-results/cache_state.json`, the sidecar that rides the
+# unit-timings artifact, so every unit-timing row the Heart ingests can say
+# whether the leg ran hot or cold instead of reading a cache landing as a
+# speedup and its first invalidation as a regression.
 
 on:
   workflow_call:
@@ -34,6 +49,11 @@ on:
 jobs:
   unittest:
     runs-on: ubuntu-latest
+    # The manual salt carried by every cache key below. Bump it to invalidate
+    # every cache at once — a runner-image change, a cache-format change — in
+    # one edit instead of hand-editing each key and hoping none was missed.
+    env:
+      PYAUTO_CACHE_EPOCH: "1"
     strategy:
       fail-fast: false
       matrix:
@@ -99,6 +119,148 @@ jobs:
             pip install "./$r[${{ steps.map.outputs.extras }}]"
           done
 
+      - name: Resolve cache keys
+        # Two components, each one a thing that MUST invalidate a cache:
+        #   jaxlib — a cached compilation is a jaxlib-specific artefact, so a
+        #     jaxlib bump must never read the previous wheel's entries;
+        #   pyfull — the FULL python version, because numba keys every cache
+        #     entry on the directory its source was found in and the
+        #     site-packages path carries the patch version.
+        # No chain hash here, unlike smoke-tests.yml: this workflow has no
+        # dataset cache, and the content-stamp two steps down makes a library
+        # commit invalidate exactly the numba entries it changed.
+        # Non-fatal like every step the caches added: an unresolvable key
+        # degrades to a cache miss, never to a red gate.
+        id: keys
+        continue-on-error: true
+        run: |
+          jaxlib="$(python -c 'import jaxlib; print(jaxlib.__version__)' 2>/dev/null || echo nojax)"
+          pyfull="$(python -c 'import sys; print(sys.version.split()[0])')"
+          {
+            echo "jaxlib=${jaxlib:-nojax}"
+            echo "pyfull=$pyfull"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Restore the JAX compile cache
+        # The run-id suffix makes every save a fresh SUPERSET of what was
+        # restored (the accumulating-cache pattern): the exact key never hits,
+        # the restore-keys prefix takes the newest previous entry, and the save
+        # writes the merged directory back under a new key. Traced code that
+        # changed simply misses its own entries and recompiles them, so this
+        # cache needs no invalidation rule of its own. And a PR run reads the
+        # default branch's caches under GitHub's cache scoping — which is
+        # exactly what a contributor wants: a first push that is already warm.
+        uses: actions/cache/restore@v4
+        id: jax-cache
+        continue-on-error: true
+        with:
+          path: ${{ github.workspace }}/.pyauto_jax_cache
+          key: pyauto-jax-${{ runner.os }}-py${{ matrix.python-version }}-jaxlib${{ steps.keys.outputs.jaxlib }}-e${{ env.PYAUTO_CACHE_EPOCH }}-${{ github.run_id }}
+          restore-keys: |
+            pyauto-jax-${{ runner.os }}-py${{ matrix.python-version }}-jaxlib${{ steps.keys.outputs.jaxlib }}-e${{ env.PYAUTO_CACHE_EPOCH }}-
+
+      - name: Restore the numba cache
+        # Same accumulating pattern as the compile cache above, and the prefix
+        # fallback is SAFE for the reason the stamp step below exists: a numba
+        # entry carries its source file's (mtime, size), the stamp makes that
+        # mtime a function of the file's content, so a changed file misses its
+        # own entry however old the restored directory is. That is why this key
+        # names no library commit — and a numba version bump invalidates its own
+        # index format on its own terms.
+        uses: actions/cache/restore@v4
+        id: numba-cache
+        continue-on-error: true
+        with:
+          path: ${{ github.workspace }}/.numba_cache
+          key: pyauto-numba-${{ runner.os }}-py${{ steps.keys.outputs.pyfull }}-e${{ env.PYAUTO_CACHE_EPOCH }}-${{ github.run_id }}
+          restore-keys: |
+            pyauto-numba-${{ runner.os }}-py${{ steps.keys.outputs.pyfull }}-e${{ env.PYAUTO_CACHE_EPOCH }}-
+
+      - name: Stamp source mtimes from content
+        # numba stamps every cache entry with its source file's
+        # (st_mtime, st_size) and stores it under a directory named for the
+        # source's own directory. A fresh clone and a fresh `pip install` both
+        # give every .py a brand-new mtime, so a restored cache would miss
+        # EVERY entry it holds — the cache would cost upload time and buy
+        # nothing. This step rewrites each mtime as a function of the file's
+        # CONTENT, so an unchanged file stamps identically on every runner and
+        # a changed one stamps differently: exactly the invalidation numba
+        # wants, expressed in the one field it already checks.
+        #
+        # Non-fatal like the rest: a file we could not stat or touch costs one
+        # cache entry, never the gate.
+        id: stamp
+        continue-on-error: true
+        env:
+          # Via env, never interpolated into the script body — the same house
+          # rule the key resolver above and the recorder below follow.
+          STAMP_DIRS: ${{ steps.map.outputs.repo }} ${{ steps.map.outputs.deps }}
+        run: |
+          python - <<'PY'
+          import hashlib
+          import importlib.util
+          import os
+          import pathlib
+
+          # The cloned checkouts first: `Run tests` puts them on PYTHONPATH, so
+          # they are the copies the suite actually imports.
+          roots = [pathlib.Path(d) for d in os.environ.get("STAMP_DIRS", "").split()]
+          # ...and the INSTALLED copies beside them, which is what a leg with no
+          # matching branch imports. `find_spec` on a top-level name resolves it
+          # WITHOUT importing it, so a package that is not installed here simply
+          # drops out instead of raising.
+          for pkg in ("autonerves", "autofit", "autoarray", "autogalaxy",
+                      "autolens", "autocti", "autoreduce"):
+              try:
+                  spec = importlib.util.find_spec(pkg)
+              except (ImportError, ValueError):
+                  continue
+              if spec is None:
+                  continue
+              roots.extend(pathlib.Path(p)
+                           for p in (spec.submodule_search_locations or []))
+
+          stamped = 0
+          for root in roots:
+              if not root.is_dir():
+                  continue
+              for path in root.rglob("*.py"):
+                  try:
+                      digest = hashlib.sha1(path.read_bytes()).digest()
+                      mtime = 1_000_000_000 + int.from_bytes(digest[:4], "big")
+                      os.utime(path, (mtime, mtime))
+                  except OSError:
+                      continue
+                  stamped += 1
+          print(f"stamped {stamped} source files under {len(roots)} roots")
+          PY
+
+      - name: Measure the caches before the run
+        # The "before" half of the sidecar: what a restore actually put on disk,
+        # as against what the run leaves behind. A missing path measures as
+        # zero rather than failing — a cold cache is a measurement, not a fault.
+        id: cache-before
+        continue-on-error: true
+        env:
+          JAX_PATH: ${{ github.workspace }}/.pyauto_jax_cache
+          NUMBA_PATH: ${{ github.workspace }}/.numba_cache
+        run: |
+          measure() {
+            mb="$(du -sm "$1" 2>/dev/null | cut -f1)"
+            n="$(find "$1" -type f 2>/dev/null | wc -l)"
+            echo "${mb:-0} ${n:-0}"
+          }
+          set -- $(measure "$JAX_PATH")
+          jax_mb="$1"; jax_n="$2"
+          set -- $(measure "$NUMBA_PATH")
+          numba_mb="$1"; numba_n="$2"
+          {
+            echo "jax_mb=$jax_mb"
+            echo "jax_n=$jax_n"
+            echo "numba_mb=$numba_mb"
+            echo "numba_n=$numba_n"
+          } >> "$GITHUB_OUTPUT"
+
       # The cold import cost the developer loop actually pays: a FRESH process
       # importing the package once, not the warm in-process cost a test session
       # amortises over hundreds of tests. Measured here rather than inferred
@@ -157,6 +319,14 @@ jobs:
           PY
 
       - name: Run tests
+        env:
+          # autonerves defaults the JAX cache to ~/.cache/pyauto_jax when it is
+          # unset; an explicit workspace path is the one the cache steps above
+          # and below can name. NUMBA_CACHE_DIR likewise moves numba's on-disk
+          # function cache out of the source trees (where it would be neither
+          # restorable nor saveable) into the one directory those steps cache.
+          JAX_COMPILATION_CACHE_DIR: ${{ github.workspace }}/.pyauto_jax_cache
+          NUMBA_CACHE_DIR: ${{ github.workspace }}/.numba_cache
         run: |
           export JAX_ENABLE_X64=True
           ROOT="$(pwd)"
@@ -170,6 +340,110 @@ jobs:
           # has to be scraped out of a log that expires with the run.
           pytest --cov ${{ inputs.package }} --cov-report xml:coverage.xml \
                  --junitxml=test-results/junit.xml
+
+      - name: Record cache state (rides the unit-timings artifact)
+        # This file is the unit of measurement for the whole cache story: every
+        # unit-timing row the Heart ingests from the artifact below can then say
+        # whether that leg ran hot or cold. Without it a timing dataset reads a
+        # cache landing as a speedup and its invalidation as a regression, and
+        # neither is a change anybody made.
+        #
+        # if: always() — a red run's cache state is exactly as interesting as a
+        # green one's, and the artifact is uploaded either way.
+        #
+        # Two sections, not smoke-tests.yml's three: there is no dataset cache
+        # in this workflow, so there is nothing honest to say under `datasets`.
+        id: cache-state
+        if: always()
+        continue-on-error: true
+        env:
+          EPOCH: ${{ env.PYAUTO_CACHE_EPOCH }}
+          OUT_DIR: ${{ steps.map.outputs.repo }}/test-results
+          JAX_PATH: ${{ github.workspace }}/.pyauto_jax_cache
+          JAX_KEY_RESTORED: ${{ steps.jax-cache.outputs.cache-matched-key }}
+          JAX_EXACT: ${{ steps.jax-cache.outputs.cache-hit }}
+          JAX_MB_BEFORE: ${{ steps.cache-before.outputs.jax_mb }}
+          JAX_N_BEFORE: ${{ steps.cache-before.outputs.jax_n }}
+          NUMBA_PATH: ${{ github.workspace }}/.numba_cache
+          NUMBA_KEY_RESTORED: ${{ steps.numba-cache.outputs.cache-matched-key }}
+          NUMBA_EXACT: ${{ steps.numba-cache.outputs.cache-hit }}
+          NUMBA_MB_BEFORE: ${{ steps.cache-before.outputs.numba_mb }}
+          NUMBA_N_BEFORE: ${{ steps.cache-before.outputs.numba_n }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+
+          def as_int(text):
+              try:
+                  return int(str(text).strip())
+              except (TypeError, ValueError):
+                  return 0
+
+
+          def measure(path):
+              """(size in MiB, file count) for a path that may not exist."""
+              if not path or not os.path.isdir(path):
+                  return 0, 0
+              proc = subprocess.run(["du", "-sm", path], capture_output=True,
+                                    text=True)
+              head = proc.stdout.split()
+              size = as_int(head[0]) if head else 0
+              return size, sum(len(files) for _r, _d, files in os.walk(path))
+
+
+          def section(path, key, exact, mb_before, n_before):
+              mb_after, n_after = measure(path)
+              mb_before, n_before = as_int(mb_before), as_int(n_before)
+              return {
+                  "path": path,
+                  # A restored key at all is a hit; the EXACT key is the
+                  # accumulating pattern's never-case, kept separate so a
+                  # reader is not left guessing which one "hit" meant.
+                  "restored_key": key,
+                  "hit": bool(key),
+                  "exact": exact == "true",
+                  "size_mb_before": mb_before,
+                  "size_mb_after": mb_after,
+                  "entries_before": n_before,
+                  "entries_after": n_after,
+              }, (mb_after != mb_before or n_after != n_before)
+
+
+          env = os.environ.get
+          jax, jax_changed = section(
+              env("JAX_PATH", ""), env("JAX_KEY_RESTORED", ""),
+              env("JAX_EXACT", ""), env("JAX_MB_BEFORE", ""),
+              env("JAX_N_BEFORE", ""),
+          )
+          numba, numba_changed = section(
+              env("NUMBA_PATH", ""), env("NUMBA_KEY_RESTORED", ""),
+              env("NUMBA_EXACT", ""), env("NUMBA_MB_BEFORE", ""),
+              env("NUMBA_N_BEFORE", ""),
+          )
+          payload = {
+              "schema": "cache_state/1",
+              "epoch": env("EPOCH", ""),
+              "jax": jax,
+              "numba": numba,
+          }
+          out = Path(env("OUT_DIR", "test-results"))
+          out.mkdir(parents=True, exist_ok=True)
+          (out / "cache_state.json").write_text(
+              json.dumps(payload, sort_keys=True, indent=2) + "\n")
+          print(json.dumps(payload, sort_keys=True))
+
+          github_output = env("GITHUB_OUTPUT")
+          if github_output:
+              with open(github_output, "a", encoding="utf-8") as handle:
+                  handle.write("jax_changed=%s\n"
+                               % ("true" if jax_changed else "false"))
+                  handle.write("numba_changed=%s\n"
+                               % ("true" if numba_changed else "false"))
+          PY
 
       # The standing dataset the Heart's `unit_timings` check ingests: per-test
       # durations from the junit XML plus the fresh-process import time above.
@@ -198,6 +472,29 @@ jobs:
         with:
           files: ${{ steps.map.outputs.repo }}/coverage.xml
           fail_ci_if_error: false
+
+      - name: Save the JAX compile cache
+        # Saved even on a RED run: a compilation-cache entry is complete or
+        # absent, never half-written, so the compiling a failing run did is
+        # still worth keeping for the next attempt. The `jax_changed` guard is
+        # the no-op case — an unchanged cache is not re-uploaded under a new key.
+        if: always() && steps.cache-state.outputs.jax_changed == 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ github.workspace }}/.pyauto_jax_cache
+          key: pyauto-jax-${{ runner.os }}-py${{ matrix.python-version }}-jaxlib${{ steps.keys.outputs.jaxlib }}-e${{ env.PYAUTO_CACHE_EPOCH }}-${{ github.run_id }}
+
+      - name: Save the numba cache
+        # Saved on a red run for the same reason: a numba cache entry is an
+        # index line plus a complete compiled artefact, or it is absent. Same
+        # no-op guard as above.
+        if: always() && steps.cache-state.outputs.numba_changed == 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ github.workspace }}/.numba_cache
+          key: pyauto-numba-${{ runner.os }}-py${{ steps.keys.outputs.pyfull }}-e${{ env.PYAUTO_CACHE_EPOCH }}-${{ github.run_id }}
 
       - name: Slack on failure
         if: ${{ failure() }}

@@ -70,6 +70,7 @@ every entry would triple it for nothing a reader cannot infer from the schema.
      "run_id": 7, "run_url": "https://ci.invalid/runs/7",
      "head_branch": "feat/x", "head_sha": "abc123", "package": "pkg_a",
      "import_s": 3.6,
+     "cache": {"jax": "hit", "numba": "miss"},
      "suite": {"tests": 1500, "failures": 0, "errors": 0, "skipped": 3,
                "wall_s": 412.0},
      "slowest": {"tests/foo/test_bar.py::test_x": 12.5}}
@@ -78,7 +79,11 @@ Only the N SLOWEST tests are recorded, with the suite totals beside them: a
 1500-test suite recorded whole would multiply this file forever for rows nothing
 reads, while the totals keep the coverage visible. ``import_s`` is the
 fresh-process cold import measured on the CI runner, and it is ``null`` — never
-0.0 — when that import failed or timed out.
+0.0 — when that import failed or timed out. ``cache`` is what the leg ran
+UNDER: the libraries' gate restores a JAX compile cache and a numba function
+cache, and a suite that recompiled everything is not a slower suite, it is a
+differently-conditioned one. Both read ``unknown`` for a rollup older than the
+sidecar. There is no ``datasets`` key here — that cache is the workspaces'.
 
 ``epochs.jsonl`` line::
 
@@ -397,21 +402,54 @@ UNKNOWN_CACHE_STATE = "unknown"
 _CACHE_STATES = ("hit", "miss")
 
 
-def _cache_pair(cache: Any) -> dict[str, str]:
-    """``{"jax", "datasets"}`` out of a rollup leg's cache block.
+# Which caches each record says a measurement was taken under. The scripts
+# gate restores three; the libraries' gate restores two and has no dataset
+# cache at all, so recording a `datasets` key on a unit line would be a field
+# that could only ever say "unknown".
+SCRIPTS_CACHE_KEYS = ("jax", "datasets", "numba")
+UNIT_CACHE_KEYS = ("jax", "numba")
 
-    Two keys, not three: the epoch is a property of the *keys* the workflow
-    used, not of the measurement, and the record's job is to say what the
-    measurement was taken under. Anything that is not one of the two known
-    states records ``unknown`` — a rollup from before the sidecar existed, a
-    leg the download failed on — never a fabricated miss.
+
+def _cache_states(cache: Any, keys: tuple[str, ...] = SCRIPTS_CACHE_KEYS
+                  ) -> dict[str, str]:
+    """The named cache states out of a rollup leg's cache block.
+
+    The epoch is deliberately NOT among them: it is a property of the *keys*
+    the workflow used, not of the measurement, and the record's job is to say
+    what the measurement was taken under. Anything that is not one of the two
+    known states records ``unknown`` — a rollup from before the sidecar
+    existed, a section an older emitter never wrote, a leg the download failed
+    on — never a fabricated miss.
     """
     src = cache if isinstance(cache, dict) else {}
     out = {}
-    for key in ("jax", "datasets"):
+    for key in keys:
         value = str(src.get(key) or "")
         out[key] = value if value in _CACHE_STATES else UNKNOWN_CACHE_STATE
     return out
+
+
+def unit_cache_state(cache: Any) -> str:
+    """The ONE state a unit leg's drift comparison turns on.
+
+    A library suite is conditioned by two caches at once, and a comparison is
+    only safe when both sides ran the same way. So: ``hit`` when the leg had
+    both, ``miss`` when it had neither, and ``unknown`` for every mixture and
+    for every leg where either state is itself unknown. That last case is the
+    point — half-hot against half-cold is not a comparison anybody can read,
+    and ``unknown`` compares exactly as it did before the sidecar existed
+    rather than suppressing the row.
+
+    Lives here, beside the record that writes ``cache_state`` into every
+    previous unit row, rather than in ``heart.checks.unit_timings`` which
+    imports it: this module imports nothing from ``heart``, so the dependency
+    only ever points one way and there is no cycle to unpick.
+    """
+    states = _cache_states(cache, UNIT_CACHE_KEYS)
+    jax, numba = states["jax"], states["numba"]
+    if jax == numba and jax in _CACHE_STATES:
+        return jax
+    return UNKNOWN_CACHE_STATE
 
 
 def scripts_lines_from_rollup(
@@ -477,8 +515,8 @@ def scripts_lines_from_rollup(
             # because a measurement taken with a restored compile cache and one
             # taken without it are not the same measurement — and a baseline
             # that cannot say which it was is a baseline nothing can use.
-            # "unknown" on both sides for a rollup that predates the sidecar.
-            "cache": _cache_pair(leg.get("cache")),
+            # "unknown" on every side for a rollup that predates the sidecar.
+            "cache": _cache_states(leg.get("cache")),
             "entries": {name: entries[name] for name in sorted(entries)},
         })
     for repo in out:
@@ -564,7 +602,7 @@ def previous_script_rows(
                     # `classify_drift` can refuse a comparison across two known
                     # but different states. A line recorded before the field
                     # existed reads "unknown" and compares as it always did.
-                    "cache_jax": _cache_pair(record.get("cache"))["jax"],
+                    "cache_jax": _cache_states(record.get("cache"))["jax"],
                 }
     return out
 
@@ -581,9 +619,9 @@ def unit_lines_from_rollup(
     job the SAME run seven times.
 
     Everything the line needs is on the rollup's ``repos[]`` item (provenance,
-    the suite totals, the leg's slowest tests, the import seconds), so the
-    record can be built from the rollup alone without re-reading a sidecar. A
-    leg with no ``run_id`` has no identity and is skipped outright.
+    the suite totals, the leg's slowest tests, the import seconds, the cache
+    state), so the record can be built from the rollup alone without re-reading
+    a sidecar. A leg with no ``run_id`` has no identity and is skipped outright.
     """
     out: dict[str, list[dict[str, Any]]] = {}
     if not isinstance(rollup, dict):
@@ -632,6 +670,12 @@ def unit_lines_from_rollup(
             "package": str(leg.get("package") or ""),
             # `null`, never 0.0: an import that failed was not an instant one.
             "import_s": _as_float(leg.get("import_s")),
+            # What the suite ran UNDER. Recorded beside the seconds because a
+            # suite measured with a restored compile cache and a restored numba
+            # cache is not the same measurement as one that compiled from cold,
+            # and a baseline that cannot say which it was is a baseline nothing
+            # can use. "unknown" on both for a rollup that predates the sidecar.
+            "cache": _cache_states(leg.get("cache"), UNIT_CACHE_KEYS),
             "suite": suite,
             "slowest": {name: slowest[name] for name in sorted(slowest)},
         })
@@ -673,8 +717,12 @@ def previous_unit_rows(
     """``{(repo, python, nodeid): prev_row}`` — the last recorded observation.
 
     The shape is exactly what ``smoke_timings.classify_drift`` expects of a
-    previous row (``seconds``/``run_id``/``run_url``), which is the same
-    function ``unit_timings`` classifies its test drift with.
+    previous row (``seconds``/``run_id``/``run_url``/``cache_state``), which is
+    the same function ``unit_timings`` classifies its test drift with — it
+    reads the cache field by name, and this one is called ``cache_state``
+    rather than the scripts record's ``cache_jax`` because it is jax and numba
+    combined and naming it after half of what it means would mislead every
+    reader of the record.
 
     The *latest* line per python leg wins, and "latest" is file order: the file
     is append-only, so the last line for a leg is the most recently recorded
@@ -710,6 +758,11 @@ def previous_unit_rows(
                     "seconds": seconds,
                     "run_id": record.get("run_id"),
                     "run_url": str(record.get("run_url") or ""),
+                    # The state this baseline was measured under, so
+                    # `classify_drift` can refuse a comparison across two known
+                    # but different ones. A line recorded before the field
+                    # existed reads "unknown" and compares as it always did.
+                    "cache_state": unit_cache_state(record.get("cache")),
                 }
     return out
 
