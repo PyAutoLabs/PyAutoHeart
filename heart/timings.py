@@ -429,6 +429,25 @@ def _cache_states(cache: Any, keys: tuple[str, ...] = SCRIPTS_CACHE_KEYS
     return out
 
 
+def _setup_seconds(cache: Any) -> float | None:
+    """The leg's ``setup_s`` out of its cache block, or ``None``.
+
+    The sidecar reader (``heart.checks.smoke_timings.cache_view``) has already
+    coerced this; the same normalisation is repeated here for the same reason
+    ``_cache_states`` repeats its own — this module reads rollups it did not
+    necessarily produce, including ones written before the field existed, and
+    must never raise or fabricate on one.
+    """
+    src = cache if isinstance(cache, dict) else {}
+    value = src.get("setup_s")
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    seconds = float(value)
+    if seconds != seconds or seconds in (float("inf"), float("-inf")):
+        return None
+    return seconds if seconds >= 0 else None
+
+
 def unit_cache_state(cache: Any) -> str:
     """The ONE state a unit leg's drift comparison turns on.
 
@@ -517,6 +536,14 @@ def scripts_lines_from_rollup(
             # that cannot say which it was is a baseline nothing can use.
             # "unknown" on every side for a rollup that predates the sidecar.
             "cache": _cache_states(leg.get("cache")),
+            # The leg's FIXED overhead: job start -> first script, out of the
+            # same sidecar. Recorded beside `cache` and not inside it because
+            # `cache` says what the measurement was taken UNDER and every value
+            # in it is a state string; this is a measurement of its own, of the
+            # part of the gate no script is responsible for. `null` when the
+            # rollup does not know — never 0, which would claim the gate spent
+            # no time getting ready.
+            "setup_s": _setup_seconds(leg.get("cache")),
             "entries": {name: entries[name] for name in sorted(entries)},
         })
     for repo in out:

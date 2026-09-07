@@ -634,8 +634,14 @@ def test_main_aggregate_compares_only_inside_the_current_epoch(tmp_path,
 # run, it is a differently conditioned one, and the comparison has to be able
 # to tell them apart.
 
+# Sentinel for "the emitter did not write this key at all", which is a
+# different thing from having written null.
+_ABSENT = object()
+
+
 def _cache_state(*, jax_hit=True, ds_hit=False, numba_hit=True, epoch="1",
-                 schema="cache_state/1", jax_key="pyauto-jax-...-e1-"):
+                 schema="cache_state/1", jax_key="pyauto-jax-...-e1-",
+                 setup_s=104):
     return json.dumps({
         "schema": schema,
         "epoch": epoch,
@@ -651,7 +657,14 @@ def _cache_state(*, jax_hit=True, ds_hit=False, numba_hit=True, epoch="1",
                   "pyauto-numba-...-" if numba_hit else "", "hit": numba_hit,
                   "exact": False, "size_mb_before": 3, "size_mb_after": 9,
                   "entries_before": 30, "entries_after": 61},
+        # The gate's fixed overhead, measured by the workflow's two mark steps.
+        **({} if setup_s is _ABSENT else {"setup_s": setup_s}),
     })
+
+
+def _cache_state_without_setup(**kw):
+    """A sidecar from the emitter that predates the setup_s field."""
+    return _cache_state(setup_s=_ABSENT, **kw)
 
 
 def _cache_state_without_numba(**kw):
@@ -720,12 +733,47 @@ def test_the_cache_view_carries_the_numba_state_beside_the_other_two():
     view = smt.cache_view({"jax": "hit", "datasets": "miss", "numba": "miss",
                            "epoch": "1"})
     assert view == {"jax": "hit", "datasets": "miss", "numba": "miss",
-                    "epoch": "1"}
+                    "epoch": "1", "setup_s": None}
     # Anything that is not one of the two known states reads unknown, numba
     # included — and no sidecar at all is unknown on every side.
     assert smt.cache_view({"jax": "hit", "numba": "warm"})["numba"] == "unknown"
     assert smt.cache_view(None) == {"jax": "unknown", "datasets": "unknown",
-                                    "numba": "unknown", "epoch": ""}
+                                    "numba": "unknown", "epoch": "",
+                                    "setup_s": None}
+
+
+def test_the_sidecar_carries_the_gates_fixed_overhead():
+    """`setup_s` is job start -> first script: checkout, chain clone, python
+    setup, install. It is the number the cache work is judged on, so it rides
+    the sidecar rather than being scraped out of the Actions UI by hand."""
+    state, err = smt.parse_cache_state(_cache_state(setup_s=104))
+    assert err == "" and state["setup_s"] == 104.0
+    assert smt.cache_view(state)["setup_s"] == 104.0
+    # A leg that spent no measurable time is a real reading, not an absence.
+    state, _ = smt.parse_cache_state(_cache_state(setup_s=0))
+    assert state["setup_s"] == 0.0
+
+
+def test_a_sidecar_without_setup_s_is_none_never_a_zero():
+    """Additive like `numba` was: a sidecar without the field is an OLDER
+    EMITTER, and a gate that spent no time getting ready is not a thing that
+    happens — so its absence must not render as a measurement of 0 s."""
+    state, err = smt.parse_cache_state(_cache_state_without_setup())
+    assert err == "" and state["setup_s"] is None
+    assert smt.cache_view(state)["setup_s"] is None
+    # The cache states of that older sidecar are read exactly as before.
+    assert state["jax"] == "hit" and state["numba"] == "hit"
+
+
+def test_an_unreadable_setup_s_is_none_rather_than_an_exception():
+    """Written by another organ on a runner we do not control: every surprise
+    degrades to the honest unknown."""
+    for value in (None, "104", True, -5, float("nan"), float("inf"), {}):
+        state, err = smt.parse_cache_state(_cache_state(setup_s=value))
+        assert err == "", value
+        assert state["setup_s"] is None, value
+    assert smt.cache_view({"setup_s": "104"})["setup_s"] is None
+    assert smt.cache_view(None)["setup_s"] is None
 
 
 def test_a_leg_carries_its_cache_state_when_the_sidecar_rode_along(tmp_path):
@@ -733,7 +781,7 @@ def test_a_leg_carries_its_cache_state_when_the_sidecar_rode_along(tmp_path):
     entries, err, meta = smt.read_downloaded_leg(directory)
     assert err == "" and entries
     assert meta["cache"] == {"jax": "hit", "datasets": "miss",
-                             "numba": "hit", "epoch": "1"}
+                             "numba": "hit", "epoch": "1", "setup_s": 104.0}
 
 
 def test_a_leg_without_the_sidecar_is_unknown_never_a_miss(tmp_path):
@@ -742,7 +790,8 @@ def test_a_leg_without_the_sidecar_is_unknown_never_a_miss(tmp_path):
     entries, err, meta = smt.read_downloaded_leg(_extracted(tmp_path, [_entry()]))
     assert err == "" and meta["cache"] == {"jax": "unknown",
                                            "datasets": "unknown",
-                                           "numba": "unknown", "epoch": ""}
+                                           "numba": "unknown", "epoch": "",
+                                           "setup_s": None}
 
 
 def test_an_unparseable_sidecar_reads_unknown_and_loses_no_timings(tmp_path):
@@ -759,7 +808,7 @@ def test_the_sidecar_leg_and_the_rollup_carry_the_cache_state(tmp_path):
     side = smt.build_sidecar(REPO, "workspaces", OWNER, legs, "T")
     (leg,) = side["legs"]
     assert leg["cache"] == {"jax": "hit", "datasets": "miss",
-                            "numba": "hit", "epoch": "1"}
+                            "numba": "hit", "epoch": "1", "setup_s": 104.0}
 
     roll = smt.aggregate([side], {}, "T", smt.DEFAULT_SMOKE_TIMINGS_THRESHOLDS)
     assert roll["repos"][0]["cache"] == leg["cache"]
@@ -773,7 +822,7 @@ def test_a_failed_leg_has_no_cache_state_either(tmp_path):
     ], "T")
     (leg,) = side["legs"]
     assert leg["cache"] == {"jax": "unknown", "datasets": "unknown",
-                            "numba": "unknown", "epoch": ""}
+                            "numba": "unknown", "epoch": "", "setup_s": None}
 
 
 def test_drift_is_never_classified_across_two_known_cache_states():

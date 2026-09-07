@@ -1569,6 +1569,51 @@ def test_the_scripts_block_inherits_the_cache_state_with_no_renderer_change():
     assert d["schema_version"] == dashboard.SCHEMA_VERSION   # purely additive
 
 
+# --- the fixed overhead, on the same line as the numbers --------------------
+# A fifth of every `_test` leg is spent before the first script runs. A reader
+# looking at a leg's total needs that beside it, not in a different artifact.
+
+def _setup_scripts_snapshot(setup_s):
+    slice_ = _smoke_timings_slice()
+    slice_["repos"][0]["cache"] = {"jax": "unknown", "datasets": "unknown",
+                                   "numba": "unknown", "epoch": "",
+                                   "setup_s": setup_s}
+    return make_snapshot(ci_timing=_ci_timing_slice(),
+                         no_run_census=_no_run_slice(), smoke_timings=slice_)
+
+
+def _scripts_line(snapshot):
+    return _section(dashboard.build_board(snapshot, make_verdict(),
+                                          now=FRESH_NOW), "smoke_timings").details[0]
+
+
+def test_a_measured_setup_is_appended_after_the_coverage_tail():
+    """After the tail and not inside it: a leg that got faster by running fewer
+    scripts and a leg that got faster by installing quicker are different
+    events, and the line has to keep them apart."""
+    assert _scripts_line(_setup_scripts_snapshot(104)) == (
+        "RepoA py3.12: imaging/x.py 30s · imaging/y.py 5s"
+        "  (2 scripts, 35s total) · setup 104s")
+    # Whole seconds on the line whatever the sidecar carried — the same
+    # `_as_int` truncation every other count on this board goes through.
+    assert _scripts_line(_setup_scripts_snapshot(103.6)).endswith("· setup 103s")
+    # And the cache bracket, when there is one, is unaffected by the addition.
+    line = _scripts_line(_cached_scripts_snapshot("hit"))
+    assert line.startswith("RepoA py3.12 [jax cache hit]:")
+
+
+def test_an_unmeasured_setup_leaves_the_line_exactly_as_it_was():
+    """Every artifact from before the mark steps existed. The unknown case is
+    pinned by the cache-state tests above too; this says the setup work did not
+    move it."""
+    unchanged = ("RepoA py3.12: imaging/x.py 30s · imaging/y.py 5s"
+                 "  (2 scripts, 35s total)")
+    for value in (None, "104", True, -5, float("nan")):
+        assert _scripts_line(_setup_scripts_snapshot(value)) == unchanged, value
+    # No cache block at all — a leg the download failed on, or an older board.
+    assert _scripts_line(_cached_scripts_snapshot(None)) == unchanged
+
+
 # --- the same bracket, on the unit suite line --------------------------------
 # The libraries' gate restores a JAX compile cache and a numba function cache
 # too, so a suite's wall-clock is only readable beside what it ran under.
