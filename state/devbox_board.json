@@ -1,15 +1,10 @@
 {
   "schema_version": 1,
   "sections": {
-    "import_time": {
-      "details": [],
-      "state": "ok",
-      "summary": "0 imports within baseline"
-    },
     "profiling_drift": {
       "details": [],
       "state": "ok",
-      "summary": "50 results clean"
+      "summary": "52 results clean"
     },
     "script_timing": {
       "details": [],
@@ -17,9 +12,13 @@
       "summary": "646 within baseline"
     },
     "test_run": {
-      "details": [],
-      "state": "ok",
-      "summary": "ready \u2014 1375p / 0f / 119s @ cloud#33378525604"
+      "details": [
+        "\u2717 autolens notebooks/multi_dataset/modeling.ipynb (timeout)",
+        "\u2717 autolens scripts/multi_dataset/modeling.py (timeout)",
+        "\u2717 autolens_test scripts/imaging/delaunay.py (failed)"
+      ],
+      "state": "fail",
+      "summary": "NOT ready \u2014 1375p / 5f / 121s @ cloud#34099198772"
     },
     "version_skew": {
       "details": [],
@@ -27,12 +26,10 @@
       "summary": "all floors satisfiable"
     },
     "worktree_drift": {
-      "details": [
-        "slam-simultaneous-oversample-timeout/autolens_workspace: 2 dirty"
-      ],
-      "state": "fail",
-      "summary": "1 orphan / 0 missing / 1 dirty"
+      "details": [],
+      "state": "warn",
+      "summary": "2 orphan dir(s) (clean)"
     }
   },
-  "ts": "2026-09-04T16:40:25.544442+00:00"
+  "ts": "2026-09-07T13:43:23.135695+00:00"
 }
