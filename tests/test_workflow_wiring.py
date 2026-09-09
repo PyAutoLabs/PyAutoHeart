@@ -62,15 +62,32 @@ def test_test_run_reads_an_existing_entry_workflow():
     assert VALIDATION_WORKFLOW == "workspace-smoke.yml"
 
 
-def test_smoke_reusable_docs_only_gate_is_wired_fail_closed():
-    """The docs-only gate must stay fail-closed: the matrix job runs unless
-    the changes job explicitly said docs_only == 'true' (PyAutoHeart#126)."""
+def test_smoke_reusable_skip_gates_are_wired_fail_closed():
+    """Both skip gates must stay fail-closed: the matrix job runs unless the
+    changes job explicitly said 'true' (docs-only, PyAutoHeart#126; the
+    relevance gate, PyAutoHeart#219). `!= 'true'` and not `== 'false'` is the
+    whole property — an output the changes job never managed to write is an
+    empty string, which runs the matrix."""
     data = _load("smoke-tests.yml")
     jobs = data["jobs"]
     assert "changes" in jobs
     smoke = jobs["smoke"]
     assert smoke["needs"] == "changes"
-    assert smoke["if"] == "needs.changes.outputs.docs_only != 'true'"
+    assert smoke["if"] == (
+        "needs.changes.outputs.docs_only != 'true'"
+        " && needs.changes.outputs.no_smoke_relevant_changes != 'true'"
+    )
+
+
+def test_smoke_reusable_publishes_both_skip_reasons_as_outputs():
+    """A reason the `changes` job computes but does not export is a reason the
+    `smoke` job's `if:` reads as the empty string — i.e. silently ungated."""
+    changes = _load("smoke-tests.yml")["jobs"]["changes"]
+    assert changes["outputs"] == {
+        "docs_only": "${{ steps.diff.outputs.docs_only }}",
+        "no_smoke_relevant_changes":
+            "${{ steps.diff.outputs.no_smoke_relevant_changes }}",
+    }
 
 
 def _step(job, name_fragment):
