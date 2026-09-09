@@ -18,6 +18,11 @@ three properties that keep the addition harmless:
   different library commit is not the dataset this run would have written, so a
   broader fallback would be silent corruption of the thing being measured.
 
+The last section pins the `changes` job's two skip gates by RUNNING their
+shell — the classification predicate is a `case` glob list, and a glob list is
+exactly the kind of thing a string assertion can agree with while the shell
+disagrees.
+
 Fake names only, as in the sibling wiring tests: nothing here names a repo, an
 owner or a package — the workflow file is the declared surface, the callers are
 not.
@@ -28,8 +33,11 @@ in the sibling wiring tests; nothing here needs the triggers.
 
 from __future__ import annotations
 
+import os
+import subprocess
 from pathlib import Path
 
+import pytest
 import yaml
 
 WORKFLOWS = Path(__file__).resolve().parent.parent / ".github" / "workflows"
@@ -427,3 +435,219 @@ def test_the_runner_command_is_still_byte_identical_and_still_fatal():
     assert 'python "$RUNNER" $RUNNER_ARGS' in step["run"]
     assert "date +%s" not in step["run"]
     assert "continue-on-error" not in step
+
+
+# --- the skip gates: run the classifier, do not just read it ----------------
+#
+# `changes` decides whether eleven required checks do any work. Its verdict is
+# a pair of `case` glob lists in a shell heredoc, so the honest test executes
+# the step's own `run:` body against a synthetic diff rather than asserting on
+# its text. `git` is the only thing stubbed — the fetch's exit status and the
+# `--name-only` output ARE the two facts the guard reads — so the branch
+# structure, the two loops, the `$GITHUB_OUTPUT` writes and the step summary
+# are all the real ones from the file.
+#
+# The two reasons (PyAutoHeart#126, #219):
+#   docs_only                 — the diff is prose and nothing else.
+#   no_smoke_relevant_changes — nothing under scripts/, config/, .github/ and
+#                               neither entry list, so no smoke script this
+#                               gate runs can be affected.
+
+CLASSIFY_STEP = "Classify the diff"
+A_BASE = "1" * 40
+ZERO_SHA = "0" * 40
+
+GIT_STUB = """#!/usr/bin/env bash
+case "$1" in
+  fetch) exit "${FAKE_GIT_FETCH_RC:-0}" ;;
+  diff)  printf '%s' "$FAKE_GIT_FILES" ;;
+  *)     exit 1 ;;
+esac
+"""
+
+
+def _changes_job():
+    data = yaml.safe_load((WORKFLOWS / "smoke-tests.yml").read_text())
+    return data["jobs"]["changes"]
+
+
+def _classify_step():
+    return _step(_changes_job()["steps"], CLASSIFY_STEP)
+
+
+def _classify(tmp_path, files, *, event_name="pull_request", base=A_BASE,
+              fetch_ok=True):
+    """Run the real `Classify the diff` body over a synthetic file list.
+
+    Returns ``(flags, step_summary)`` — the `$GITHUB_OUTPUT` pairs the step
+    wrote, and the markdown a reader of the run would see.
+    """
+    bindir = tmp_path / "bin"
+    # exist_ok: a test may classify several diffs under the one tmp_path.
+    bindir.mkdir(exist_ok=True)
+    (bindir / "git").write_text(GIT_STUB)
+    (bindir / "git").chmod(0o755)
+    out = tmp_path / "github_output"
+    summary = tmp_path / "step_summary"
+    out.write_text("")
+    summary.write_text("")
+
+    env = dict(os.environ)
+    env.update(
+        PATH=f"{bindir}{os.pathsep}{env['PATH']}",
+        BASE=base,
+        EVENT_NAME=event_name,
+        GITHUB_OUTPUT=str(out),
+        GITHUB_STEP_SUMMARY=str(summary),
+        FAKE_GIT_FILES="\n".join(files),
+        FAKE_GIT_FETCH_RC="0" if fetch_ok else "1",
+    )
+    # `-e` is the shell GitHub runs `run:` under; a body that only works
+    # without it would pass here and fail on the runner.
+    result = subprocess.run(
+        ["bash", "-e", "-c", _classify_step()["run"]],
+        env=env, cwd=tmp_path, capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    flags = dict(
+        line.split("=", 1) for line in out.read_text().splitlines() if line
+    )
+    return flags, summary.read_text()
+
+
+def test_the_classifier_reads_the_event_name_and_the_base_from_the_env():
+    """Both are `${{ }}` expressions, and both belong in `env:` rather than
+    spliced into the shell — the house rule the key resolver follows too."""
+    step = _classify_step()
+    assert step["env"]["EVENT_NAME"] == "${{ github.event_name }}"
+    assert step["env"]["BASE"] == (
+        "${{ github.event.pull_request.base.sha || github.event.before }}"
+    )
+    run = step["run"]
+    assert "${{" not in run
+    # One diff, two verdicts: the second pass must not re-derive the file list,
+    # and the two-dot form against the base TIP is deliberate — upstream drift
+    # then shows up as extra files and conservatively runs the matrix.
+    assert run.count("git diff --name-only") == 1
+    assert 'git diff --name-only "$BASE" HEAD' in run
+    assert "merge-base" not in run
+
+
+@pytest.mark.parametrize("path", [
+    "scripts/imaging/start_here.py",
+    "scripts/misc/x.py",
+    "config/grids.yaml",
+    "config/visualize/plots.yaml",
+    "smoke_tests.txt",
+    "smoke_notebooks.txt",
+    ".github/scripts/run_smoke.py",
+    ".github/workflows/smoke_tests.yml",
+])
+def test_a_smoke_relevant_path_runs_the_matrix(tmp_path, path):
+    """The entries are paths in the two lists, resolved under `scripts/`, run
+    with the workspace's `config/` and this file's own ceremony (which the
+    caller workflow and the vendored runner under `.github/` supply)."""
+    flags, _ = _classify(tmp_path, [path])
+    assert flags["no_smoke_relevant_changes"] == "false", path
+
+
+@pytest.mark.parametrize("files", [
+    ["notebooks/imaging/start_here.ipynb"],
+    ["setup.py"],
+    ["dataset/imaging/simple/data.fits"],
+    ["output/.gitkeep", "requirements.txt"],
+    # A single relevant path anywhere in the diff is enough to run everything.
+])
+def test_a_diff_touching_no_smoke_relevant_path_skips(tmp_path, files):
+    flags, _ = _classify(tmp_path, files)
+    assert flags["no_smoke_relevant_changes"] == "true"
+
+
+def test_one_relevant_path_among_many_irrelevant_ones_runs_the_matrix(tmp_path):
+    """The loop breaks on the FIRST match, so the verdict must not depend on
+    where in the diff that match happens to sit."""
+    irrelevant = ["notebooks/a.ipynb", "setup.py", "output/keep"]
+    for i in range(len(irrelevant) + 1):
+        files = irrelevant[:i] + ["scripts/imaging/x.py"] + irrelevant[i:]
+        flags, _ = _classify(tmp_path, files)
+        assert flags["no_smoke_relevant_changes"] == "false", files
+
+
+def test_the_two_reasons_are_independent_and_a_docs_diff_satisfies_both(tmp_path):
+    """Nothing has to choose between them: they are ORed in the `smoke` job's
+    `if:`, so a diff that is both prose AND smoke-irrelevant is simply skipped
+    twice over."""
+    flags, summary = _classify(tmp_path, ["README.md", "docs/index.rst"])
+    assert flags["docs_only"] == "true"
+    assert flags["no_smoke_relevant_changes"] == "true"
+    # One reason per run, and the narrower, older one wins the summary.
+    assert "docs/metadata-only change" in summary
+    assert "no smoke-relevant change" not in summary
+
+
+def test_the_docs_only_verdict_is_unchanged_by_the_relevance_gate(tmp_path):
+    """#219 added a reason; it must not have edited the existing one. A config
+    sidecar is smoke-RELEVANT and not prose, so it flips both the other way."""
+    flags, _ = _classify(tmp_path, ["README.md", "config/grids.yaml"])
+    assert flags["docs_only"] == "false"
+    assert flags["no_smoke_relevant_changes"] == "false"
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"base": ""},                    # no base sha at all
+    {"base": ZERO_SHA},              # the all-zero sha of a branch's first push
+    {"fetch_ok": False},             # a base the shallow fetch cannot reach
+])
+def test_every_unresolvable_base_runs_the_whole_matrix(tmp_path, kwargs):
+    """FAIL CLOSED. Both flags are initialised `false` BEFORE the guard, so
+    every early exit out of it leaves the matrix running — a diff that could
+    not be read is not a diff that touched nothing."""
+    flags, summary = _classify(
+        tmp_path, ["notebooks/a.ipynb"], **kwargs
+    )
+    assert flags == {"docs_only": "false", "no_smoke_relevant_changes": "false"}
+    assert summary == ""
+
+
+def test_an_empty_diff_runs_the_whole_matrix(tmp_path):
+    """A reachable base that reports no files is the same unknown: vacuously
+    'no path is smoke-relevant' must not read as a verdict."""
+    flags, _ = _classify(tmp_path, [])
+    assert flags == {"docs_only": "false", "no_smoke_relevant_changes": "false"}
+
+
+@pytest.mark.parametrize("event_name", ["push", "workflow_dispatch", "schedule"])
+def test_the_relevance_gate_is_pull_request_only(tmp_path, event_name):
+    """The `main` push must keep running the full matrix. `config/repos.yaml`
+    lists "Smoke Tests" under `required_workflows` for the workspace groups;
+    `ci_status` reads its conclusion on the `main` HEAD commit and only an
+    explicit `success` rolls up green. Narrowing the PR side is free — Heart
+    never reads it — so the saving is taken there and only there."""
+    flags, summary = _classify(
+        tmp_path, ["notebooks/a.ipynb"], event_name=event_name
+    )
+    assert flags["no_smoke_relevant_changes"] == "false"
+    assert summary == ""
+
+
+def test_the_docs_only_gate_is_not_narrowed_to_pull_request(tmp_path):
+    """The event test belongs to the NEW reason only: gating the old one would
+    be a change to push-to-`main` behaviour, which #219 explicitly is not."""
+    flags, summary = _classify(tmp_path, ["README.md"], event_name="push")
+    assert flags["docs_only"] == "true"
+    assert "docs/metadata-only change" in summary
+
+
+def test_a_relevance_skip_shows_the_reader_what_it_classified(tmp_path):
+    """A skipped run has to explain itself the way the docs-only path does, or
+    the next person to wonder why the matrix did not run has only the `if:`."""
+    files = ["notebooks/imaging/start_here.ipynb", "setup.py"]
+    _, summary = _classify(tmp_path, files)
+    assert "### Smoke matrix skipped — no smoke-relevant change" in summary
+    for path in files:
+        assert f"`{path}`" in summary
+    # The reason names the allowlist, so the summary answers "why" and not just
+    # "which" — every directory the predicate actually tests.
+    for pattern in ("scripts/", "config/", ".github/",
+                    "smoke_tests.txt", "smoke_notebooks.txt"):
+        assert pattern in summary, pattern

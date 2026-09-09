@@ -112,18 +112,33 @@ on:
         default: false
 
 jobs:
-  # Docs-only gate: skip the matrix when the diff touches nothing but prose.
-  # FAIL CLOSED — any doubt (no base sha, unfetchable base, empty diff, a
-  # single non-allowlisted file) runs the matrix; only an explicit
-  # every-file-matches verdict skips. The allowlist is deliberately tiny:
-  # dotfiles and path-keyed sidecars count as code. The two-dot diff against
-  # the base TIP (not the merge-base) means upstream drift on the base branch
-  # shows up as extra files and conservatively runs the matrix. A skipped
-  # matrix job reports "skipped", which satisfies required-check semantics.
+  # Two reasons to skip the matrix, classified from ONE diff.
+  #
+  #   docs_only                 — the diff is nothing but prose.
+  #   no_smoke_relevant_changes — the diff touches nothing any smoke script
+  #                               could be built from or selected by.
+  #
+  # They are independent and ORed: a docs-only diff satisfies both, which is
+  # fine. Both are computed from the same `$files` list — one diff, two
+  # verdicts — so neither can disagree with the other about what changed.
+  #
+  # FAIL CLOSED — any doubt (no base sha, the all-zero sha, unfetchable base,
+  # empty diff, a single unclassifiable file) runs the matrix; only an explicit
+  # every-file-matches verdict skips. Both flags are therefore initialised
+  # `false` BEFORE the guard, so every early exit out of it runs everything.
+  # The docs allowlist is deliberately tiny: dotfiles and path-keyed sidecars
+  # count as code. The two-dot diff against the base TIP (not the merge-base)
+  # means upstream drift on the base branch shows up as extra files and
+  # conservatively runs the matrix. A skipped matrix job reports "skipped",
+  # which satisfies required-check semantics — that is the whole reason this
+  # gate lives INSIDE the workflow instead of in `on.pull_request.paths`, where
+  # a filtered-out job reports no conclusion at all and a required check sits
+  # pending forever.
   changes:
     runs-on: ubuntu-latest
     outputs:
       docs_only: ${{ steps.diff.outputs.docs_only }}
+      no_smoke_relevant_changes: ${{ steps.diff.outputs.no_smoke_relevant_changes }}
     steps:
       - name: Checkout workspace (shallow)
         uses: actions/checkout@v4
@@ -131,8 +146,10 @@ jobs:
         id: diff
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           docs_only=false
+          no_smoke_relevant_changes=false
           files=""
           if [ -n "$BASE" ] \
              && [ "$BASE" != "0000000000000000000000000000000000000000" ] \
@@ -146,19 +163,64 @@ jobs:
                   *) docs_only=false; break ;;
                 esac
               done <<< "$files"
+              # Relevance gate. A smoke entry is a path in `smoke_tests.txt` /
+              # `smoke_notebooks.txt`, resolved under `scripts/`, run with the
+              # workspace's `config/` and this file's own ceremony — so a diff
+              # touching none of `scripts/`, `config/`, the two entry lists or
+              # `.github/` (which holds the vendored runner and the caller
+              # workflow) cannot change what any smoke script does.
+              #
+              # PULL_REQUEST ONLY, and this is the load-bearing half of the
+              # condition. `config/repos.yaml` lists "Smoke Tests" under
+              # `required_workflows` for the workspace groups; `ci_status`
+              # reads that workflow's conclusion on the `main` HEAD commit and
+              # only an explicit `success` counts as green (`skipped` is not in
+              # FAILURE_CONCLUSIONS so it does not RED, but it is not `success`
+              # either, so the rollup returns an unknown and readiness can
+              # never go GREEN — and `cancelled` DOES red). Narrowing the PR
+              # side is free because Heart never reads it; narrowing the `main`
+              # side would cost the readiness gate its signal. So a push to
+              # `main` keeps running the full matrix, always.
+              if [ "$EVENT_NAME" = "pull_request" ]; then
+                no_smoke_relevant_changes=true
+                while IFS= read -r f; do
+                  case "$f" in
+                    scripts/*|config/*|smoke_tests.txt|smoke_notebooks.txt|.github/*)
+                      no_smoke_relevant_changes=false; break ;;
+                  esac
+                done <<< "$files"
+              fi
             fi
           fi
           echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
+          echo "no_smoke_relevant_changes=$no_smoke_relevant_changes" >> "$GITHUB_OUTPUT"
+          # One reason per skipped run, so the summary reads as an explanation
+          # rather than a list of coincidences; docs-only is the narrower one
+          # and wins when a diff satisfies both.
           if [ "$docs_only" = true ]; then
             {
               echo "### Smoke matrix skipped — docs/metadata-only change"
+              printf -- '- `%s`\n' $files
+            } >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$no_smoke_relevant_changes" = true ]; then
+            {
+              echo "### Smoke matrix skipped — no smoke-relevant change"
+              echo
+              echo "No changed path is under \`scripts/\`, \`config/\`, \`.github/\`,"
+              echo "or is \`smoke_tests.txt\` / \`smoke_notebooks.txt\`, so no smoke"
+              echo "script this gate runs can be affected. Changed files:"
+              echo
               printf -- '- `%s`\n' $files
             } >> "$GITHUB_STEP_SUMMARY"
           fi
 
   smoke:
     needs: changes
-    if: needs.changes.outputs.docs_only != 'true'
+    # Both skip reasons, ORed. Fail-closed reads the same either way: the
+    # matrix runs unless the `changes` job said "true" out loud.
+    if: >-
+      needs.changes.outputs.docs_only != 'true'
+      && needs.changes.outputs.no_smoke_relevant_changes != 'true'
     runs-on: ubuntu-latest
     # The manual salt carried by every cache key below. Bump it to invalidate
     # every cache at once — a runner-image change, a cache-format change — in
