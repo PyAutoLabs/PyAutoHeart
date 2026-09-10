@@ -253,6 +253,17 @@ def test_the_suite_runs_under_both_cache_dirs_and_is_otherwise_untouched():
     assert "--junitxml=test-results/junit.xml" in step["run"]
 
 
+def test_the_suite_persists_every_compile_it_makes():
+    """Same knob as the smoke leg (PyAutoHeart#221): JAX and autonerves only
+    persist an executable that took over a second to compile, and a unit suite
+    is many small compiles, so under that default the restored cache held
+    almost nothing. Exactly "0", not a smaller-but-nonzero value a faster
+    runner could silently drop a compile under."""
+    step = _step(_steps("unittest"), "Run tests")
+    assert step["env"]["JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS"] == "0"
+    assert "JAX_COMPILATION_CACHE_DIR" in step["env"]
+
+
 def test_the_record_step_runs_on_a_red_run_too_and_writes_the_sidecar():
     """A red run's cache state is exactly as interesting as a green one's — and
     the artifact it rides in is uploaded either way."""
