@@ -589,6 +589,17 @@ jobs:
           # subprocess, so each script's JAX writes to and reads from the same
           # compilation cache instead of one per-process temporary.
           JAX_COMPILATION_CACHE_DIR: ${{ github.workspace }}/.pyauto_jax_cache
+          # Persist EVERY compile, not only those over JAX's 1.0s default
+          # (autonerves setdefaults the same 1s whenever the cache dir is set;
+          # a preset value wins). The smoke scripts are hundreds of sub-second
+          # compiles each, so under the 1s regime a "hit" cache held 1-4
+          # entries and every run re-paid the compile: measured 2->513,
+          # 4->299 and 1->~490 entries on the three slowest JAX scripts, and
+          # 23-31s -> 10-18s per script, output byte-identical. The price is
+          # cache-artefact size (~500 entries / ~3 MB per JAX script, per
+          # python leg); the way out is this one line, or an epoch bump to
+          # drop the fat caches.
+          JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS: "0"
           # Via env, never interpolated into the script body: these inputs reach
           # here from a caller's workflow_dispatch, and `${{ }}` inside `run:`
           # would splice their text straight into the shell.
