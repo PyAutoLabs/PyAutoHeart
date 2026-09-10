@@ -2,9 +2,13 @@
   "schema_version": 1,
   "sections": {
     "profiling_drift": {
-      "details": [],
-      "state": "ok",
-      "summary": "52 results clean"
+      "details": [
+        "\u2717 runtime/imaging/mge/mge_likelihood_summary_hst_v2026.8.17.1.json  [eager, full, vmap]",
+        "\u2717 runtime/imaging/mge_mass_jax/mge_mass_jax_likelihood_summary_hst_v2026.8.17.1.json  [jax_mge_mass]",
+        "\u2717 runtime/imaging/pixelization_numba_mge_mass/pixelization_numba_mge_mass_likelihood_summary_hst_v2026.8.17.1.json  [numba_cpu_mge_mass]"
+      ],
+      "state": "warn",
+      "summary": "3 result(s) drifted from pinned baseline"
     },
     "script_timing": {
       "details": [],
@@ -31,5 +35,5 @@
       "summary": "2 orphan dir(s) (clean)"
     }
   },
-  "ts": "2026-09-07T13:43:23.135695+00:00"
+  "ts": "2026-09-10T19:25:10.782785+00:00"
 }
