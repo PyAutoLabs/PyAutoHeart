@@ -103,9 +103,24 @@ def test_the_runner_step_names_both_cache_dirs_and_is_otherwise_untouched():
     # cache the cache steps could not name, and the runner copies this job env
     # into every script subprocess, so all of them share the one directory.
     assert cache_dir.startswith("${{ github.workspace }}/")
-    # The command itself is untouched — one env key is the whole change.
+    # The command itself is untouched — the env keys are the whole change.
     assert 'python "$RUNNER" $RUNNER_ARGS' in step["run"]
     assert "continue-on-error" not in step
+
+
+def test_the_runner_persists_every_compile_it_makes():
+    """JAX (and autonerves, whenever the cache dir is set) only persist an
+    executable that took over a second to compile. The smoke scripts are
+    hundreds of sub-second compiles each, so under that default a "hit" cache
+    held 1-4 entries and every run re-paid the compile. The threshold is set
+    where the cache dir is set — the same step env the runner copies into
+    every script subprocess — and it is exactly "0", not a smaller-but-nonzero
+    value a faster runner could silently drop a compile under (PyAutoHeart#221)."""
+    step = _step(_steps(), RUNNER_STEP)
+    assert step["env"]["JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS"] == "0"
+    assert "JAX_COMPILATION_CACHE_DIR" in step["env"]
+    # Still an env-only change: the runner command is a workspace's own.
+    assert 'python "$RUNNER" $RUNNER_ARGS' in step["run"]
 
 
 # --- placement, and non-fatality --------------------------------------------
