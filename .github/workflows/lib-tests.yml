@@ -32,7 +32,12 @@ name: Library Tests (reusable)
 # both change — so a `Stamp source mtimes from content` step rewrites every
 # .py's mtime as a hash of its CONTENT: identical content hits, changed content
 # misses, and the numba key therefore needs no library-commit component and can
-# safely carry a prefix fallback. Both caches are measured before and after the
+# safely carry a prefix fallback. Matching content is necessary but NOT
+# sufficient: numba's own index key also carries the host CPU name and feature
+# string, so on a heterogeneous runner pool a restored entry is unreadable
+# unless the job lands on the same CPU model — which is why `Run tests` pins
+# NUMBA_CPU_NAME/NUMBA_CPU_FEATURES (the comment there has the measurement).
+# Both caches are measured before and after the
 # run into `test-results/cache_state.json`, the sidecar that rides the
 # unit-timings artifact, so every unit-timing row the Heart ingests can say
 # whether the leg ran hot or cold instead of reading a cache landing as a
@@ -52,8 +57,16 @@ jobs:
     # The manual salt carried by every cache key below. Bump it to invalidate
     # every cache at once — a runner-image change, a cache-format change — in
     # one edit instead of hand-editing each key and hoping none was missed.
+    #
+    # Bumped 1 -> 2 on 2026-09-10 with the NUMBA_CPU_NAME/FEATURES pin in
+    # `Run tests`: every numba entry saved under epoch 1 is keyed to the CPU
+    # of the runner that wrote it, so none of them is readable under the pin.
+    # Left in place they would ride every future download as dead weight (57
+    # of the 76 files in the last PyAutoLens cache, 4 of its 6 MB), and there
+    # is no saving in keeping them — the first run after the pin recompiles
+    # either way. This is the "cache-format change" the salt is for.
     env:
-      PYAUTO_CACHE_EPOCH: "1"
+      PYAUTO_CACHE_EPOCH: "2"
     strategy:
       fail-fast: false
       matrix:
@@ -327,6 +340,40 @@ jobs:
           # restorable nor saveable) into the one directory those steps cache.
           JAX_COMPILATION_CACHE_DIR: ${{ github.workspace }}/.pyauto_jax_cache
           NUMBA_CACHE_DIR: ${{ github.workspace }}/.numba_cache
+          # ...and what makes the numba cache above actually HIT. A restored
+          # directory is not a warm cache: numba's own per-entry index key is
+          # `(signature, codegen.magic_tuple(), sha256(co_code),
+          # sha256(closure))`, and `magic_tuple()` is
+          # `(llvm triple, HOST CPU NAME, HOST CPU FEATURE STRING)` — on this
+          # runner, `('x86_64-unknown-linux-gnu', 'cascadelake', <939 chars>)`.
+          # `ubuntu-latest` is a heterogeneous pool, so a job that lands on a
+          # different CPU model than the one that wrote the entry misses it,
+          # recompiles, and APPENDS a second `.nbc` beside the first
+          # (IndexDataCacheFile.save allocates the next free data name), which
+          # is why a cache can grow every run and still never be read.
+          # Measured, PyAutoLens `unit-timings-3.12`/`-3.13` cache_state.json:
+          # entries 0 -> 38 (cold, 19 cached functions x index+data) -> 57 ->
+          # 76, +19 every run, zero hits, both python legs, while the source
+          # stamps matched (a stamp miss overwrites `.nbc` #1 instead of
+          # appending, so the count would have been flat). PyAutoGalaxy is the
+          # control: runs 2918 and 2920 restored the same cache, 2918 added 0
+          # files and 2920 added 3 — a hit and a miss off identical bytes, which
+          # only a HOST-dependent key does.
+          #
+          # Pinning both components makes the artefacts, and therefore the key,
+          # host-independent: one cache that every runner can read. It weakens
+          # no invalidation — the source stamp (content-hashed two steps up),
+          # the bytecode hash, the python version in the cache key and numba's
+          # own version check all still apply, and a `generic` artefact is
+          # genuinely valid on every x86-64 runner rather than being a stale
+          # one served across hosts. The price is generic codegen instead of
+          # this host's ISA extensions, which is free here and nowhere near
+          # free in smoke-tests.yml: the unit suite's jitted work is ~0.02 s
+          # against ~8.7 s of compilation, where a workspace script's is the
+          # measurement itself. So this pin is the unit gate's, not the
+          # organism's.
+          NUMBA_CPU_NAME: generic
+          NUMBA_CPU_FEATURES: ""
         run: |
           export JAX_ENABLE_X64=True
           ROOT="$(pwd)"

@@ -138,10 +138,21 @@ def test_the_artifact_name_is_what_the_heart_check_selects():
 def test_the_epoch_salt_is_declared_once_at_the_job_level():
     """One knob invalidates every cache below it — a runner-image change, a
     cache-format change — instead of an edit per key with one of them missed.
-    Declared on `unittest` alone: the no-jax leg caches nothing."""
+    Declared on `unittest` alone: the no-jax leg caches nothing.
+
+    The VALUE is deliberately not pinned: the salt exists to be bumped, so a
+    test that names the current number fails on the one edit it is there to
+    permit (it did, on the 1 -> 2 bump that came with the CPU pin below). What
+    must hold is that there is exactly one of them, it is a non-empty salt, and
+    every key reads it from the job."""
     jobs = _jobs()
-    assert jobs["unittest"]["env"]["PYAUTO_CACHE_EPOCH"] == "1"
+    epoch = jobs["unittest"]["env"]["PYAUTO_CACHE_EPOCH"]
+    assert isinstance(epoch, str) and epoch.strip()
     assert "env" not in jobs["unittest-nojax"]
+    for name in (JAX_RESTORE_STEP, NUMBA_RESTORE_STEP,
+                 JAX_SAVE_STEP, NUMBA_SAVE_STEP):
+        key = _step(_steps("unittest"), name)["with"]["key"]
+        assert "${{ env.PYAUTO_CACHE_EPOCH }}" in key, name
 
 
 def test_the_cache_steps_sit_in_order_between_the_install_and_the_upload():
@@ -230,7 +241,10 @@ def test_the_stamp_step_makes_the_numba_fallback_safe():
     clone or a fresh `pip install` changes every mtime — so without this the
     restored cache would miss every entry it holds, and with it a changed file
     misses its own entry however old the restored directory is. That is what
-    lets the key above carry a prefix fallback and name no library commit."""
+    lets the key above carry a prefix fallback and name no library commit.
+
+    Necessary, not sufficient: the CPU pin in the next test is the other half
+    (numba's index key carries the host CPU as well as the source stamp)."""
     step = _step(_steps("unittest"), STAMP_STEP)
     run = step["run"]
     # The roots reach the script through the environment, never spliced into
@@ -242,6 +256,34 @@ def test_the_stamp_step_makes_the_numba_fallback_safe():
     assert "sha1" in run and "os.utime" in run
     # The installed copies too, resolved WITHOUT importing them.
     assert "find_spec" in run and "submodule_search_locations" in run
+
+
+def test_the_suite_pins_numbas_cpu_so_the_restored_numba_cache_can_be_read():
+    """The other half of the stamp above, and the reason a warm-looking numba
+    cache was never read.
+
+    numba's per-entry index key is `(signature, codegen.magic_tuple(),
+    sha256(co_code), sha256(closure))`, and `magic_tuple()` is `(llvm triple,
+    host CPU name, host CPU feature string)`. `ubuntu-latest` is a
+    heterogeneous pool, so an entry written on one CPU model is unreadable on
+    another: the job recompiles and `IndexDataCacheFile.save` APPENDS a second
+    `.nbc` beside the first, which is how a cache grows every run and is never
+    read. Measured on PyAutoLens (`cache_state.json`, both python legs): numba
+    entries 0 -> 38 cold, then 57, then 76 — plus exactly 19 every run, one per
+    cached function, zero hits — while PyAutoGalaxy runs 2918 and 2920 restored
+    the SAME cache and added 0 and 3 files respectively, a hit and a miss off
+    identical bytes.
+
+    Pinning both components removes the host from the key and makes the
+    artefact genuinely host-independent, which is sound in a way a broader
+    cache key would not be: nothing else that invalidates an entry is
+    weakened (the content stamp, the bytecode hash, the python version in the
+    cache key, numba's own version check). The cost is generic codegen, which
+    this gate can afford and `smoke-tests.yml` — whose per-script wall-clock IS
+    the Heart's dataset — deliberately does not take."""
+    step = _step(_steps("unittest"), "Run tests")
+    assert step["env"]["NUMBA_CPU_NAME"] == "generic"
+    assert step["env"]["NUMBA_CPU_FEATURES"] == ""
 
 
 def test_the_suite_runs_under_both_cache_dirs_and_is_otherwise_untouched():
