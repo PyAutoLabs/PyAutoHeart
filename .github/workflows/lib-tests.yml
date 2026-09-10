@@ -326,6 +326,14 @@ jobs:
           # function cache out of the source trees (where it would be neither
           # restorable nor saveable) into the one directory those steps cache.
           JAX_COMPILATION_CACHE_DIR: ${{ github.workspace }}/.pyauto_jax_cache
+          # Persist EVERY compile, not only those over JAX's 1.0s default
+          # (autonerves setdefaults the same 1s whenever the cache dir is set;
+          # a preset value wins). Same reasoning and same knob as the smoke
+          # leg (PyAutoHeart#221): a unit suite is many small compiles, so
+          # under the 1s regime the restored cache holds almost nothing and
+          # every run re-pays them. The price is cache-artefact size; the way
+          # out is this one line, or an epoch bump to drop the fat caches.
+          JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS: "0"
           NUMBA_CACHE_DIR: ${{ github.workspace }}/.numba_cache
         run: |
           export JAX_ENABLE_X64=True
