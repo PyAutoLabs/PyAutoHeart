@@ -188,6 +188,7 @@ excluded:
   - admin_jammy           # personal tooling
   - autolens_assistant    # public-facing template
   - autolens_profiling    # profiling project
+  - autolens_inference    # inference benchmark project (search/inference runs; results tracked)
   - z_help                # scratch
   - z_projects            # in-progress science
   - z_projects_complete   # archived science
