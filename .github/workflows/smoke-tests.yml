@@ -557,6 +557,48 @@ jobs:
             echo "No config/build/profile_smoke.yaml — profile validation skipped."
           fi
 
+      # The PR gate's copy of workspace-validation.yml's guard: the runner
+      # below writes into test-results/ and the upload step globs it (plus
+      # every smoke_timings.json), so a result file the workspace repo
+      # tracks would ride into the timings artifact here exactly as it rode
+      # into the release report there. Same step text, kept in step by
+      # tests/test_workflow_wiring.py.
+      - name: Discard result files the workspace checkout carries
+        # A workspace repo must never ship its own test-results/ — but one did:
+        # autolens_workspace_test#311 committed a local smoke run's
+        # `*__script.json` / `.md` / `smoke_timings.json` (three stale failures,
+        # `/home/<user>` paths). The shard uploaded the whole directory, the
+        # analyze stage merged those failures into the report, and two nightly
+        # releases (2026-09-09, 2026-09-10) stopped at Stage 3 while every
+        # script that actually ran passed. The runner below writes its own
+        # reports into test-results/; anything already there arrived from git
+        # and is not evidence about this run, so it goes — loudly, one
+        # ::warning:: per file, so a leaking repo is visible in the run log
+        # rather than silently laundered. cache_state.json is kept: it is this
+        # run's sidecar (written by the cache steps), not a result. The shell
+        # is self-contained (no `${{ }}`) so tests/test_workflow_wiring.py can
+        # execute it verbatim against a planted stale file.
+        shell: bash
+        run: |
+          set -u
+          ws="${WORKSPACE_DIR:-workspace}"
+          [ -d "$ws" ] || { echo "no $ws checkout — nothing to discard"; exit 0; }
+          found=0
+          while IFS= read -r f; do
+            found=1
+            echo "::warning title=Stale result file in the workspace checkout::$f was committed to the workspace repo and is not a result of this run — discarded"
+            rm -f "$f"
+          done < <(
+            { [ -d "$ws/test-results" ] && find "$ws/test-results" -type f \
+                \( -name '*__script.json' -o -name '*__script.md' \
+                   -o -name 'smoke_timings.json' -o -name 'report.json' \) \
+                ! -name 'cache_state.json'; } ;
+            find "$ws" -path "$ws/.git" -prune -o -path "$ws/test-results" -prune \
+                -o -type f -name 'smoke_timings.json' -print
+          )
+          [ "$found" -eq 0 ] && echo "no stale result files under $ws"
+          exit 0
+
       # The second half of `setup_s`. Placed IMMEDIATELY before the runner and
       # nowhere else: the runner step's own command is the one thing in this
       # workflow that must stay byte-identical (a workspace owns its runner),
