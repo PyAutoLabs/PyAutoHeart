@@ -229,8 +229,8 @@ def test_timing_artifacts_stay_out_of_the_aggregate_namespace():
 
 # --- the discard-stale-results guard --------------------------------------
 #
-# A workspace repo that tracks its own test-results/ (autolens_workspace_test
-# #311 did, by accident) hands every shard a report about some other run: the
+# A workspace repo that tracks its own test-results/ (one did, by accident, in
+# 2026-09) hands every shard a report about some other run: the
 # runner writes beside it, the upload step ships the directory whole, and the
 # analyze stage folds the stale failures into the release report. Two nightly
 # releases stopped at Stage 3 on exactly that (2026-09-09/10) while every
