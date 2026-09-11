@@ -225,3 +225,127 @@ def test_timing_artifacts_stay_out_of_the_aggregate_namespace():
     prefix = pattern.rstrip("*")
     for job_name, _leg in TIMING_LEGS:
         assert not _timing_step(job_name)["with"]["name"].startswith(prefix)
+
+
+# --- the discard-stale-results guard --------------------------------------
+#
+# A workspace repo that tracks its own test-results/ (one did, by accident, in
+# 2026-09) hands every shard a report about some other run: the
+# runner writes beside it, the upload step ships the directory whole, and the
+# analyze stage folds the stale failures into the release report. Two nightly
+# releases stopped at Stage 3 on exactly that (2026-09-09/10) while every
+# script that ran passed. The guard is one step, placed between the workspace
+# checkout and the runner in both shard jobs (and in the PR gate), whose shell
+# is self-contained so it can be executed here against a planted file.
+
+import os
+import subprocess
+
+DISCARD_STEP = "Discard result files the workspace checkout carries"
+
+
+def _job_steps(workflow, job):
+    return _load(workflow)["jobs"][job]["steps"]
+
+
+def _index(steps, needle):
+    for i, step in enumerate(steps):
+        if needle in step.get("name", ""):
+            return i
+    raise AssertionError(f"no step named like {needle!r}")
+
+
+def _run_discard(step, cwd, env=None):
+    return subprocess.run(
+        ["bash", "-c", step["run"]], cwd=cwd, text=True, capture_output=True,
+        env={**os.environ, **(env or {})},
+    )
+
+
+def test_both_shard_jobs_discard_committed_results_after_checkout_and_before_running():
+    for job, run_step in (("run_scripts", "Run Python scripts"),
+                          ("run_notebooks", "Run notebooks")):
+        steps = _job_steps("workspace-validation.yml", job)
+        i = _index(steps, DISCARD_STEP)
+        assert _index(steps, "Checkout workspace") < i < _index(steps, run_step), job
+        assert i < _index(steps, "Upload"), job
+        # No `${{ }}` in the shell: the step must be runnable verbatim (below),
+        # and nothing in it should depend on a matrix that differs per job.
+        assert "${{" not in steps[i]["run"], job
+    # The notebooks leg is gated like its checkout; the scripts leg is not.
+    nb = _job_steps("workspace-validation.yml", "run_notebooks")
+    assert nb[_index(nb, DISCARD_STEP)]["if"] == nb[_index(nb, "Checkout workspace")]["if"]
+    assert "if" not in _job_steps("workspace-validation.yml", "run_scripts")[
+        _index(_job_steps("workspace-validation.yml", "run_scripts"), DISCARD_STEP)]
+
+
+def test_the_pr_gate_carries_the_same_guard_before_its_runner():
+    """smoke-tests.yml uploads test-results/ and every smoke_timings.json into
+    the timings artifact, so the leak rides there too. One step text, so a
+    fix to the pattern list lands in both places or neither."""
+    gate = _job_steps("smoke-tests.yml", "smoke")
+    i = _index(gate, DISCARD_STEP)
+    assert _index(gate, "Checkout the workspace") < i < _index(gate, "Mark scripts start") \
+        if any("Checkout the workspace" in s.get("name", "") for s in gate) \
+        else i < _index(gate, "Mark scripts start")
+    body = _job_steps("workspace-validation.yml", "run_scripts")
+    assert gate[i]["run"] == body[_index(body, DISCARD_STEP)]["run"]
+
+
+def test_the_guard_removes_planted_result_files_loudly_and_keeps_the_sidecar(tmp_path):
+    steps = _job_steps("workspace-validation.yml", "run_scripts")
+    step = steps[_index(steps, DISCARD_STEP)]
+    ws = tmp_path / "workspace"
+    results = ws / "test-results"
+    results.mkdir(parents=True)
+    stale_json = results / "some_workspace_test__scripts__script.json"
+    stale_json.write_text('{"results": [{"file": "/home/someone/scripts/x.py", "status": "failed"}]}')
+    stale_md = results / "some_workspace_test__scripts__script.md"
+    stale_md.write_text("| x.py | FAIL |\n")
+    stale_timings = results / "smoke_timings.json"
+    stale_timings.write_text("{}")
+    nested_timings = ws / "scripts" / "smoke_timings.json"
+    nested_timings.parent.mkdir()
+    nested_timings.write_text("{}")
+    sidecar = results / "cache_state.json"
+    sidecar.write_text('{"before": {}}')
+    # Not a result file: an ordinary tracked script must be untouched, and so
+    # must anything under .git (pruned, never walked).
+    script = ws / "scripts" / "x.py"
+    script.write_text("print(1)\n")
+    dotgit = ws / ".git" / "smoke_timings.json"
+    dotgit.parent.mkdir()
+    dotgit.write_text("{}")
+
+    res = _run_discard(step, tmp_path)
+
+    assert res.returncode == 0, res.stderr
+    for gone in (stale_json, stale_md, stale_timings, nested_timings):
+        assert not gone.exists(), gone
+    for kept in (sidecar, script, dotgit):
+        assert kept.exists(), kept
+    # One ::warning:: per discarded file, naming it — a leak is never silent.
+    warnings = [l for l in res.stdout.splitlines() if l.startswith("::warning")]
+    assert len(warnings) == 4, res.stdout
+    assert any(stale_json.name in w for w in warnings)
+
+
+def test_the_guard_is_a_quiet_no_op_on_a_clean_checkout(tmp_path):
+    steps = _job_steps("workspace-validation.yml", "run_scripts")
+    step = steps[_index(steps, DISCARD_STEP)]
+    # No checkout at all (the notebooks leg's gate may skip it): exit 0.
+    res = _run_discard(step, tmp_path)
+    assert res.returncode == 0 and "::warning" not in res.stdout
+    # A checkout with a fresh sidecar and no reports: exit 0, sidecar kept.
+    results = tmp_path / "workspace" / "test-results"
+    results.mkdir(parents=True)
+    (results / "cache_state.json").write_text("{}")
+    res = _run_discard(step, tmp_path)
+    assert res.returncode == 0 and "::warning" not in res.stdout, res.stdout
+    assert (results / "cache_state.json").exists()
+    # The directory is configurable for callers that check out elsewhere.
+    other = tmp_path / "elsewhere" / "test-results"
+    other.mkdir(parents=True)
+    (other / "a__script.json").write_text("{}")
+    res = _run_discard(step, tmp_path, env={"WORKSPACE_DIR": "elsewhere"})
+    assert res.returncode == 0 and not (other / "a__script.json").exists()
