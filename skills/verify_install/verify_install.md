@@ -18,12 +18,51 @@ about cleanup if they ran with `--keep`.
 | C | The conda flow from `installation/conda.rst` works end-to-end (`conda create … python=3.12` → `pip install autolens` → clone workspace → run `welcome.py` + `start_here.py`). |
 | D | `pip install "autolens[optional]"` resolves cleanly and imports. |
 | E | `pip install autolens==2026.2.26.4` (a yanked release the docs reference) still installs on `python3.12` by explicit pin. |
-| F | The Colab bootstrap path end-to-end: a venv emulating Colab's preinstalled env (`autolens` + `jax` from PyPI), a fake `google.colab` package so the on-Colab branch activates, then the injected setup cell verbatim (`pip install autoconf --no-deps` → `setup_colab.setup("autolens")` → workspace clone at the release tag) and one real notebook cell (`al.Imaging.from_fits` on `dataset/imaging/simple`). SKIPs while the installed autoconf predates the `setup_colab` registry (self-activates at the next release). |
+| F | The **Colab gate**. A `python3.12` venv (Colab's interpreter) is seeded from Google's own Colab package manifest (`googlecolab/backend-info`'s `pip-freeze.txt`): the with-deps closure of the PyAuto stack is resolved but **not** installed, and only the part of it Colab also ships is installed, at Colab's pinned versions. The injected setup cell then runs verbatim on top (`pip install autonerves --no-deps` → `setup_colab.setup("autolens")` → `--no-deps` bootstrap → workspace clone at the release tag), and the gate audits what that bootstrap left: it walks every declared requirement of the five installed libraries, AST-scans **every** `import` in their source at any depth, and imports each third-party module for real. An unguarded import of a module Colab will not have is **FAIL**; so is a headline `af.Emcee()` / `af.DynestyStatic()` / `af.Nautilus()` / `af.LBFGS()` that cannot be constructed, and a declared dependency that is both absent on Colab and actually imported. Version conflicts, guarded imports and never-imported gaps are reported as WARNs. A real notebook cell (`al.Imaging.from_fits` on the bundled `dataset/imaging/cosmos_web_ring`) runs last. SKIPs while the installed `autonerves` predates the `setup_colab` registry. |
 
-Check B requires `python3.11`, `python3.12`, and `python3.13`; Check E requires
-`python3.12`. A missing required interpreter is **FAIL**. Optional host
+Check B requires `python3.11`, `python3.12`, and `python3.13`; Checks E and F
+require `python3.12`. A missing required interpreter is **FAIL**. Optional host
 capabilities such as conda remain **SKIP** when unavailable and do not count
 toward overall failure.
+
+### What Check F does and does not cover
+
+Check F covers **Colab's package set and Colab's interpreter** — the two things
+that make a notebook die there and nowhere else. A dependency imported lazily
+inside a function leaves `import autolens` working and only detonates on the
+line that reaches it, and the workspace smoke gate cannot see those either (it
+runs at `PYAUTO_TEST_MODE=2` and never constructs a sampler). That is the gap
+this check closes; the fix for anything it finds is normally a new entry in
+`_SHARED_EXTRAS` in `autonerves/setup_colab.py`.
+
+It does **not** cover:
+
+- **the GPU** — no accelerator is present, and `setup` is called with
+  `raise_error_if_not_gpu=False`;
+- **Colab's operating system, CUDA stack or `apt` packages** — only the pip
+  package set is reproduced;
+- **the manifest's lag** — `googlecolab/backend-info` is refreshed when Google
+  cuts an image, so it trails the live runtime by a day or two. A failure
+  caused purely by a version Colab shipped yesterday is possible; the report
+  always names the manifest's source (`live`, `cache` or the vendored
+  snapshot) and date so the evidence can be dated.
+
+The manifest is fetched live, cached at `$HEART_STATE_DIR/colab_pip_freeze.txt`,
+and falls back to `heart/checks/colab_pip_freeze.snapshot.txt` when both are
+unavailable. Deliberate exemptions live in `heart/config/colab_gate.yaml`
+(`accepted_missing`), each with a written reason that travels into the report.
+
+**`COLAB_GATE_AUTONERVES_SRC`** (development / witness runs only) installs a
+path or requirement `--no-deps` over the released `autonerves` immediately
+after the setup cell's own bootstrap install. It exists because the package
+list the gate measures lives in `autonerves/setup_colab.py`, so a fix to it
+cannot otherwise be rehearsed until it is on PyPI:
+
+```bash
+COLAB_GATE_AUTONERVES_SRC=/path/to/PyAutoNerves pyauto-heart verify_install F
+```
+
+Never set it in CI — a release gate must read the wheels that are about to ship.
 
 ## Running without a skill harness
 
@@ -93,7 +132,10 @@ If the user wants to inspect a specific environment, re-run the relevant check w
 ## Files
 
 - `PyAutoHeart/heart/checks/verify_install.sh` — the runnable script; source of truth for
-  what each check does. Owned by PyAutoHeart, which owns all release-readiness checking; the
+  what each check does.
+- `PyAutoHeart/heart/checks/colab_gate.py` — Check F's `seed` / `verify` gate, plus
+  `colab_pip_freeze.snapshot.txt` (the vendored Colab manifest) and
+  `PyAutoHeart/heart/config/colab_gate.yaml` (accepted misses). Owned by PyAutoHeart, which owns all release-readiness checking; the
   `--report-json` sidecar it writes feeds `pyauto-heart readiness`.
 - `verify_install.md` — this file; explains the skill and how to invoke it.
 
