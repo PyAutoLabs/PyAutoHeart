@@ -16,7 +16,9 @@
 #   C  conda install flow (python=3.12) + start_here.py + welcome.py
 #   D  pip install "autolens[optional]" resolves
 #   E  pip install autolens==2026.2.26.4 on Python 3.12 by explicit pin
-#   F  Colab simulation: fake google.colab + the injected setup cell + run a cell
+#   F  Colab gate: a venv holding Google's Colab package set, the injected
+#      setup cell verbatim (--no-deps bootstrap + workspace clone), an audit
+#      of every import/declared dependency the bootstrap left unmet, then a cell
 #
 # Each check creates its own throwaway venv / conda env and reports
 # PASS / FAIL / SKIP. A failed check never aborts the suite. Cleanup runs at
@@ -65,8 +67,11 @@ Checks:
   C   conda install flow (python=3.12) + start_here.py + welcome.py
   D   pip install "autolens[optional]" resolves and imports
   E   pip install autolens==2026.2.26.4 (yanked) installs on python3.12 by explicit pin
-  F   Colab simulation: fake google.colab, run the injected setup cell
-      (pip bootstrap + setup_colab + workspace clone), then a notebook cell
+  F   Colab gate: build a python3.12 venv holding the package set Google's
+      Colab ships (googlecolab/backend-info), run the injected setup cell
+      verbatim (--no-deps bootstrap + workspace clone), then audit every
+      third-party import and declared dependency the bootstrap left unmet
+      before running a real notebook cell
 
 Default: run all checks.
 
@@ -84,6 +89,15 @@ Options:
                       (consumed by pyauto-heart readiness; `index` is pypi,
                       testpypi, or find-links).
   -h, --help          Show this help.
+
+Environment:
+  COLAB_GATE_AUTONERVES_SRC
+                      Check F only, dev/witness use. A path or requirement
+                      installed --no-deps over the released `autonerves` right
+                      after the setup cell's own bootstrap install, so an
+                      UNRELEASED autonerves/setup_colab.py package list can be
+                      rehearsed against the gate. Never set this in CI: a
+                      release gate must read the wheels about to ship.
 USAGE
 }
 
@@ -213,6 +227,14 @@ RESULTS=()       # each row "LETTER|STATUS|DETAIL"
 RESULTS_LOG=""   # captured tail appended below the table on FAIL
 ARTEFACTS=()     # paths to rm -rf at end
 CONDA_ENVS=()    # conda env names to remove at end
+
+# Check F caches Google's Colab pip-freeze manifest next to Heart's other state
+# (same default as heart/state.py) so an offline/rate-limited run degrades to
+# the last real manifest rather than to the snapshot vendored in this repo.
+HEART_STATE_DIR="${HEART_STATE_DIR:-$HOME/.pyauto-heart}"
+COLAB_MANIFEST_CACHE="$HEART_STATE_DIR/colab_pip_freeze.txt"
+F_GATE_SEED_JSON=""      # colab_gate seed report, folded into the sidecar
+F_GATE_VERIFY_JSON=""    # colab_gate verify report, folded into the sidecar
 
 PIP_INSTALL_TARGET="autolens"
 PIP_INSTALL_OPTIONAL="autolens[optional]"
@@ -680,38 +702,76 @@ check_e() {
     fi
 }
 
-# ----- check F: Colab simulation — the injected setup cell end-to-end -----
+# ----- check F: Colab simulation — the Colab package set, then the setup cell -----
+#
+# This check used to "emulate Colab" with `pip install autolens jax` WITH
+# dependencies. That install is what made the check blind: the venv already
+# held corner, optax, xxhash, blackjax and every other declared dependency
+# before the setup cell ran, so the cell's real `pip install ... --no-deps`
+# could never be observed to miss one. Notebooks that die on Colab at the first
+# post-fit plot passed check F for months.
+#
+# The venv is now built from the package set Google actually ships (the
+# `googlecolab/backend-info` pip-freeze manifest) via colab_gate.py:
+#
+#   seed    resolve the with-deps closure WITHOUT installing it, install only
+#           the part of it Colab also ships, at Colab's pinned versions
+#   <cell>  the injected setup cell verbatim: `pip install ... --no-deps` +
+#           workspace clone + autonerves config
+#   verify  walk the installed libraries' declared requirements, AST-scan every
+#           import in their source and probe each one for real, construct the
+#           headline searches
+#   <cell>  one real notebook cell (al.Imaging.from_fits)
+#
+# The interpreter is python3.12 because Colab is python3.12 — check B's
+# "missing required interpreter is FAIL" rule applies here too.
+#
+# COLAB_GATE_AUTONERVES_SRC (dev/witness only): a path or requirement installed
+# `--no-deps` immediately after the setup cell's verbatim `pip install
+# autonerves --no-deps`. It exists to rehearse an UNRELEASED setup_colab.py —
+# the bootstrap package list is the thing this check gates, and until it is on
+# PyPI there is no other way to run the gate against a fix. Never set in CI.
 
 check_f() {
     echo
-    echo "=== Check F: Colab simulation (fake google.colab + setup cell + notebook cell) ==="
+    echo "=== Check F: Colab gate (Colab package set + setup cell + package audit + notebook cell) ==="
 
     local venv="/tmp/autolens_verify_F_$TS"
     local ws_dir="/tmp/colab_sim_workspace_F_$TS"
-    ARTEFACTS+=("$venv" "$ws_dir")
+    local seed_json="/tmp/F_gate_seed_$TS.json"
+    local verify_json="/tmp/F_gate_verify_$TS.json"
+    # The two gate reports are read by the sidecar writer, which runs before
+    # cleanup — so they can be swept with everything else (and kept by --keep).
+    ARTEFACTS+=("$venv" "$ws_dir" "$seed_json" "$verify_json")
+    F_GATE_SEED_JSON="$seed_json"
+    F_GATE_VERIFY_JSON="$verify_json"
 
-    step "creating venv with python3 at $venv"
-    if ! make_venv "$venv" python3; then
-        RESULTS+=("F|FAIL|could not create venv with python3")
+    # Colab runs Python 3.12. A different interpreter would seed Colab's pins
+    # against the wrong wheels, so a missing python3.12 is FAIL, not SKIP —
+    # the same rule Checks B and E apply to their required interpreters.
+    if ! command -v python3.12 > /dev/null 2>&1; then
+        RESULTS+=("F|FAIL|python3.12 not found")
+        return
+    fi
+
+    step "creating venv with python3.12 at $venv"
+    if ! make_venv "$venv" python3.12; then
+        RESULTS+=("F|FAIL|could not create venv with python3.12")
         return
     fi
 
     # shellcheck source=/dev/null
     source "$venv/bin/activate"
-    pip install --upgrade pip > /dev/null 2>&1
+    # `packaging` is the gate's only non-stdlib dependency (it evaluates the
+    # environment markers and version specifiers in the requirement walk).
+    pip install --upgrade pip packaging > /dev/null 2>&1
 
-    # Emulate the Colab base environment: Colab preinstalls the scientific
-    # stack and JAX; the injected setup cell installs the PyAuto packages
-    # --no-deps on top of that.
-    #
     # When a version is pinned (a TestPyPI rehearsal), pin ALL five PyAuto
-    # packages to it — otherwise pip installs `autolens` at the pinned dev
-    # version but resolves autoarray/autonerves/autofit/autogalaxy to the latest
+    # packages to it — otherwise the closure resolves `autolens` at the pinned
+    # dev version but autoarray/autonerves/autofit/autogalaxy to the latest
     # *final* release on PyPI (dev versions are pre-releases pip won't pick for
-    # a floor-only dependency), leaving Check F exercising an incoherent
-    # dev/released mix instead of the same wheels as Checks A/C/D. The later
-    # verbatim `pip install autonerves --no-deps` inside the driver then finds the
-    # pinned dev autonerves already satisfied, so it can't pull a released one.
+    # a floor-only dependency), so the gate would audit an incoherent
+    # dev/released mix instead of the same wheels as Checks A/C/D.
     local f_targets=("$PIP_INSTALL_TARGET")
     if [ -n "$TARGET_VERSION" ]; then
         f_targets=(
@@ -722,10 +782,18 @@ check_f() {
             "autogalaxy==$TARGET_VERSION"
         )
     fi
-    step "pip install ${f_targets[*]} jax (emulating Colab's preinstalled env)"
-    if ! pip install "${PIP_INDEX_ARGS[@]}" "${f_targets[@]}" jax |& tee /tmp/F_pip.log; then
-        RESULTS+=("F|FAIL|pip install ${f_targets[*]} jax failed")
-        tail_log "Check F pip output" "$(cat /tmp/F_pip.log 2>/dev/null)"
+
+    step "seeding the venv with Colab's package set (closure of ${f_targets[*]} + jax)"
+    local seed_rc=0
+    "$venv/bin/python" "$VERIFY_INSTALL_DIR/colab_gate.py" seed \
+        --manifest-cache "$COLAB_MANIFEST_CACHE" \
+        --report-json "$seed_json" \
+        --targets "${f_targets[@]}" \
+        --index-args "${PIP_INDEX_ARGS[@]}" |& tee /tmp/F_seed.log
+    seed_rc=${PIPESTATUS[0]}
+    if [ "$seed_rc" -ne 0 ]; then
+        RESULTS+=("F|FAIL|colab gate: seeding Colab's package set failed (rc=$seed_rc)")
+        tail_log "Check F colab_gate seed output" "$(cat /tmp/F_seed.log 2>/dev/null)"
         deactivate
         return
     fi
@@ -743,11 +811,10 @@ check_f() {
     # stub needs the submodule real Colab provides.
     touch "$site/google/colab/output.py"
 
-    # The driver is the injected notebook cell verbatim, plus assertions and
-    # one real cell from the imaging start_here. Exit 3 = SKIP (installed
-    # autonerves predates the setup_colab registry).
-    step "running the Colab bootstrap driver"
-    cat > /tmp/F_driver.py <<'PYEOF'
+    # --- driver part 1: the injected notebook cell, verbatim, then setup ---
+    # Exit 3 = SKIP (installed autonerves predates the setup_colab registry).
+    step "running the Colab bootstrap driver (setup cell + workspace clone)"
+    cat > /tmp/F_driver_setup.py <<'PYEOF'
 import os
 import subprocess
 import sys
@@ -766,6 +833,22 @@ else:
     )
     _setup_colab = importlib.import_module("autonerves.setup_colab")
 
+# --- dev/witness override: rehearse an unreleased setup_colab.py ---
+#
+# The bootstrap package list this check gates lives in autonerves.setup_colab.
+# A fix to it cannot be exercised until it is on PyPI unless the local source
+# can be laid over the released wheel here, which is what this does. Not set in
+# CI: a release gate must read the wheels that are about to ship.
+_autonerves_src = os.environ.get("COLAB_GATE_AUTONERVES_SRC")
+if _autonerves_src:
+    print(f"COLAB_GATE_AUTONERVES_SRC set — overlaying {_autonerves_src}")
+    subprocess.check_call(
+        [sys.executable, "-m", "pip", "install", "--no-deps", _autonerves_src]
+    )
+    import importlib
+    _setup_colab = importlib.import_module("autonerves.setup_colab")
+    _setup_colab = importlib.reload(_setup_colab)
+
 if not hasattr(_setup_colab, "setup"):
     print(
         "SKIP: installed autonerves predates the setup_colab registry "
@@ -779,16 +862,69 @@ _setup_colab.setup("autolens", raise_error_if_not_gpu=False, workspace_dir=WS_DI
 assert os.getcwd() == WS_DIR, f"cwd is {os.getcwd()}, expected {WS_DIR}"
 assert os.path.isdir(os.path.join(WS_DIR, "config")), "workspace config/ missing"
 assert os.path.isdir(os.path.join(WS_DIR, "dataset")), "workspace dataset/ missing"
+print("setup cell OK: bootstrap installed, workspace cloned, cwd moved")
+PYEOF
+    local setup_rc=0
+    COLAB_SIM_WORKSPACE_DIR="$ws_dir" python /tmp/F_driver_setup.py |& tee /tmp/F_driver.log
+    setup_rc=${PIPESTATUS[0]}
 
-# --- one real notebook cell (the top of imaging/start_here) ---
-#
-# Load the SAME dataset the current imaging/start_here.py loads: the bundled
-# `cosmos_web_ring` JWST example (one of the few datasets that ship committed
-# with the workspace, cloned above by setup_colab). The old `dataset/imaging/
-# simple/*.fits` path was never bundled and is no longer used by start_here —
-# after the release dataset `-f` leak fix (PyAutoBuild#150) it would only exist
-# if simulated at run time, so loading it here crashed FileNotFoundError while
-# Check A (which runs start_here.py) passed.
+    if [ "$setup_rc" -eq 3 ]; then
+        RESULTS+=("F|SKIP|installed autonerves predates setup_colab registry (next release)")
+        deactivate
+        return
+    fi
+    if [ "$setup_rc" -ne 0 ]; then
+        RESULTS+=("F|FAIL|setup cell rc=$setup_rc")
+        tail_log "Check F driver output" "$(cat /tmp/F_driver.log 2>/dev/null)"
+        deactivate
+        return
+    fi
+
+    # --- the gate: what did the --no-deps bootstrap actually leave behind? ---
+    # Run from inside the cloned workspace so autonerves resolves its config the
+    # way a notebook cell does (conf reads the cwd).
+    step "auditing the bootstrapped environment against Colab's package set"
+    local gate_rc=0
+    (cd "$ws_dir" && "$venv/bin/python" "$VERIFY_INSTALL_DIR/colab_gate.py" verify \
+        --manifest-cache "$COLAB_MANIFEST_CACHE" \
+        --seed-report "$seed_json" \
+        --report-json "$verify_json" \
+        --index-args "${PIP_INDEX_ARGS[@]}") |& tee /tmp/F_gate.log
+    gate_rc=${PIPESTATUS[0]}
+
+    local gate_detail=""
+    gate_detail=$(python3 -c '
+import json, sys
+try:
+    print(json.load(open(sys.argv[1])).get("detail", "") or "")
+except Exception:
+    print("")
+' "$verify_json" 2>/dev/null)
+
+    if [ "$gate_rc" -eq 2 ] || { [ "$gate_rc" -ne 0 ] && [ -z "$gate_detail" ]; }; then
+        RESULTS+=("F|FAIL|colab gate: verify could not run (rc=$gate_rc)")
+        tail_log "Check F colab_gate verify output" "$(cat /tmp/F_gate.log 2>/dev/null)"
+        deactivate
+        return
+    fi
+    if [ "$gate_rc" -ne 0 ]; then
+        RESULTS+=("F|FAIL|$gate_detail")
+        tail_log "Check F colab_gate verify output" "$(cat /tmp/F_gate.log 2>/dev/null)"
+        deactivate
+        return
+    fi
+
+    # --- driver part 2: one real notebook cell (the top of imaging/start_here) ---
+    #
+    # Load the SAME dataset the current imaging/start_here.py loads: the bundled
+    # `cosmos_web_ring` JWST example (one of the few datasets that ship committed
+    # with the workspace, cloned above by setup_colab). The old `dataset/imaging/
+    # simple/*.fits` path was never bundled and is no longer used by start_here —
+    # after the release dataset `-f` leak fix (PyAutoBuild#150) it would only exist
+    # if simulated at run time, so loading it here crashed FileNotFoundError while
+    # Check A (which runs start_here.py) passed.
+    step "running one real notebook cell (al.Imaging.from_fits)"
+    cat > /tmp/F_driver_cell.py <<'PYEOF'
 import autolens as al
 
 dataset = al.Imaging.from_fits(
@@ -799,19 +935,17 @@ dataset = al.Imaging.from_fits(
 )
 print(f"cell OK: loaded imaging dataset, shape {dataset.data.shape_native}")
 PYEOF
-    local drv_rc=0
-    COLAB_SIM_WORKSPACE_DIR="$ws_dir" python /tmp/F_driver.py |& tee /tmp/F_driver.log
-    drv_rc=${PIPESTATUS[0]}
+    local cell_rc=0
+    (cd "$ws_dir" && python /tmp/F_driver_cell.py) |& tee /tmp/F_cell.log
+    cell_rc=${PIPESTATUS[0]}
 
     deactivate
 
-    if [ "$drv_rc" -eq 0 ]; then
-        RESULTS+=("F|PASS|Colab bootstrap + workspace clone + notebook cell")
-    elif [ "$drv_rc" -eq 3 ]; then
-        RESULTS+=("F|SKIP|installed autonerves predates setup_colab registry (next release)")
+    if [ "$cell_rc" -eq 0 ]; then
+        RESULTS+=("F|PASS|$gate_detail")
     else
-        RESULTS+=("F|FAIL|driver rc=$drv_rc")
-        tail_log "Check F driver output" "$(cat /tmp/F_driver.log 2>/dev/null)"
+        RESULTS+=("F|FAIL|notebook cell rc=$cell_rc")
+        tail_log "Check F notebook cell output" "$(cat /tmp/F_cell.log 2>/dev/null)"
     fi
 }
 
@@ -881,6 +1015,7 @@ if [ -n "$REPORT_JSON" ]; then
       VI_READY="$ready_bool" VI_VERSION="$TARGET_VERSION" VI_CHECK_B_VERSION="$CHECK_B_VERSION" \
       VI_REPORT_JSON="$REPORT_JSON" \
       VI_INDEX="$vi_index" \
+      VI_F_GATE_SEED="$F_GATE_SEED_JSON" VI_F_GATE_VERIFY="$F_GATE_VERIFY_JSON" \
       python3 -c '
 import datetime, json, os, sys
 checks = []
@@ -890,6 +1025,28 @@ for line in sys.stdin:
         continue
     parts = (line.split("|", 2) + ["", "", ""])[:3]
     checks.append({"check": parts[0], "status": parts[1], "detail": parts[2]})
+
+# Check F carries the Colab gate report as a nested "colab_gate" key on its own
+# row. Additive only: every existing key and the shape of "checks" (a list of
+# {check,status,detail}) are untouched, because heart/readiness.py and
+# heart/validate.py parse this file and must keep working unchanged.
+def _read(var):
+    path = os.environ.get(var) or ""
+    if not path or not os.path.isfile(path):
+        return None
+    try:
+        with open(path) as handle:
+            return json.load(handle)
+    except (OSError, ValueError):
+        return None
+
+gate = {k: v for k, v in (("seed", _read("VI_F_GATE_SEED")),
+                          ("verify", _read("VI_F_GATE_VERIFY"))) if v is not None}
+if gate:
+    for entry in checks:
+        if entry["check"] == "F":
+            entry["colab_gate"] = gate
+
 out = {
     "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     "ready": os.environ["VI_READY"] == "true",

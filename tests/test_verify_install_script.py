@@ -64,12 +64,13 @@ def test_bash_syntax():
         assert result.returncode == 0, result.stderr
 
 
-def test_help_lists_all_checks_including_colab_simulation():
+def test_help_lists_all_checks_including_the_colab_gate():
     result = run("--help")
     assert result.returncode == 0
     for letter in "ABCDEF":
         assert f"\n  {letter}   " in result.stdout, f"check {letter} missing from help"
-    assert "Colab simulation" in result.stdout
+    assert "Colab gate" in result.stdout
+    assert "googlecolab/backend-info" in result.stdout
 
 
 def test_unknown_argument_rejected():
@@ -298,3 +299,194 @@ def test_check_b_asserts_the_unpinned_install_is_refused():
     assert "verify_install_unpinned_refusal" in body
     # A successful unpinned install below the floor is the bug returning.
     assert "the sub-floor backtrack is back" in body
+
+
+# ----- check F: the Colab package-set gate -----------------------------------
+
+
+def check_f_body():
+    text = SCRIPT.read_text()
+    return text[text.index("check_f() {") : text.index("# ----- runner -----")]
+
+
+def test_check_f_uses_python_312_because_colab_does():
+    body = check_f_body()
+
+    assert 'if ! command -v python3.12 > /dev/null 2>&1; then' in body
+    assert 'RESULTS+=("F|FAIL|python3.12 not found")' in body
+    assert 'if ! make_venv "$venv" python3.12; then' in body
+    # The old default-python venv is gone: seeding Colab's pins against a
+    # different interpreter would resolve the wrong wheels.
+    assert 'make_venv "$venv" python3;' not in body
+
+
+def test_check_f_no_longer_installs_the_stack_with_dependencies():
+    """The bug this check existed to hide.
+
+    `pip install <stack> jax` WITH deps left corner/optax/xxhash/blackjax in
+    the venv before the setup cell ran, so the cell's real `--no-deps` install
+    could never be seen to miss one.
+    """
+    body = check_f_body()
+
+    assert 'pip install "${PIP_INDEX_ARGS[@]}" "${f_targets[@]}" jax' not in body
+    assert '"${f_targets[@]}" jax' not in body
+    assert "emulating Colab's preinstalled env" not in body
+
+
+def test_check_f_seeds_and_verifies_through_colab_gate():
+    body = check_f_body()
+
+    assert '"$VERIFY_INSTALL_DIR/colab_gate.py" seed' in body
+    assert '"$VERIFY_INSTALL_DIR/colab_gate.py" verify' in body
+    # Run with the simulated venv's interpreter, or importlib.metadata and the
+    # import probe would see the host environment instead.
+    assert body.count('"$venv/bin/python" "$VERIFY_INSTALL_DIR/colab_gate.py"') == 2
+    assert '--manifest-cache "$COLAB_MANIFEST_CACHE"' in body
+    assert (ROOT / "heart/checks/colab_gate.py").is_file()
+    assert (ROOT / "heart/checks/colab_pip_freeze.snapshot.txt").is_file()
+
+
+def test_check_f_runs_the_gate_between_the_setup_cell_and_the_notebook_cell():
+    body = check_f_body()
+
+    setup_cell = body.index("F_driver_setup.py")
+    gate = body.index('colab_gate.py" verify')
+    notebook_cell = body.index("F_driver_cell.py")
+
+    assert setup_cell < gate < notebook_cell
+    # The setup cell is still the injected cell verbatim, and the notebook cell
+    # still loads the bundled dataset.
+    assert "import google.colab" in body
+    assert 'pip", "install", "autonerves", "--no-deps"' in body
+    assert "al.Imaging.from_fits" in body
+    assert "dataset/imaging/cosmos_web_ring/data.fits" in body
+
+
+def test_check_f_keeps_the_fake_google_colab_stub():
+    body = check_f_body()
+
+    assert '"$site/google/colab/__init__.py"' in body
+    assert '"$site/google/colab/output.py"' in body
+
+
+def test_check_f_preserves_the_skip_exit_code():
+    body = check_f_body()
+
+    assert "sys.exit(3)" in body
+    assert 'if [ "$setup_rc" -eq 3 ]; then' in body
+    assert 'RESULTS+=("F|SKIP|installed autonerves predates setup_colab registry' in body
+
+
+def test_autonerves_source_override_is_wired_and_documented():
+    body = check_f_body()
+    help_result = run("--help")
+
+    assert 'os.environ.get("COLAB_GATE_AUTONERVES_SRC")' in body
+    assert '"--no-deps", _autonerves_src' in body
+    assert "COLAB_GATE_AUTONERVES_SRC" in help_result.stdout
+    assert "COLAB_GATE_AUTONERVES_SRC" in (
+        ROOT / "skills/verify_install/verify_install.md"
+    ).read_text()
+
+
+def test_sidecar_nests_the_gate_report_under_check_f_without_changing_its_shape():
+    text = SCRIPT.read_text()
+
+    assert 'VI_F_GATE_SEED="$F_GATE_SEED_JSON"' in text
+    assert 'VI_F_GATE_VERIFY="$F_GATE_VERIFY_JSON"' in text
+    assert 'entry["colab_gate"] = gate' in text
+    # The keys readiness.py and validate.py parse are untouched.
+    for key in ('"check": parts[0]', '"status": parts[1]', '"detail": parts[2]'):
+        assert key in text
+
+
+def sidecar_writer_source():
+    """The `python3 -c '...'` sidecar writer, lifted out of the script.
+
+    Running the real writer (rather than hand-building a fixture) is the only
+    way to prove the shape readiness.py and validate.py consume is unchanged.
+    """
+    text = SCRIPT.read_text()
+    start = text.index("      python3 -c '") + len("      python3 -c '")
+    end = text.index("\n'\n", start)
+    return text[start:end]
+
+
+def test_sidecar_still_parses_through_readiness_with_the_gate_report(tmp_path):
+    import json
+    import os
+
+    from heart import readiness
+
+    seed = tmp_path / "seed.json"
+    verify = tmp_path / "verify.json"
+    seed.write_text(json.dumps({"phase": "seed", "manifest_source": "live"}))
+    verify.write_text(json.dumps({
+        "phase": "verify",
+        "ok": True,
+        "detail": "Colab manifest live 2026-09-15; 61 Colab-provided, 9 extras, 74 imports probed",
+        "fails": [],
+        "warns": ["xxhash 4.0.1 outside <=3.4.1 required by autofit"],
+    }))
+    out = tmp_path / "verify_install.json"
+
+    env = dict(os.environ)
+    env.update({
+        "VI_READY": "true",
+        "VI_VERSION": "2026.9.1.1",
+        "VI_CHECK_B_VERSION": "2026.9.1.1",
+        "VI_REPORT_JSON": str(out),
+        "VI_INDEX": "testpypi",
+        "VI_F_GATE_SEED": str(seed),
+        "VI_F_GATE_VERIFY": str(verify),
+    })
+    rows = "A|PASS|pip install\nF|PASS|Colab manifest live 2026-09-15\n"
+    result = subprocess.run(
+        ["python3", "-c", sidecar_writer_source()],
+        input=rows, capture_output=True, text=True, env=env,
+    )
+    assert result.returncode == 0, result.stderr
+
+    sidecar = json.loads(out.read_text())
+
+    # Every key the consumers read is still there, in the same shape.
+    assert set(sidecar) >= {"ts", "ready", "version", "check_b_version", "index", "checks"}
+    assert sidecar["ready"] is True
+    assert sidecar["index"] == "testpypi"
+    assert [c["check"] for c in sidecar["checks"]] == ["A", "F"]
+    assert sidecar["checks"][0] == {"check": "A", "status": "PASS", "detail": "pip install"}
+
+    # The gate report is nested on F's row only, and is additive.
+    f_row = sidecar["checks"][1]
+    assert f_row["check"] == "F" and f_row["status"] == "PASS"
+    assert f_row["colab_gate"]["seed"]["manifest_source"] == "live"
+    assert f_row["colab_gate"]["verify"]["ok"] is True
+    assert "colab_gate" not in sidecar["checks"][0]
+
+    # readiness's own FAIL-extraction expression, run against the new shape.
+    failed = [
+        str(c.get("check"))
+        for c in sidecar["checks"]
+        if isinstance(c, dict) and str(c.get("status")).upper() == "FAIL"
+    ]
+    assert failed == []
+
+    # And a FAILing F row still reaches readiness as a RED reason naming F.
+    env["VI_READY"] = "false"
+    rows_fail = "A|PASS|ok\nF|FAIL|colab gate: corner (autofit/plot.py:95)\n"
+    subprocess.run(
+        ["python3", "-c", sidecar_writer_source()],
+        input=rows_fail, capture_output=True, text=True, env=env, check=True,
+    )
+    red_sidecar = json.loads(out.read_text())
+    snapshot = {
+        "ts": "2026-09-15T00:00:00+00:00",
+        "verify_install": red_sidecar,
+    }
+    result = readiness.compute(snapshot)
+    assert result["verdict"] == "red"
+    assert any(
+        "install verification FAILED" in reason and "F" in reason
+        for reason in result["red_reasons"]
+    )

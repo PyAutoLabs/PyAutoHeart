@@ -1,0 +1,26 @@
+# heart/config/colab_gate.yaml — accepted misses for the Colab gate (check F).
+#
+# The gate FAILs when a module the libraries import unguarded is not available
+# in a simulated Colab environment, when a headline `autofit` search cannot be
+# constructed, or when a declared dependency is both absent on Colab and
+# actually imported. Each entry below downgrades ONE of those FAILs to a WARN,
+# and the reason travels into the JSON report so the exemption is never silent.
+#
+# An entry is a deliberate, argued decision — "Colab genuinely cannot carry
+# this and the notebooks never reach it" — not a way to quieten a real hole in
+# the `--no-deps` bootstrap. The fix for a missing dependency is to add it to
+# `_SHARED_EXTRAS` in `autonerves/setup_colab.py`, not to list it here.
+#
+# Format:
+#
+#   accepted_missing:
+#     - name: <distribution or module name>
+#       reason: <why this one cannot and need not be installed on Colab>
+
+accepted_missing:
+  - name: colossus
+    reason: line-of-sight halo tooling in autolens/lens/los.py. colossus is declared only in autogalaxy's test and dev extras, never as a base dependency, and no workspace or HowTo notebook reaches the module. A user who calls the line-of-sight code on Colab gets an explicit ModuleNotFoundError naming it.
+  - name: hmf
+    reason: the same autolens/lens/los.py line-of-sight tooling as colossus, and additionally undeclared in any pyproject, so no install path carries it today (tracked as a library follow-up). No workspace or HowTo notebook reaches it.
+  - name: mcp
+    reason: autofit/mcp/server.py is the MCP server entry point, installed via the autofit[mcp] extra and launched outside notebooks. An unconditional import is correct for a server module, and no notebook imports it.

@@ -96,7 +96,7 @@ deep_checks:
   - id: verify_install
     impl: heart/checks/verify_install.sh
     cli: "pyauto-heart verify_install"
-    measures: "pip, conda, and Colab install-path checks A-F; Check B exact release succeeds on Python 3.12/3.13 and rejects on 3.11; Check E installs historical 2026.2.26.4 on Python 3.12 because its stack has no Python 3.13 dependency wheels"
+    measures: "pip, conda, and Colab install-path checks A-F; Check B exact release succeeds on Python 3.12/3.13 and rejects on 3.11; Check E installs historical 2026.2.26.4 on Python 3.12 because its stack has no Python 3.13 dependency wheels; Check F builds a python3.12 venv holding Google's Colab package set (googlecolab/backend-info manifest), runs the injected setup cell verbatim, and fails on any unguarded import or imported-but-declared dependency the --no-deps bootstrap leaves unmet"
     gate_role: "RED if last run ready==false; STALE if find-links-only, older than 14d, or never run"
   - id: url_check
     impl: heart/checks/url_check.sh

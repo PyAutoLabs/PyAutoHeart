@@ -417,10 +417,13 @@ Checks:
   C  conda install flow (python=3.12) + start_here.py + welcome.py
   D  pip install "autolens[optional]" resolves and imports
   E  pip install autolens==<pinned> installs on Python 3.12 by explicit pin
-  F  Colab bootstrap simulation + one real notebook cell
+  F  Colab gate: a python3.12 venv holding Google's Colab package set, the
+     injected setup cell verbatim, an audit of every import and declared
+     dependency the --no-deps bootstrap left unmet, then one notebook cell
 
-Checks B and E require explicit interpreters on PATH. Check B requires
-python3.11, python3.12, and python3.13; Check E requires python3.12. Missing
+Checks B, E and F require explicit interpreters on PATH. Check B requires
+python3.11, python3.12, and python3.13; Check E requires python3.12, and Check F
+requires python3.12 because that is the interpreter Colab runs. Missing
 required interpreters are FAIL. A passing --find-links run is development-only
 evidence and leaves readiness STALE;
 PyPI/TestPyPI evidence is required for the release gate.

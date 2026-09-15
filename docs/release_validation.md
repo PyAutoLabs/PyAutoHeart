@@ -121,6 +121,22 @@ Check B reuses that exact TestPyPI version: it must install and import on Python
 that this release holds the floor, because an unpinned install may select an
 older compatible one instead.
 
+Check F is the Colab gate. It builds a `python3.12` venv holding the package
+set Google's Colab actually ships — resolved from the `googlecolab/backend-info`
+`pip-freeze.txt` manifest, fetched live and cached at
+`$HEART_STATE_DIR/colab_pip_freeze.txt`, with a vendored snapshot as the last
+fallback — and then runs the injected setup cell verbatim on top of it. Only the
+part of the stack's with-deps closure that Colab also ships is pre-installed, so
+the setup cell's real `pip install ... --no-deps` is observed doing what it does
+on Colab. The gate then walks the installed libraries' declared requirements,
+AST-scans every `import` in their source at any depth and imports each one for
+real: an unguarded import of a module Colab will not have, a headline `autofit`
+search that cannot be constructed, or a declared dependency that is both absent
+and imported is a **FAIL**. Version conflicts, guarded imports and never-imported
+gaps are WARNs carried in the report. Until 2026-09-15 Check F installed the
+stack **with** dependencies before running the cell, so the bootstrap's misses
+(`corner`, `optax`, `xxhash`, `blackjax`) were invisible to it and shipped.
+
 Check B then requires the unpinned install to be refused as well. That is a
 separate guarantee, and it was not met until 2026-08-19: `pip install autolens`
 on 3.11 backtracked to `2026.7.29.1` and installed a stale, JAX-less stack
