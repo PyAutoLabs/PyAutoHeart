@@ -17,4 +17,10 @@
 #     - name: <distribution or module name>
 #       reason: <why this one cannot and need not be installed on Colab>
 
-accepted_missing: []
+accepted_missing:
+  - name: colossus
+    reason: line-of-sight halo tooling in autolens/lens/los.py. colossus is declared only in autogalaxy's test and dev extras, never as a base dependency, and no workspace or HowTo notebook reaches the module. A user who calls the line-of-sight code on Colab gets an explicit ModuleNotFoundError naming it.
+  - name: hmf
+    reason: the same autolens/lens/los.py line-of-sight tooling as colossus, and additionally undeclared in any pyproject, so no install path carries it today (tracked as a library follow-up). No workspace or HowTo notebook reaches it.
+  - name: mcp
+    reason: autofit/mcp/server.py is the MCP server entry point, installed via the autofit[mcp] extra and launched outside notebooks. An unconditional import is correct for a server module, and no notebook imports it.

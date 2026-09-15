@@ -585,10 +585,38 @@ def test_detail_line_names_the_first_failures_then_counts_the_rest():
 # --------------------------------------------------------------------------
 
 
-def test_shipped_config_is_an_empty_accepted_list():
+def test_shipped_config_accepts_exactly_the_three_argued_exemptions():
+    """The shipped exemption list, read from the real file the gate loads.
+
+    Three of the five library-side holes the gate found are not notebook
+    paths: `colossus` and `hmf` (the line-of-sight tooling in
+    autolens/lens/los.py) and `mcp` (autofit/mcp/server.py, the MCP server
+    entry point). Anything else appearing here is a hole in the `--no-deps`
+    bootstrap being quietened rather than fixed, which is what the config
+    file's own header forbids — so the set is asserted exactly, not as a
+    subset.
+    """
     config = cg.load_config(cg.CONFIG_PATH)
 
-    assert config["accepted_missing"] == []
+    assert {entry["name"] for entry in config["accepted_missing"]} == {
+        "colossus",
+        "hmf",
+        "mcp",
+    }
+    # A silent exemption is the failure mode the reason field exists to
+    # prevent: it travels into the JSON report next to the accepted name.
+    for entry in config["accepted_missing"]:
+        assert entry.get("reason", "").strip(), entry["name"]
+
+
+def test_shipped_config_reads_identically_without_pyyaml():
+    # `verify` runs inside the simulated venv, which need not have PyYAML, so
+    # the fallback parser is what reads this file in the run that matters.
+    # Anything the real file uses that only PyYAML understands would silently
+    # drop an exemption there.
+    parsed = cg._parse_config_fallback(cg.CONFIG_PATH.read_text())
+
+    assert parsed == cg.load_config(cg.CONFIG_PATH)
 
 
 def test_config_is_readable_without_pyyaml(tmp_path):
