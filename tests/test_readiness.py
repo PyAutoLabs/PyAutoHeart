@@ -227,6 +227,47 @@ def test_install_verification_failed_is_red():
     assert v["score"] == 60
 
 
+def test_install_verification_warn_row_is_verdict_neutral():
+    """Check F's released-bootstrap facet (decision 2026-09-17).
+
+    In a rehearsal check F reports the Colab bootstrap a reader gets from the
+    CURRENT release as a WARN row. A broken release is not evidence against
+    shipping the candidate that fixes it, so the row moves nothing.
+    """
+    snap = make_snapshot(verify_install={
+        "ready": True,
+        "ts": "2026-06-01T00:00:00+00:00",
+        "index": "testpypi",
+        "checks": [
+            {"check": "F", "status": "WARN",
+             "detail": "released Colab bootstrap (autonerves=2026.9.15.1) broken "
+                       "for readers: colab gate: corner (autofit/plot.py:95)"},
+            {"check": "F", "status": "PASS"},
+        ],
+    })
+    v = compute(snap)
+    assert v["verdict"] == "green"
+    assert not any("install" in r for r in v["reasons"])
+
+
+def test_install_verification_fail_beside_warn_is_still_red():
+    """The WARN row is advisory; a FAIL row beside it still blocks."""
+    snap = make_snapshot(verify_install={
+        "ready": False,
+        "ts": "2026-06-01T00:00:00+00:00",
+        "index": "testpypi",
+        "checks": [
+            {"check": "F", "status": "WARN", "detail": "released Colab bootstrap ..."},
+            {"check": "B", "status": "FAIL", "detail": "pip install failed"},
+        ],
+    })
+    v = compute(snap)
+    assert v["verdict"] == "red"
+    assert any("install verification FAILED" in r and "B" in r for r in v["red_reasons"])
+    # The advisory row is not mistaken for a failure: only B is named.
+    assert any(r.endswith("checks B)") for r in v["red_reasons"])
+
+
 def test_install_verification_stale_is_stale_tier():
     snap = make_snapshot(verify_install={
         "ready": True, "ts": "2026-05-01T00:00:00+00:00",  # ~31d before snapshot ts

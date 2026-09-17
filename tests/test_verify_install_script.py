@@ -340,8 +340,10 @@ def test_check_f_seeds_and_verifies_through_colab_gate():
     assert '"$VERIFY_INSTALL_DIR/colab_gate.py" seed' in body
     assert '"$VERIFY_INSTALL_DIR/colab_gate.py" verify' in body
     # Run with the simulated venv's interpreter, or importlib.metadata and the
-    # import probe would see the host environment instead.
-    assert body.count('"$venv/bin/python" "$VERIFY_INSTALL_DIR/colab_gate.py"') == 2
+    # import probe would see the host environment instead. Three invocations:
+    # seed, the advisory released audit (rehearsal only), and the gated audit
+    # the continuous and candidate paths share.
+    assert body.count('"$venv/bin/python" "$VERIFY_INSTALL_DIR/colab_gate.py"') == 3
     assert '--manifest-cache "$COLAB_MANIFEST_CACHE"' in body
     assert (ROOT / "heart/checks/colab_gate.py").is_file()
     assert (ROOT / "heart/checks/colab_pip_freeze.snapshot.txt").is_file()
@@ -379,15 +381,118 @@ def test_check_f_preserves_the_skip_exit_code():
 
 
 def test_autonerves_source_override_is_wired_and_documented():
+    text = SCRIPT.read_text()
     body = check_f_body()
     help_result = run("--help")
 
+    # Read on both paths: inside the re-pin driver (rehearsal — it has to sit
+    # between the candidate pins and the setup_colab reload) and in the shared
+    # f_overlay_autonerves_src step the continuous path runs in front of its
+    # single audit.
     assert 'os.environ.get("COLAB_GATE_AUTONERVES_SRC")' in body
-    assert '"--no-deps", _autonerves_src' in body
+    assert "f_overlay_autonerves_src() {" in text
+    assert 'os.environ["COLAB_GATE_AUTONERVES_SRC"]' in text
+    assert text.count('"--no-deps", _autonerves_src') == 2
+    assert "    f_overlay_autonerves_src\n" in body
+    # It is no longer laid over the verbatim setup cell's own bootstrap, so
+    # what that cell installs stays measurable on its own.
+    setup_driver = body[body.index("F_driver_setup.py") : body.index("setup_rc=0")]
+    assert '"--no-deps", _autonerves_src' not in setup_driver
+    assert 'os.environ.get("COLAB_GATE_AUTONERVES_SRC")' not in setup_driver
     assert "COLAB_GATE_AUTONERVES_SRC" in help_result.stdout
     assert "COLAB_GATE_AUTONERVES_SRC" in (
         ROOT / "skills/verify_install/verify_install.md"
     ).read_text()
+
+
+def test_help_documents_the_rehearsal_re_pin_and_warn_row():
+    """A reader of --help must learn that a rehearsal gates on the candidate."""
+    result = run("--help")
+
+    assert result.returncode == 0
+    assert "WARN" in result.stdout
+    assert "re-pin" in result.stdout
+
+
+def test_check_f_rehearsal_re_pins_to_the_candidate_and_audits_both_facets():
+    """The chicken-and-egg fix (2026-09-17).
+
+    The injected setup cell is verbatim and therefore unpinned, so in a
+    rehearsal it bootstraps the RELEASED stack. Check F audits that advisorily,
+    re-pins to the candidate, and gates on the candidate.
+    """
+    body = check_f_body()
+
+    # The advisory facet exists, writes its own report, and is rehearsal-only.
+    driver = body.index("F_driver_setup.py")
+    guard = body.index('if [ -n "$TARGET_VERSION" ]; then', driver)
+    released = body.index("$verify_released_json", guard)
+    assert driver < guard < released
+    assert 'local verify_released_json="/tmp/F_gate_verify_released_$TS.json"' in body
+    assert 'F_GATE_VERIFY_RELEASED_JSON="$verify_released_json"' in body
+    assert '--report-json "$verify_released_json"' in body
+
+    # The re-pin: all five PyAuto packages at the candidate, then the
+    # candidate's own bootstrap package list, mirroring _colab_setup.
+    for package in ("autonerves", "autofit", "autoarray", "autogalaxy", "autolens"):
+        assert f'f"{package}=={{version}}"' in body
+    assert '"pip", "install", "--no-deps", *index_args, *pins' in body
+    assert "importlib.reload(sc)" in body
+    assert 'sc._PROJECTS["autolens"]["packages"]' in body
+    assert '"pip", "install", *packages, "--no-deps"' in body
+    assert "re-pin OK: candidate " in body
+    # setup() is NOT called again — the workspace is cloned and cwd has moved.
+    assert body.count("_setup_colab.setup(") == 1
+    assert 'RESULTS+=("F|FAIL|candidate re-pin rc=$repin_rc")' in body
+
+    # The released facet reports a WARN row, never a FAIL.
+    assert 'RESULTS+=("F|WARN|released Colab bootstrap ' in body
+    assert "F|FAIL|released" not in body
+
+
+def test_check_f_continuous_path_runs_one_verify():
+    """No --version: the released bootstrap IS the candidate — one audit."""
+    body = check_f_body()
+
+    # One gated audit, shared by the continuous and candidate paths, plus the
+    # rehearsal-only advisory one.
+    assert body.count('colab_gate.py" verify') == 2
+    assert body.count('--report-json "$verify_json"') == 1
+    assert body.count('--report-json "$verify_released_json"') == 1
+    # The continuous branch is the `else` of the rehearsal guard, and applies
+    # the dev/witness overlay in front of its single audit.
+    guard = body.index('if [ -n "$TARGET_VERSION" ]; then', body.index("F_driver_setup.py"))
+    otherwise = body.index("    else", guard)
+    gate = body.index('--report-json "$verify_json"', otherwise)
+    assert guard < body.index("f_overlay_autonerves_src\n", otherwise) < gate
+    # Today's FAIL semantics are untouched.
+    assert 'RESULTS+=("F|FAIL|colab gate: verify could not run (rc=$gate_rc)")' in body
+    assert 'RESULTS+=("F|FAIL|$gate_detail")' in body
+    assert 'RESULTS+=("F|PASS|$gate_detail")' in body
+
+
+def test_warn_rows_are_counted_but_never_fail_the_run():
+    text = SCRIPT.read_text()
+
+    assert 'n_warn=$((n_warn + 1))' in text
+    assert '[ "$status" = "WARN" ] && n_warn=$((n_warn + 1))' in text
+    assert 'echo "Overall: PASS ($n_skip skipped, $n_warn warning(s))"' in text
+    assert (
+        'echo "Overall: FAIL ($n_fail failure(s), $n_skip skipped, '
+        '$n_warn warning(s))"' in text
+    )
+    # ready is n_fail-driven, so a WARN row leaves it true.
+    assert 'if [ "$n_fail" -eq 0 ]; then ready_bool=true; else ready_bool=false; fi' in text
+
+
+def test_sidecar_nests_the_released_gate_report():
+    text = SCRIPT.read_text()
+
+    assert 'VI_F_GATE_VERIFY_RELEASED="$F_GATE_VERIFY_RELEASED_JSON"' in text
+    assert '"verify_released"' in text
+    assert '_read("VI_F_GATE_VERIFY_RELEASED")' in text
+    # Declared globally, so the writer is safe when check F never ran.
+    assert 'F_GATE_VERIFY_RELEASED_JSON=""' in text
 
 
 def test_sidecar_nests_the_gate_report_under_check_f_without_changing_its_shape():
@@ -490,3 +595,76 @@ def test_sidecar_still_parses_through_readiness_with_the_gate_report(tmp_path):
         "install verification FAILED" in reason and "F" in reason
         for reason in result["red_reasons"]
     )
+
+
+def test_sidecar_warn_row_keeps_ready_true_and_readiness_not_red(tmp_path):
+    """A rehearsal's two F rows: the advisory WARN, then the gated PASS.
+
+    The WARN row must travel end to end — writer, sidecar, readiness — without
+    moving `ready` or the verdict (decision 2026-09-17).
+    """
+    import json
+    import os
+
+    from heart import readiness
+
+    seed = tmp_path / "seed.json"
+    verify = tmp_path / "verify.json"
+    released = tmp_path / "verify_released.json"
+    seed.write_text(json.dumps({"phase": "seed", "manifest_source": "live"}))
+    verify.write_text(json.dumps({
+        "phase": "verify",
+        "ok": True,
+        "detail": "Colab manifest live 2026-09-17; 61 Colab-provided, 9 extras",
+        "packages": {"autonerves": "2026.9.17.1.dev1"},
+    }))
+    released.write_text(json.dumps({
+        "phase": "verify",
+        "ok": False,
+        "detail": "colab gate: corner (autofit/plot.py:95)",
+        "packages": {"autonerves": "2026.9.15.1"},
+    }))
+    out = tmp_path / "verify_install.json"
+
+    env = dict(os.environ)
+    env.update({
+        "VI_READY": "true",
+        "VI_VERSION": "2026.9.17.1.dev1",
+        "VI_CHECK_B_VERSION": "2026.9.17.1.dev1",
+        "VI_REPORT_JSON": str(out),
+        "VI_INDEX": "testpypi",
+        "VI_F_GATE_SEED": str(seed),
+        "VI_F_GATE_VERIFY": str(verify),
+        "VI_F_GATE_VERIFY_RELEASED": str(released),
+    })
+    rows = (
+        "A|PASS|ok\n"
+        "F|WARN|released Colab bootstrap (autonerves=2026.9.15.1) broken for "
+        "readers: colab gate: corner (autofit/plot.py:95); candidate "
+        "2026.9.17.1.dev1 passes\n"
+        "F|PASS|Colab manifest live 2026-09-17\n"
+    )
+    result = subprocess.run(
+        ["python3", "-c", sidecar_writer_source()],
+        input=rows, capture_output=True, text=True, env=env,
+    )
+    assert result.returncode == 0, result.stderr
+
+    sidecar = json.loads(out.read_text())
+    assert [c["status"] for c in sidecar["checks"]] == ["PASS", "WARN", "PASS"]
+    assert sidecar["ready"] is True
+
+    # The gate report rides on both F rows, both facets present.
+    for row in sidecar["checks"][1:]:
+        assert row["check"] == "F"
+        assert row["colab_gate"]["verify"]["ok"] is True
+        assert row["colab_gate"]["verify_released"]["ok"] is False
+        assert row["colab_gate"]["verify_released"]["packages"]["autonerves"] == (
+            "2026.9.15.1"
+        )
+    assert "colab_gate" not in sidecar["checks"][0]
+
+    # And the verdict is untouched by the WARN row.
+    verdict = readiness.compute({"ts": sidecar["ts"], "verify_install": sidecar})
+    assert not any("install" in reason for reason in verdict["red_reasons"])
+    assert not any("install" in reason for reason in verdict["yellow_reasons"])

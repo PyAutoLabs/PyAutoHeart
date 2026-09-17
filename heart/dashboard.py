@@ -961,6 +961,25 @@ def build_board(
                 f"development-only (find-links; last run {vi.get('ts', '?')})",
                 [],
             ))
+        elif any(str(c.get("status")).upper() == "WARN"
+                 for c in (vi.get("checks") or []) if isinstance(c, dict)):
+            # Advisory rows: the run passed, but a check reported something a
+            # human should see (check F's released-bootstrap facet in a
+            # rehearsal). Verdict-neutral — readiness never reads these — so the
+            # dashboard is the only place they surface.
+            warns = [c for c in (vi.get("checks") or [])
+                     if isinstance(c, dict) and str(c.get("status")).upper() == "WARN"]
+            letters = list(dict.fromkeys(str(c.get("check")) for c in warns))
+            details = [f"{c.get('check')}: {str(c.get('detail') or '')[:200]}"
+                       for c in warns]
+            sections.append(Section(
+                "verify_install",
+                "Install verify",
+                WARN,
+                f"passed with warnings ({index}; {', '.join(letters)})  "
+                f"({vi.get('ts', '?')})",
+                details,
+            ))
         else:
             sections.append(Section("verify_install", "Install verify", OK,
                                     f"passed ({index}; last run {vi.get('ts', '?')})", []))

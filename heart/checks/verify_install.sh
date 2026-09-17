@@ -90,13 +90,24 @@ Options:
                       testpypi, or find-links).
   -h, --help          Show this help.
 
+Check F in a rehearsal (--version):
+  An unpinned `pip install autonerves` can never select a dev pre-release, so
+  the injected setup cell necessarily bootstraps the RELEASED stack. Check F
+  therefore audits the released bootstrap first and reports it as an advisory
+  WARN row, which never changes `ready` and never fails the run; it then
+  re-pins the venv to the candidate (all five PyAuto packages at VERSION from
+  the rehearsal index, --no-deps, setup_colab reloaded and its own package list
+  reinstalled) and gates on that. A continuous run (no --version) is unchanged:
+  one audit, one verdict.
+
 Environment:
   COLAB_GATE_AUTONERVES_SRC
                       Check F only, dev/witness use. A path or requirement
-                      installed --no-deps over the released `autonerves` right
-                      after the setup cell's own bootstrap install, so an
+                      installed --no-deps over the released `autonerves`, so an
                       UNRELEASED autonerves/setup_colab.py package list can be
-                      rehearsed against the gate. Never set this in CI: a
+                      rehearsed against the gate. It is applied after the
+                      candidate re-pin in a --version rehearsal, and before the
+                      single audit in a continuous run. Never set this in CI: a
                       release gate must read the wheels about to ship.
 USAGE
 }
@@ -234,7 +245,11 @@ CONDA_ENVS=()    # conda env names to remove at end
 HEART_STATE_DIR="${HEART_STATE_DIR:-$HOME/.pyauto-heart}"
 COLAB_MANIFEST_CACHE="$HEART_STATE_DIR/colab_pip_freeze.txt"
 F_GATE_SEED_JSON=""      # colab_gate seed report, folded into the sidecar
-F_GATE_VERIFY_JSON=""    # colab_gate verify report, folded into the sidecar
+F_GATE_VERIFY_JSON=""    # colab_gate verify report (the gated facet)
+# The advisory RELEASED-bootstrap report, written only on the rehearsal path.
+# Declared here so the sidecar writer can reference it even when check F never
+# ran (the writer skips a path that does not exist).
+F_GATE_VERIFY_RELEASED_JSON=""
 
 PIP_INSTALL_TARGET="autolens"
 PIP_INSTALL_OPTIONAL="autolens[optional]"
@@ -726,11 +741,74 @@ check_e() {
 # The interpreter is python3.12 because Colab is python3.12 — check B's
 # "missing required interpreter is FAIL" rule applies here too.
 #
+# --- two facets in a rehearsal (--version), one continuously ---------------
+#
+# The injected setup cell is verbatim, and verbatim means UNPINNED: it runs
+# `pip install autonerves --no-deps`, and the released `setup_colab.setup()` it
+# then imports installs `autolens autogalaxy autofit autoarray autonerves ...
+# --no-deps` unpinned too. pip cannot select a dev pre-release for either, so in
+# a TestPyPI rehearsal the cell pulls the whole stack back down to the current
+# PyPI release — whatever the seed step pinned. Audited as-is, the gate would
+# therefore measure the RELEASED bootstrap and never the candidate, and a
+# released bootstrap that is broken would hold Heart RED over the very release
+# that carries its fix (chicken-and-egg, 2026-09-17).
+#
+# So with --version check F runs the audit twice:
+#
+#   RELEASED   advisory. What a reader who opens the notebook today actually
+#              gets. Reported as a WARN row: it never fails the run, because
+#              the release IS the remedy and grading it YELLOW/RED would block
+#              it.
+#   <re-pin>   all five PyAuto packages pinned to the candidate from the
+#              rehearsal index (--no-deps), then `setup_colab` reloaded and its
+#              own package list reinstalled exactly as `_colab_setup` does — the
+#              candidate's bootstrap, run for real.
+#   CANDIDATE  the gate. FAIL here is FAIL as it has always been.
+#
+# Without --version (the continuous run against PyPI) the released bootstrap IS
+# the candidate, so there is one audit and nothing changes.
+#
 # COLAB_GATE_AUTONERVES_SRC (dev/witness only): a path or requirement installed
-# `--no-deps` immediately after the setup cell's verbatim `pip install
-# autonerves --no-deps`. It exists to rehearse an UNRELEASED setup_colab.py —
-# the bootstrap package list is the thing this check gates, and until it is on
-# PyPI there is no other way to run the gate against a fix. Never set in CI.
+# `--no-deps` over the released `autonerves` — after the candidate re-pin in a
+# rehearsal, before the single audit in a continuous run. It exists to rehearse
+# an UNRELEASED setup_colab.py — the bootstrap package list is the thing this
+# check gates, and until it is on PyPI there is no other way to run the gate
+# against a fix. Never set in CI.
+
+# f_report_str <json-path> <key...>: print a string field out of a colab_gate
+# report (nested keys walk down), or "" when it is missing or unreadable.
+f_report_str() {
+    python3 -c '
+import json, sys
+try:
+    data = json.load(open(sys.argv[1]))
+except Exception:
+    print("")
+else:
+    for key in sys.argv[2:]:
+        data = data.get(key) if isinstance(data, dict) else None
+    print(data if isinstance(data, str) else "")
+' "$@" 2>/dev/null
+}
+
+# f_overlay_autonerves_src: the COLAB_GATE_AUTONERVES_SRC overlay for the
+# CONTINUOUS path (the rehearsal path does the same install inside the re-pin
+# driver, where it has to sit between the candidate pins and the setup_colab
+# reload). No-op when the variable is unset, which is every CI run.
+f_overlay_autonerves_src() {
+    if [ -z "${COLAB_GATE_AUTONERVES_SRC:-}" ]; then
+        return 0
+    fi
+    COLAB_GATE_AUTONERVES_SRC="$COLAB_GATE_AUTONERVES_SRC" python -c '
+import os, subprocess, sys
+
+_autonerves_src = os.environ["COLAB_GATE_AUTONERVES_SRC"]
+print(f"COLAB_GATE_AUTONERVES_SRC set — overlaying {_autonerves_src}")
+subprocess.check_call(
+    [sys.executable, "-m", "pip", "install", "--no-deps", _autonerves_src]
+)
+'
+}
 
 check_f() {
     echo
@@ -740,11 +818,15 @@ check_f() {
     local ws_dir="/tmp/colab_sim_workspace_F_$TS"
     local seed_json="/tmp/F_gate_seed_$TS.json"
     local verify_json="/tmp/F_gate_verify_$TS.json"
-    # The two gate reports are read by the sidecar writer, which runs before
+    local verify_released_json="/tmp/F_gate_verify_released_$TS.json"
+    # The gate reports are read by the sidecar writer, which runs before
     # cleanup — so they can be swept with everything else (and kept by --keep).
-    ARTEFACTS+=("$venv" "$ws_dir" "$seed_json" "$verify_json")
+    # The released report only exists on the rehearsal path; the writer skips a
+    # path that is not a file.
+    ARTEFACTS+=("$venv" "$ws_dir" "$seed_json" "$verify_json" "$verify_released_json")
     F_GATE_SEED_JSON="$seed_json"
     F_GATE_VERIFY_JSON="$verify_json"
+    F_GATE_VERIFY_RELEASED_JSON="$verify_released_json"
 
     # Colab runs Python 3.12. A different interpreter would seed Colab's pins
     # against the wrong wheels, so a missing python3.12 is FAIL, not SKIP —
@@ -833,21 +915,9 @@ else:
     )
     _setup_colab = importlib.import_module("autonerves.setup_colab")
 
-# --- dev/witness override: rehearse an unreleased setup_colab.py ---
-#
-# The bootstrap package list this check gates lives in autonerves.setup_colab.
-# A fix to it cannot be exercised until it is on PyPI unless the local source
-# can be laid over the released wheel here, which is what this does. Not set in
-# CI: a release gate must read the wheels that are about to ship.
-_autonerves_src = os.environ.get("COLAB_GATE_AUTONERVES_SRC")
-if _autonerves_src:
-    print(f"COLAB_GATE_AUTONERVES_SRC set — overlaying {_autonerves_src}")
-    subprocess.check_call(
-        [sys.executable, "-m", "pip", "install", "--no-deps", _autonerves_src]
-    )
-    import importlib
-    _setup_colab = importlib.import_module("autonerves.setup_colab")
-    _setup_colab = importlib.reload(_setup_colab)
+# NB: nothing is laid over the bootstrap here — the cell is the cell. The
+# COLAB_GATE_AUTONERVES_SRC overlay and, in a rehearsal, the candidate re-pin
+# happen after this driver, so what the cell installs is measurable on its own.
 
 if not hasattr(_setup_colab, "setup"):
     print(
@@ -881,25 +951,121 @@ PYEOF
     fi
 
     # --- the gate: what did the --no-deps bootstrap actually leave behind? ---
-    # Run from inside the cloned workspace so autonerves resolves its config the
-    # way a notebook cell does (conf reads the cwd).
-    step "auditing the bootstrapped environment against Colab's package set"
+    # Every audit runs from inside the cloned workspace so autonerves resolves
+    # its config the way a notebook cell does (conf reads the cwd).
     local gate_rc=0
+    local gate_detail=""
+    local released_rc=0
+    local released_detail=""
+    local released_ver="?"
+
+    if [ -n "$TARGET_VERSION" ]; then
+        # --- facet 1: the RELEASED bootstrap, advisory ---
+        # This is what the verbatim cell just installed, and what a reader who
+        # opens the notebook today gets. It is never a FAIL: see the header.
+        step "auditing the RELEASED bootstrap (advisory — what a reader gets today)"
+        (cd "$ws_dir" && "$venv/bin/python" "$VERIFY_INSTALL_DIR/colab_gate.py" verify \
+            --manifest-cache "$COLAB_MANIFEST_CACHE" \
+            --seed-report "$seed_json" \
+            --report-json "$verify_released_json" \
+            --index-args "${PIP_INDEX_ARGS[@]}") |& tee /tmp/F_gate_released.log
+        released_rc=${PIPESTATUS[0]}
+        released_detail=$(f_report_str "$verify_released_json" detail)
+        released_ver=$(f_report_str "$verify_released_json" packages autonerves)
+        [ -n "$released_ver" ] || released_ver="?"
+        if [ -z "$released_detail" ]; then
+            released_detail="verify could not run (rc=$released_rc)"
+        fi
+
+        # --- re-pin the venv to the candidate, then re-run its bootstrap ---
+        step "re-pinning the venv to the candidate $TARGET_VERSION"
+        cat > /tmp/F_driver_repin.py <<'PYEOF'
+"""Re-pin the simulated Colab venv from the release to the candidate.
+
+The verbatim setup cell has already run: the workspace is cloned and the cwd is
+inside it, so `setup()` is NOT called again. What is redone is the part a
+rehearsal needs pinned — the five PyAuto wheels, and then the candidate's own
+bootstrap package list, installed exactly as `autonerves.setup_colab._colab_setup`
+installs it.
+"""
+
+import importlib
+import os
+import subprocess
+import sys
+
+index_args = sys.argv[1:]          # the rehearsal's pip index args, if any
+version = os.environ["COLAB_GATE_TARGET_VERSION"]
+
+pins = [
+    f"autonerves=={version}",
+    f"autofit=={version}",
+    f"autoarray=={version}",
+    f"autogalaxy=={version}",
+    f"autolens=={version}",
+]
+print(f"re-pinning the PyAuto stack to the candidate {version}")
+subprocess.check_call(
+    [sys.executable, "-m", "pip", "install", "--no-deps", *index_args, *pins]
+)
+
+# --- dev/witness override: rehearse an unreleased setup_colab.py ---
+#
+# After the pins, so the local source wins over the candidate wheel; before the
+# reload, so the package list read below is the one being rehearsed.
+_autonerves_src = os.environ.get("COLAB_GATE_AUTONERVES_SRC")
+if _autonerves_src:
+    print(f"COLAB_GATE_AUTONERVES_SRC set — overlaying {_autonerves_src}")
+    subprocess.check_call(
+        [sys.executable, "-m", "pip", "install", "--no-deps", _autonerves_src]
+    )
+
+# The wheels landed after this interpreter started, so the import system's
+# directory caches predate them.
+importlib.invalidate_caches()
+import autonerves.setup_colab as sc
+
+sc = importlib.reload(sc)
+if not isinstance(getattr(sc, "_PROJECTS", None), dict) or "autolens" not in sc._PROJECTS:
+    print(
+        "ERROR: candidate autonerves.setup_colab exposes no _PROJECTS['autolens'] "
+        "entry — its bootstrap package list cannot be mirrored"
+    )
+    sys.exit(4)
+
+packages = sc._PROJECTS["autolens"]["packages"]
+subprocess.check_call([sys.executable, "-m", "pip", "install", *packages, "--no-deps"])
+print(
+    f"re-pin OK: candidate {version} bootstrap package list installed "
+    f"({len(packages)} packages)"
+)
+PYEOF
+        local repin_rc=0
+        COLAB_GATE_TARGET_VERSION="$TARGET_VERSION" \
+            python /tmp/F_driver_repin.py "${PIP_INDEX_ARGS[@]}" |& tee /tmp/F_repin.log
+        repin_rc=${PIPESTATUS[0]}
+        if [ "$repin_rc" -ne 0 ]; then
+            RESULTS+=("F|FAIL|candidate re-pin rc=$repin_rc")
+            tail_log "Check F candidate re-pin output" "$(cat /tmp/F_repin.log 2>/dev/null)"
+            deactivate
+            return
+        fi
+
+        step "auditing the CANDIDATE bootstrap (the gate)"
+    else
+        # Continuous run: the released bootstrap IS the candidate, so there is
+        # one audit and the dev/witness overlay (if any) goes in front of it.
+        f_overlay_autonerves_src
+        step "auditing the bootstrapped environment against Colab's package set"
+    fi
+
     (cd "$ws_dir" && "$venv/bin/python" "$VERIFY_INSTALL_DIR/colab_gate.py" verify \
         --manifest-cache "$COLAB_MANIFEST_CACHE" \
         --seed-report "$seed_json" \
         --report-json "$verify_json" \
         --index-args "${PIP_INDEX_ARGS[@]}") |& tee /tmp/F_gate.log
     gate_rc=${PIPESTATUS[0]}
-
-    local gate_detail=""
-    gate_detail=$(python3 -c '
-import json, sys
-try:
-    print(json.load(open(sys.argv[1])).get("detail", "") or "")
-except Exception:
-    print("")
-' "$verify_json" 2>/dev/null)
+    gate_detail=$(f_report_str "$verify_json" detail)
 
     if [ "$gate_rc" -eq 2 ] || { [ "$gate_rc" -ne 0 ] && [ -z "$gate_detail" ]; }; then
         RESULTS+=("F|FAIL|colab gate: verify could not run (rc=$gate_rc)")
@@ -912,6 +1078,13 @@ except Exception:
         tail_log "Check F colab_gate verify output" "$(cat /tmp/F_gate.log 2>/dev/null)"
         deactivate
         return
+    fi
+
+    # The candidate passed. If the bootstrap a reader gets today did not, say
+    # so — as a WARN row, which prints in the table and travels into the
+    # sidecar but leaves `ready` (and therefore the Heart verdict) alone.
+    if [ -n "$TARGET_VERSION" ] && [ "$released_rc" -ne 0 ]; then
+        RESULTS+=("F|WARN|released Colab bootstrap (autonerves=$released_ver) broken for readers: $released_detail; candidate $TARGET_VERSION passes")
     fi
 
     # --- driver part 2: one real notebook cell (the top of imaging/start_here) ---
@@ -976,18 +1149,24 @@ printf '%-5s  %-6s  %s\n' "-----" "------" "------"
 
 n_fail=0
 n_skip=0
+# WARN is advisory and deliberately NOT counted in n_fail: check F's
+# released-bootstrap facet reports what a reader gets today, and a broken
+# release is not evidence against shipping the candidate that fixes it
+# (human decision, 2026-09-17). Only FAIL moves `ready`.
+n_warn=0
 for row in "${RESULTS[@]}"; do
     IFS='|' read -r letter status detail <<< "$row"
     printf '%-5s  %-6s  %s\n' "$letter" "$status" "$detail"
     [ "$status" = "FAIL" ] && n_fail=$((n_fail + 1))
     [ "$status" = "SKIP" ] && n_skip=$((n_skip + 1))
+    [ "$status" = "WARN" ] && n_warn=$((n_warn + 1))
 done
 
 echo
 if [ "$n_fail" -eq 0 ]; then
-    echo "Overall: PASS ($n_skip skipped)"
+    echo "Overall: PASS ($n_skip skipped, $n_warn warning(s))"
 else
-    echo "Overall: FAIL ($n_fail failure(s), $n_skip skipped)"
+    echo "Overall: FAIL ($n_fail failure(s), $n_skip skipped, $n_warn warning(s))"
 fi
 
 if [ -n "$RESULTS_LOG" ]; then
@@ -1016,6 +1195,7 @@ if [ -n "$REPORT_JSON" ]; then
       VI_REPORT_JSON="$REPORT_JSON" \
       VI_INDEX="$vi_index" \
       VI_F_GATE_SEED="$F_GATE_SEED_JSON" VI_F_GATE_VERIFY="$F_GATE_VERIFY_JSON" \
+      VI_F_GATE_VERIFY_RELEASED="$F_GATE_VERIFY_RELEASED_JSON" \
       python3 -c '
 import datetime, json, os, sys
 checks = []
@@ -1027,9 +1207,12 @@ for line in sys.stdin:
     checks.append({"check": parts[0], "status": parts[1], "detail": parts[2]})
 
 # Check F carries the Colab gate report as a nested "colab_gate" key on its own
-# row. Additive only: every existing key and the shape of "checks" (a list of
-# {check,status,detail}) are untouched, because heart/readiness.py and
-# heart/validate.py parse this file and must keep working unchanged.
+# row: "seed", "verify" (the gated facet) and, on a rehearsal, "verify_released"
+# (the advisory audit of the bootstrap a reader gets today). It is attached to
+# every F row, the WARN one included. Additive only: every existing key and the
+# shape of "checks" (a list of {check,status,detail}) are untouched, because
+# heart/readiness.py and heart/validate.py parse this file and must keep
+# working unchanged.
 def _read(var):
     path = os.environ.get(var) or ""
     if not path or not os.path.isfile(path):
@@ -1041,7 +1224,9 @@ def _read(var):
         return None
 
 gate = {k: v for k, v in (("seed", _read("VI_F_GATE_SEED")),
-                          ("verify", _read("VI_F_GATE_VERIFY"))) if v is not None}
+                          ("verify", _read("VI_F_GATE_VERIFY")),
+                          ("verify_released", _read("VI_F_GATE_VERIFY_RELEASED")))
+        if v is not None}
 if gate:
     for entry in checks:
         if entry["check"] == "F":
