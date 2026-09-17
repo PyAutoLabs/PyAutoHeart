@@ -2,13 +2,9 @@
   "schema_version": 1,
   "sections": {
     "profiling_drift": {
-      "details": [
-        "\u2717 runtime/imaging/mge/mge_likelihood_summary_hst_v2026.8.17.1.json  [eager, full, vmap]",
-        "\u2717 runtime/imaging/mge_mass_jax/mge_mass_jax_likelihood_summary_hst_v2026.8.17.1.json  [jax_mge_mass]",
-        "\u2717 runtime/imaging/pixelization_numba_mge_mass/pixelization_numba_mge_mass_likelihood_summary_hst_v2026.8.17.1.json  [numba_cpu_mge_mass]"
-      ],
-      "state": "warn",
-      "summary": "3 result(s) drifted from pinned baseline"
+      "details": [],
+      "state": "ok",
+      "summary": "232 results clean"
     },
     "script_timing": {
       "details": [],
@@ -16,13 +12,9 @@
       "summary": "646 within baseline"
     },
     "test_run": {
-      "details": [
-        "\u2717 autolens notebooks/multi_dataset/modeling.ipynb (timeout)",
-        "\u2717 autolens scripts/multi_dataset/modeling.py (timeout)",
-        "\u2717 autolens_test scripts/imaging/delaunay.py (failed)"
-      ],
-      "state": "fail",
-      "summary": "NOT ready \u2014 1375p / 5f / 121s @ cloud#34099198772"
+      "details": [],
+      "state": "ok",
+      "summary": "ready \u2014 1393p / 0f / 122s @ cloud#34911250861"
     },
     "version_skew": {
       "details": [],
@@ -30,10 +22,19 @@
       "summary": "all floors satisfiable"
     },
     "worktree_drift": {
-      "details": [],
-      "state": "warn",
-      "summary": "2 orphan dir(s) (clean)"
+      "details": [
+        "fixed-light-numba-s4b/autolens_profiling: 1 dirty",
+        "hst-gpu-residue-p1/autolens_profiling: 3 dirty",
+        "hst-gpu-residue-p2/autolens_profiling: 12 dirty",
+        "sersic-variants-analysis/euclid_strong_lens_modeling_pipeline: 1 dirty",
+        "canonical PyAutoMind: 1 dirty",
+        "canonical autofit_assistant: 1 dirty",
+        "canonical autolens_assistant: 1 dirty",
+        "canonical autolens_inference: 2 dirty"
+      ],
+      "state": "fail",
+      "summary": "5 orphan / 0 missing / 4 dirty"
     }
   },
-  "ts": "2026-09-12T17:08:26.254478+00:00"
+  "ts": "2026-09-17T20:40:02.873622+00:00"
 }
