@@ -47,16 +47,33 @@ It does **not** cover:
   always names the manifest's source (`live`, `cache` or the vendored
   snapshot) and date so the evidence can be dated.
 
+**In a `--version` rehearsal the gate audits the candidate, not the release.**
+The injected setup cell is verbatim, and verbatim means unpinned: an unpinned
+`pip install autonerves` can never select a dev pre-release, and the released
+`setup_colab.setup()` then reinstalls the whole stack `--no-deps` unpinned too,
+so the cell pulls the venv back down to the current PyPI release whatever the
+seed step pinned. Check F therefore audits that first and reports it as an
+advisory **`WARN`** row — a broken released bootstrap is not evidence against
+shipping the candidate, because the release is the remedy — then **re-pins** the
+venv to the candidate (`autonerves`, `autofit`, `autoarray`, `autogalaxy`,
+`autolens` all `==<version>` from the rehearsal index, `--no-deps`, then
+`setup_colab` reloaded and its own package list reinstalled exactly as
+`_colab_setup` does) and gates on that. A `WARN` row never changes `ready`, so
+it never moves the Heart verdict; it prints in the table, travels into the
+sidecar and renders on the dashboard. A continuous run without `--version` is
+unchanged: the released bootstrap *is* the candidate, so there is one audit.
+
 The manifest is fetched live, cached at `$HEART_STATE_DIR/colab_pip_freeze.txt`,
 and falls back to `heart/checks/colab_pip_freeze.snapshot.txt` when both are
 unavailable. Deliberate exemptions live in `heart/config/colab_gate.yaml`
 (`accepted_missing`), each with a written reason that travels into the report.
 
 **`COLAB_GATE_AUTONERVES_SRC`** (development / witness runs only) installs a
-path or requirement `--no-deps` over the released `autonerves` immediately
-after the setup cell's own bootstrap install. It exists because the package
-list the gate measures lives in `autonerves/setup_colab.py`, so a fix to it
-cannot otherwise be rehearsed until it is on PyPI:
+path or requirement `--no-deps` over the installed `autonerves` — after the
+candidate re-pin in a `--version` rehearsal, and before the single audit in a
+continuous run. It exists because the package list the gate measures lives in
+`autonerves/setup_colab.py`, so a fix to it cannot otherwise be rehearsed until
+it is on PyPI:
 
 ```bash
 COLAB_GATE_AUTONERVES_SRC=/path/to/PyAutoNerves pyauto-heart verify_install F

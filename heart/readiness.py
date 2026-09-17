@@ -508,6 +508,14 @@ def compute(
     # cannot satisfy a release gate: a pass stays STALE until PyPI/TestPyPI is
     # exercised. A failure remains RED because an exact local artifact failing
     # its install contract is still actionable evidence.
+    #
+    # A WARN check row is verdict-neutral, by decision 2026-09-17. The only
+    # producer today is check F's released-bootstrap facet in a --version
+    # rehearsal: it reports that the Colab bootstrap a reader gets from the
+    # CURRENT release is broken, which is not evidence against shipping the
+    # candidate — the release is the remedy, and grading it YELLOW would block
+    # the very release that fixes it. Only `ready is False` (i.e. a FAIL row)
+    # is RED; WARN rows travel in the sidecar and render on the dashboard.
     vi = snapshot.get("verify_install")
     if isinstance(vi, dict) and "ready" in vi:
         index = str(vi.get("index") or "index unknown")

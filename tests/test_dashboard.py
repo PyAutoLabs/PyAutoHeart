@@ -210,6 +210,49 @@ def test_test_run_failing_scripts_listed_in_details():
                for d in section.details)
 
 
+def test_install_warn_row_renders_warn_with_detail():
+    """A passing run carrying an advisory row renders WARN, not OK.
+
+    Readiness is deliberately blind to WARN rows (decision 2026-09-17), so the
+    dashboard is the only place check F's released-bootstrap facet surfaces.
+    """
+    detail = (
+        "released Colab bootstrap (autonerves=2026.9.15.1) broken for readers: "
+        "colab gate: corner (autofit/plot.py:95); candidate 2026.9.17.1.dev1 passes"
+    )
+    snap = make_snapshot(verify_install={
+        "ready": True,
+        "index": "testpypi",
+        "ts": TS,
+        "checks": [
+            {"check": "F", "status": "WARN", "detail": detail},
+            {"check": "F", "status": "PASS", "detail": "Colab manifest live"},
+        ],
+    })
+
+    board = dashboard.build_board(snap, make_verdict(), now=FRESH_NOW)
+    section = next(s for s in board.sections if s.key == "verify_install")
+
+    assert section.state == dashboard.WARN
+    assert "passed with warnings (testpypi; F)" in section.summary
+    assert any("released Colab bootstrap" in d for d in section.details)
+
+
+def test_install_fail_row_still_renders_fail():
+    snap = make_snapshot(verify_install={
+        "ready": False,
+        "index": "testpypi",
+        "ts": TS,
+        "checks": [{"check": "F", "status": "FAIL", "detail": "colab gate: corner"}],
+    })
+
+    board = dashboard.build_board(snap, make_verdict("red", 60), now=FRESH_NOW)
+    section = next(s for s in board.sections if s.key == "verify_install")
+
+    assert section.state == dashboard.FAIL
+    assert section.summary.startswith("FAILED")
+
+
 def test_release_install_pass_names_the_index():
     snap = make_snapshot(verify_install={
         "ready": True,

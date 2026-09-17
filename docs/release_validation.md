@@ -137,6 +137,18 @@ gaps are WARNs carried in the report. Until 2026-09-15 Check F installed the
 stack **with** dependencies before running the cell, so the bootstrap's misses
 (`corner`, `optax`, `xxhash`, `blackjax`) were invisible to it and shipped.
 
+In a rehearsal (`--version`) that cell necessarily bootstraps the **released**
+stack: it is injected verbatim, and neither its own `pip install autonerves` nor
+the released `setup_colab.setup()` it calls is pinned, so pip cannot select the
+candidate's dev pre-release. Audited as-is the gate would measure the release
+and never the wheels about to ship — and a broken released bootstrap would hold
+Heart RED over the release carrying its fix. So since 2026-09-17 Check F audits
+the released bootstrap first and reports it as an advisory **`WARN`** row that
+never fails the run or moves `ready`, then re-pins the venv to the candidate
+(all five PyAuto packages at the rehearsal version, `--no-deps`, `setup_colab`
+reloaded and its own package list reinstalled) and gates on that. A continuous
+run without `--version` is unchanged: one audit, one verdict.
+
 Check B then requires the unpinned install to be refused as well. That is a
 separate guarantee, and it was not met until 2026-08-19: `pip install autolens`
 on 3.11 backtracked to `2026.7.29.1` and installed a stale, JAX-less stack
