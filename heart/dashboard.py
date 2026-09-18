@@ -53,7 +53,7 @@ import sys
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Sequence
 
-from heart import validate
+from heart import _workspace, validate
 from heart.checks.test_run import counts_measured as tr_counts_measured
 from heart.heart_color import (
     c_bold, c_dim, c_fail, c_info, c_meta, c_ok, c_warn,
@@ -170,13 +170,16 @@ BOARD_KEY = "heart"  # this board's entry in the Brain's palette table
 
 
 def _workspace_root() -> pathlib.Path:
-    """Where the sibling PyAuto checkouts live: `$PYAUTO_ROOT`, else `~/Code`.
+    """Where the sibling PyAuto checkouts live — via `heart/_workspace.py`.
 
-    The org's own directory name is an instance fact, so it is never written
-    here — a workspace that does not follow the default sets `$PYAUTO_ROOT`
-    (the same variable the dev-flow doors read).
+    The workspace directory's own name is an instance fact, so it is never
+    written here; neither is the `$HOME`-relative path this used to fall back
+    to. That fallback named the directory ABOVE the workspace, so `_workspace_root() /
+    "PyAutoBrain"` pointed at a path that has never existed — masked only
+    because `theme()` tries it last, after the sibling checkout that answers.
+    `$PYAUTO_ROOT` still wins, as the resolver's first rule.
     """
-    return pathlib.Path(os.environ.get("PYAUTO_ROOT") or pathlib.Path.home() / "Code")
+    return _workspace.workspace_root()
 
 
 def theme():

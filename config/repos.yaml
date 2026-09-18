@@ -185,7 +185,6 @@ smoke:
 
 # Excluded — not polled. Listed here for documentation only.
 excluded:
-  - admin_jammy           # personal tooling
   - autolens_assistant    # public-facing template
   - autolens_profiling    # profiling project
   - autolens_inference    # inference benchmark project (search/inference runs; results tracked)

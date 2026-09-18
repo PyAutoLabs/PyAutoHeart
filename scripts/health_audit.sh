@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # health_audit.sh — on-demand structural repo-health audit.
 #
-# Defines `_health_audit` (run via `health audit`) that scans ~/Code/PyAutoLabs/
+# Defines `_health_audit` (run via `health audit`) that scans the workspace root
 # for state the git-sync dashboard (`health` / `health sync`) doesn't surface:
 #
 #   1. Top-level directories with no .git (intentionally-not-a-repo or bug).
@@ -18,11 +18,18 @@
 #   health audit
 #
 # Override via env vars:
-#   PYAUTO_AUDIT_ROOT         scan root (default $HOME/Code/PyAutoLabs)
+#   PYAUTO_AUDIT_ROOT         scan root (default: the resolved workspace root)
 #   PYAUTO_AUDIT_STASH_DAYS   stash age threshold in days (default 14)
 #   PYAUTO_AUDIT_BRANCH_DAYS  branch age threshold in days (default 30)
 
-PYAUTO_AUDIT_ROOT="${PYAUTO_AUDIT_ROOT:-$HOME/Code/PyAutoLabs}"
+# The scan root: this override first, else the MAIN checkout from the one
+# shared resolver (heart/_workspace.sh) — these dashboards report on the
+# canonical tree, never on a task bundle. Sourced in a subshell so a script that
+# lives in the user's ~/.bashrc does not export PYAUTO_ROOT into every shell.
+_health_audit_self="$(readlink -f "${BASH_SOURCE[0]}")"
+PYAUTO_AUDIT_ROOT="${PYAUTO_AUDIT_ROOT:-$(
+  . "$(dirname "$_health_audit_self")/../heart/_workspace.sh"; printf '%s' "$PYAUTO_MAIN_ROOT"
+)}"
 PYAUTO_AUDIT_STASH_DAYS="${PYAUTO_AUDIT_STASH_DAYS:-14}"
 PYAUTO_AUDIT_BRANCH_DAYS="${PYAUTO_AUDIT_BRANCH_DAYS:-30}"
 

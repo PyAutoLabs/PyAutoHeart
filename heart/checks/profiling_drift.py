@@ -31,12 +31,16 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from heart import _workspace
+
 HEART_STATE_DIR = Path(
     os.environ.get("HEART_STATE_DIR")
     or Path.home() / ".pyauto-heart"
 )
 HEART_HOME = Path(__file__).resolve().parents[2]
-PYAUTO_ROOT = Path(__file__).resolve().parents[3] if Path(__file__).resolve().parents[3].name == "PyAutoLabs" else Path.home() / "Code" / "PyAutoLabs"
+# The MAIN checkout via the one shared resolver — grading reads the
+# canonical tree, not a task bundle. See heart/_workspace.py.
+PYAUTO_ROOT = _workspace.canonical_root()
 RESULTS_ROOT = PYAUTO_ROOT / "autolens_profiling" / "results"
 
 

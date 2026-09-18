@@ -54,7 +54,14 @@
 # `/health status` shows planned / active / complete tasks. Different views,
 # both under the "health" vocabulary.
 
-PYAUTO_STATUS_ROOT="${PYAUTO_STATUS_ROOT:-$HOME/Code/PyAutoLabs}"
+# The scan root: this override first, else the MAIN checkout from the one
+# shared resolver (heart/_workspace.sh) — these dashboards report on the
+# canonical tree, never on a task bundle. Sourced in a subshell so a script that
+# lives in the user's ~/.bashrc does not export PYAUTO_ROOT into every shell.
+_health_sync_self="$(readlink -f "${BASH_SOURCE[0]}")"
+PYAUTO_STATUS_ROOT="${PYAUTO_STATUS_ROOT:-$(
+  . "$(dirname "$_health_sync_self")/../heart/_workspace.sh"; printf '%s' "$PYAUTO_MAIN_ROOT"
+)}"
 
 _health_sync() {
   local root="$PYAUTO_STATUS_ROOT"
@@ -337,7 +344,7 @@ _health_sync() {
   fi
 
   # Smoke tests. Reads per-workspace JSON written by the /smoke-test skill
-  # (admin_jammy/skills/smoke_test/SKILL.md step 7). One python invocation
+  # (PyAutoHeart/skills/smoke_test/SKILL.md step 7). One python invocation
   # parses all files; bash formats with ANSI color (green if failed=0).
   local smoke_dir="$HOME/.cache/pyauto/smoke"
   if [[ -d "$smoke_dir" ]] && compgen -G "$smoke_dir/*.json" > /dev/null; then

@@ -13,7 +13,7 @@ check_one_repo() {
   local owner_name="$1"
   local group="$2"
   local name="${owner_name##*/}"
-  local repo_path="$PYAUTO_ROOT/$name"
+  local repo_path="$PYAUTO_MAIN_ROOT/$name"
 
   if [[ ! -d "$repo_path/.git" ]]; then
     heart_write_json "$HEART_PER_REPO_DIR/$name.repo_state.json" "$(printf '{"name":"%s","present":false,"group":"%s"}' "$name" "$group")"

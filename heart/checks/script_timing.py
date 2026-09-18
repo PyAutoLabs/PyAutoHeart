@@ -68,6 +68,8 @@ from typing import Any
 
 import yaml
 
+from heart import _workspace
+
 HEART_STATE_DIR = Path(
     os.environ.get("HEART_STATE_DIR")
     or Path.home() / ".pyauto-heart"
@@ -75,7 +77,9 @@ HEART_STATE_DIR = Path(
 HEART_TIMINGS_DIR = HEART_STATE_DIR / "timings"
 HEART_HOME = Path(__file__).resolve().parents[2]
 CONFIG_PATH = HEART_HOME / "config" / "repos.yaml"
-PYAUTO_ROOT = Path(__file__).resolve().parents[3] if Path(__file__).resolve().parents[3].name == "PyAutoLabs" else Path.home() / "Code" / "PyAutoLabs"
+# The MAIN checkout via the one shared resolver — grading reads the
+# canonical tree, not a task bundle. See heart/_workspace.py.
+PYAUTO_ROOT = _workspace.canonical_root()
 TEST_RESULTS_LATEST = PYAUTO_ROOT / "PyAutoHands" / "run_logs" / "latest"
 
 # Distinct runs the prior window must hold before a ratio is a verdict rather

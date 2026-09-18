@@ -40,6 +40,8 @@ from typing import Any, Callable
 
 import yaml
 
+from heart import _workspace
+
 HEART_STATE_DIR = Path(
     os.environ.get("HEART_STATE_DIR")
     or Path.home() / ".pyauto-heart"
@@ -137,7 +139,7 @@ def run(runner: Runner | None = None, scripts: list[tuple[str, str]] | None = No
     scripts = scripts if scripts is not None else DEFAULT_SCRIPTS
     python = os.environ.get("HYGIENE_PYTHON", "python3")
     timeout = float(os.environ.get("HEART_WS_SCRIPT_TIMEOUT", "300"))
-    root = Path(os.environ.get("PYAUTO_ROOT", str(Path.home() / "Code" / "PyAutoLabs")))
+    root = _workspace.canonical_root()  # grading: the main checkout
     runner = runner or default_runner(root, python, timeout)
 
     findings: dict[str, list[dict[str, Any]]] = {"red": [], "yellow": [], "green": []}

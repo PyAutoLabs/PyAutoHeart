@@ -12,7 +12,7 @@ outside it) against the ``worktree:`` claims in PyAutoMind's ``active.md`` and
                    dirty — counted ONCE per checkout, never per worktree
 
 The symlink distinction is the point: ``worktree_create`` symlinks every
-non-claimed repo back to ``~/Code/PyAutoLabs/<repo>``, so following symlinks
+non-claimed repo back to the canonical checkout, so following symlinks
 counted one dirty canonical repo once per task worktree that linked it (the
 "66 dirty" totals). A user's dirty canonical checkout is their own working
 state, not task drift — it gets its own category and a yellow, not a red.
@@ -42,10 +42,20 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from heart import _workspace
+
 HEART_HOME = Path(__file__).resolve().parents[2]
-_p3 = Path(__file__).resolve().parents[3]
-PYAUTO_ROOT = _p3 if _p3.name == "PyAutoLabs" else Path.home() / "Code" / "PyAutoLabs"
-PYAUTO_WT_ROOT = Path(os.environ.get("PYAUTO_WT_ROOT") or Path.home() / "Code" / "PyAutoLabs-wt")
+# The MAIN checkout and its worktree area, via the one shared resolver
+# (heart/_workspace.py). Grading reads the canonical tree, never the bundle
+# this module may be running from — `canonical_root()` asks git which checkout
+# a worktree belongs to. This used to accept the grandparent only when it was
+# literally named after this workspace's directory, and otherwise reach for a
+# hard-coded path under `$HOME` — writing that directory's name twice, in the
+# one check whose whole job is to look at task bundles, which are never named
+# after it. $PYAUTO_ROOT /
+# $PYAUTO_WT_ROOT still win, so grading a branch stays a one-variable opt-in.
+PYAUTO_ROOT = _workspace.canonical_root()
+PYAUTO_WT_ROOT = _workspace.wt_root()
 ACTIVE_MD = PYAUTO_ROOT / "PyAutoMind" / "active.md"
 PARKED_MD = PYAUTO_ROOT / "PyAutoMind" / "parked.md"
 HEART_STATE_DIR = Path(os.environ.get("HEART_STATE_DIR") or Path.home() / ".pyauto-heart")

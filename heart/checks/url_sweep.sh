@@ -35,7 +35,7 @@ check_url_sweep() {
   local rows=""
   local repo dir out rc findings
   for repo in "${URL_CHECK_REPOS[@]}"; do
-    dir="$PYAUTO_ROOT/$repo"
+    dir="$PYAUTO_MAIN_ROOT/$repo"
     if [[ ! -d "$dir" ]]; then
       rows+="${repo}|0|0"$'\n'
       continue
