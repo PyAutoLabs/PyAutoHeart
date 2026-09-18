@@ -11,7 +11,8 @@
 #   HEART_LOG_DIR        — daemon log files
 #   HEART_PID_FILE       — daemon pidfile
 #   HEART_STATE_FILE     — aggregated latest snapshot
-#   PYAUTO_ROOT          — ~/Code/PyAutoLabs/ (where the repos live)
+#   PYAUTO_ROOT          — the workspace root (where the repos live), and
+#                          PYAUTO_ROOT_REASON / PYAUTO_WT_ROOT with it
 #
 # And the helper functions:
 #
@@ -28,8 +29,11 @@ _heart_common_self="${BASH_SOURCE[0]}"
 HEART_HOME="$(cd "$(dirname "$_heart_common_self")/.." && pwd)"
 export HEART_HOME
 
-PYAUTO_ROOT="${PYAUTO_ROOT:-$HOME/Code/PyAutoLabs}"
-export PYAUTO_ROOT
+# PYAUTO_ROOT (+ _REASON, _MARKER, PYAUTO_WT_ROOT) via the one shared
+# resolver — the Brain's bin/_pyauto_root.sh when a checkout is in reach, the
+# same rule applied locally when it is not. No workspace path is named here:
+# the literal that used to be is right on one box and wrong everywhere else.
+source "$HEART_HOME/heart/_workspace.sh"
 
 HEART_STATE_DIR="${HEART_STATE_DIR:-$HOME/.pyauto-heart}"
 HEART_PER_REPO_DIR="$HEART_STATE_DIR/per-repo"

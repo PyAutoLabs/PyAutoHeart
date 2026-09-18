@@ -62,10 +62,13 @@ from typing import Any
 
 import yaml
 
+from heart import _workspace
+
 HEART_HOME = Path(__file__).resolve().parents[2]
 CONFIG_PATH = HEART_HOME / "config" / "repos.yaml"
-_p3 = Path(__file__).resolve().parents[3]
-PYAUTO_ROOT = _p3 if _p3.name == "PyAutoLabs" else Path.home() / "Code" / "PyAutoLabs"
+# The MAIN checkout via the one shared resolver — grading reads the
+# canonical tree, not a task bundle. See heart/_workspace.py.
+PYAUTO_ROOT = _workspace.canonical_root()
 HEART_STATE_DIR = Path(
     os.environ.get("HEART_STATE_DIR")
     or Path.home() / ".pyauto-heart"

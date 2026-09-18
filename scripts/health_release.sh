@@ -28,7 +28,16 @@
 # layer over the same run artefacts). This function prints straight to stdout,
 # no Claude needed.
 
-PYAUTO_STATUS_FULL_DEFAULT="${PYAUTO_STATUS_FULL_DEFAULT:-$HOME/Code/PyAutoLabs/PyAutoHands/run_logs/latest}"
+# The run to read: this override first, else PyAutoHands/run_logs/latest under
+# the MAIN checkout from the one shared resolver (heart/_workspace.sh) — the
+# run logs live in the canonical tree, never in a task bundle.
+# Sourced in a subshell so a script that lives in the user's ~/.bashrc does not
+# export PYAUTO_ROOT into every shell.
+_health_release_self="$(readlink -f "${BASH_SOURCE[0]}")"
+PYAUTO_STATUS_FULL_DEFAULT="${PYAUTO_STATUS_FULL_DEFAULT:-$(
+  . "$(dirname "$_health_release_self")/../heart/_workspace.sh"
+  printf '%s' "$PYAUTO_MAIN_ROOT/PyAutoHands/run_logs/latest"
+)}"
 
 _health_release() {
   local run_dir="${1:-$PYAUTO_STATUS_FULL_DEFAULT}"

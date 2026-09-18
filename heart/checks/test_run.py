@@ -36,10 +36,13 @@ import tempfile
 from pathlib import Path
 from typing import Any, Callable
 
-# Reuse the same root/latest resolution as script_timing.py.
+from heart import _workspace
+
+# Reuse the same root/latest resolution as script_timing.py: the one shared
+# resolver, via heart/_workspace.py, asked for the MAIN checkout — grading
+# reads the canonical tree, not a task bundle.
 HEART_HOME = Path(__file__).resolve().parents[2]
-_p3 = Path(__file__).resolve().parents[3]
-PYAUTO_ROOT = _p3 if _p3.name == "PyAutoLabs" else Path.home() / "Code" / "PyAutoLabs"
+PYAUTO_ROOT = _workspace.canonical_root()
 TEST_RESULTS_LATEST = PYAUTO_ROOT / "PyAutoHands" / "run_logs" / "latest"
 HEART_STATE_DIR = Path(
     os.environ.get("HEART_STATE_DIR")
