@@ -116,9 +116,19 @@ else
     ""|/*) ;;
     *)     _heart_common_dir="$_heart_workspace_home/$_heart_common_dir" ;;
   esac
-  # <root>/<repo>/.git -> <root>
+  # Find the workspace marker above the main checkout; grouped organ
+  # checkouts add a directory between the repo and workspace root.
   if [ -n "$_heart_common_dir" ] && [ -e "$_heart_common_dir" ]; then
-    PYAUTO_MAIN_ROOT="$(cd "$(dirname "$(dirname "$_heart_common_dir")")" && pwd)"
+    _heart_main_checkout="$(cd "$(dirname "$_heart_common_dir")" && pwd)"
+    _heart_main_parent="$_heart_main_checkout"
+    while [ "$_heart_main_parent" != / ] && [ ! -f "$_heart_main_parent/$PYAUTO_ROOT_MARKER" ]; do
+      _heart_main_parent="$(dirname "$_heart_main_parent")"
+    done
+    if [ -f "$_heart_main_parent/$PYAUTO_ROOT_MARKER" ]; then
+      PYAUTO_MAIN_ROOT="$_heart_main_parent"
+    else
+      PYAUTO_MAIN_ROOT="$(dirname "$_heart_main_checkout")"
+    fi
     PYAUTO_MAIN_ROOT_REASON="main checkout (git --git-common-dir)"
   else
     PYAUTO_MAIN_ROOT="$PYAUTO_ROOT"
