@@ -34,10 +34,13 @@
 # Sourced in a subshell so a script that lives in the user's ~/.bashrc does not
 # export PYAUTO_ROOT into every shell.
 _health_release_self="$(readlink -f "${BASH_SOURCE[0]}")"
-PYAUTO_STATUS_FULL_DEFAULT="${PYAUTO_STATUS_FULL_DEFAULT:-$(
-  . "$(dirname "$_health_release_self")/../heart/_workspace.sh"
-  printf '%s' "$PYAUTO_MAIN_ROOT/PyAutoHands/run_logs/latest"
-)}"
+if [ -z "${PYAUTO_STATUS_FULL_DEFAULT:-}" ]; then
+  PYAUTO_STATUS_FULL_DEFAULT="$(
+    . "$(dirname "$_health_release_self")/../heart/_common.sh"
+    hands_home="$(heart_repo_path PyAutoHands)" || exit 1
+    printf '%s' "$hands_home/run_logs/latest"
+  )" || return 1
+fi
 
 _health_release() {
   local run_dir="${1:-$PYAUTO_STATUS_FULL_DEFAULT}"

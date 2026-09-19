@@ -83,6 +83,16 @@ _DEGRADED = " (no PyAutoBrain in reach)"
 _shared_cache: object | None = None
 
 
+def _check_context_brain() -> None:
+    """Reject two distinct Brain checkouts in this workspace context."""
+    parent = HEART_HOME.parent
+    root = parent.parent if parent.name == "organs" else parent
+    flat, grouped = root / "PyAutoBrain", root / "organs" / "PyAutoBrain"
+    if ((flat / ".git").exists() and (grouped / ".git").exists()
+            and flat.resolve() != grouped.resolve()):
+        raise ValueError(f"PyAutoBrain: ambiguous checkouts: {flat}, {grouped}")
+
+
 def _shared():
     """The Brain's resolver module, or None when no Brain checkout is in reach.
 
@@ -92,6 +102,7 @@ def _shared():
     vendored one inside it.
     """
     global _shared_cache
+    _check_context_brain()
     if _shared_cache is not None:
         return _shared_cache or None
     for cand in (
@@ -164,6 +175,7 @@ def workspace_root() -> Path:
 
 
 def _repo_paths():
+    _check_context_brain()
     for base in (os.environ.get("PYAUTO_BRAIN"), HEART_HOME.parent / "PyAutoBrain", HEART_HOME / "PyAutoBrain", workspace_root() / "PyAutoBrain", *(child / "PyAutoBrain" for child in workspace_root().iterdir() if child.is_dir() and not (child / ".git").exists())):
         if not base:
             continue
@@ -228,7 +240,9 @@ def _canonical_from_git(start: Path) -> Path | None:
     common = Path(result.stdout.strip())
     if not common.is_absolute():
         common = start / common
-    return common.resolve().parent.parent
+    checkout = common.resolve().parent
+    marked = _marked_root(checkout)
+    return marked if marked is not None else checkout.parent
 
 
 def canonical_root_reason() -> tuple[Path, str]:

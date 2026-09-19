@@ -63,6 +63,11 @@ PYAUTO_STATUS_ROOT="${PYAUTO_STATUS_ROOT:-$(
   . "$(dirname "$_health_sync_self")/../heart/_workspace.sh"; printf '%s' "$PYAUTO_MAIN_ROOT"
 )}"
 
+_health_sync_repo_path() {
+  local heart_home="$(dirname "$_health_sync_self")/.."
+  PYTHONPATH="$heart_home" python3 -c 'import sys; from pathlib import Path; from heart import _workspace; print(_workspace.repo_path(Path(sys.argv[1]), sys.argv[2]))' "$PYAUTO_STATUS_ROOT" "$1"
+}
+
 _health_sync() {
   local root="$PYAUTO_STATUS_ROOT"
   if [[ ! -d "$root" ]]; then
@@ -232,7 +237,10 @@ _health_sync() {
   # failure (no PyAutoHeart checkout, no PyYAML, …) degrades to the raw
   # behaviour: classify_ok=false, NOISE column shows "?". PYAUTO_HEART_HOME
   # points at an alternative Heart checkout (e.g. a task worktree).
-  local heart_home="${PYAUTO_HEART_HOME:-$root/PyAutoHeart}"
+  local heart_home="${PYAUTO_HEART_HOME:-}"
+  if [[ -z "$heart_home" ]]; then
+    heart_home="$(_health_sync_repo_path PyAutoHeart)" || return 1
+  fi
   local classify_ok=false
   if [[ -f "$heart_home/heart/noise.py" ]]; then
     if PYTHONPATH="$heart_home" python3 -m heart.noise \
@@ -376,12 +384,14 @@ for f in sorted(glob.glob(os.path.expanduser("~/.cache/pyauto/smoke/*.json"))):
   # reachable via PyAutoHands/run_logs/latest (written by the autohands
   # mega-run). Counts only — failure detail lives in the per-shard JSON / the
   # GitHub Actions run.
-  local pab_report="$HOME/Code/PyAutoLabs/PyAutoHands/run_logs/latest/report.json"
+  local hands_home
+  hands_home="$(_health_sync_repo_path PyAutoHands)" || return 1
+  local pab_report="$hands_home/run_logs/latest/report.json"
   if [[ -f "$pab_report" ]]; then
     local pab_summary
     pab_summary=$(python3 -c '
-import json, os
-p = os.path.expanduser("~/Code/PyAutoLabs/PyAutoHands/run_logs/latest/report.json")
+import json, sys
+p = sys.argv[1]
 try:
     d = json.load(open(p))
     s = d.get("summary", {}) or {}
@@ -394,11 +404,11 @@ try:
     print("|".join(str(x) for x in [label, njobs, n_proj, passed, failed, skipped]))
 except Exception:
     pass
-' 2>/dev/null)
+' "$pab_report" 2>/dev/null)
     if [[ -n "$pab_summary" ]]; then
       local pab_date njobs nproj pab_p pab_f pab_s sha
       IFS='|' read -r pab_date njobs nproj pab_p pab_f pab_s <<< "$pab_summary"
-      sha=$(git -C "$HOME/Code/PyAutoLabs/PyAutoHands" rev-parse --short HEAD 2>/dev/null)
+      sha=$(git -C "$hands_home" rev-parse --short HEAD 2>/dev/null)
       echo ""
       printf "Last autohands run: %s (PyAutoHands commit %s)\n" "$pab_date" "${sha:-?}"
       local color='\033[32m'
