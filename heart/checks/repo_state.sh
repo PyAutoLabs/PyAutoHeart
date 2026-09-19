@@ -13,9 +13,10 @@ check_one_repo() {
   local owner_name="$1"
   local group="$2"
   local name="${owner_name##*/}"
-  local repo_path="$PYAUTO_MAIN_ROOT/$name"
+  local repo_path
+  repo_path="$(heart_repo_path "$name")" || return 1
 
-  if [[ ! -d "$repo_path/.git" ]]; then
+  if [[ ! -e "$repo_path/.git" ]]; then
     heart_write_json "$HEART_PER_REPO_DIR/$name.repo_state.json" "$(printf '{"name":"%s","present":false,"group":"%s"}' "$name" "$group")"
     heart_log WARN "$(c_warn "$name") — repo missing on disk"
     return
@@ -74,14 +75,23 @@ check_one_repo() {
 check_repo_state_all() {
   heart_state_dir
   heart_log INFO "$(c_info "repo_state: scanning $(load_repos_yaml | wc -l) repos")"
+  local -a repo_pids=()
+  local repo_pid failed=0
   while read -r line; do
     [[ -z "$line" ]] && continue
     local owner_name group
     owner_name="${line%% *}"
     group="${line##* }"
     check_one_repo "$owner_name" "$group" &
+    repo_pids+=("$!")
   done < <(load_repos_yaml)
-  wait
+  for repo_pid in "${repo_pids[@]}"; do
+    wait "$repo_pid" || failed=1
+  done
+  if [[ "$failed" -ne 0 ]]; then
+    heart_log WARN "repo_state: checkout resolution/check failed"
+    return 1
+  fi
   heart_log OK "$(c_ok "repo_state: done")"
 }
 

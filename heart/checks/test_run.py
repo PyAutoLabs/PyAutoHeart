@@ -43,7 +43,7 @@ from heart import _workspace
 # reads the canonical tree, not a task bundle.
 HEART_HOME = Path(__file__).resolve().parents[2]
 PYAUTO_ROOT = _workspace.canonical_root()
-TEST_RESULTS_LATEST = PYAUTO_ROOT / "PyAutoHands" / "run_logs" / "latest"
+TEST_RESULTS_LATEST = _workspace.repo_path(PYAUTO_ROOT, "PyAutoHands") / "run_logs" / "latest"
 HEART_STATE_DIR = Path(
     os.environ.get("HEART_STATE_DIR")
     or Path.home() / ".pyauto-heart"

@@ -90,7 +90,7 @@ def read_workspace_floor(workspace: str, root: Path = PYAUTO_ROOT) -> str | None
     """The compatibility floor: ``config/general.yaml`` →
     ``version.minimum_library_version``. Returns None when absent (the
     workspace is not a floor candidate)."""
-    general = root / workspace / "config" / "general.yaml"
+    general = _workspace.repo_path(root, workspace) / "config" / "general.yaml"
     if not general.is_file():
         return None
     try:
@@ -113,7 +113,7 @@ def newest_release_tag(repo: str, root: Path = PYAUTO_ROOT) -> str | None:
     """Newest ``YYYY.M.D.B`` release tag on the library checkout (``git tag``),
     or None when the repo isn't a checkout or carries no release tags. No
     network — reads local tags only, so it stays inside the tick budget."""
-    repo_dir = root / repo
+    repo_dir = _workspace.repo_path(root, repo)
     if not (repo_dir / ".git").exists():
         return None
     try:

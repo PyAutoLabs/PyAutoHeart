@@ -35,6 +35,10 @@ export HEART_HOME
 # the literal that used to be is right on one box and wrong everywhere else.
 source "$HEART_HOME/heart/_workspace.sh"
 
+heart_repo_path() {
+  PYTHONPATH="$HEART_HOME" python3 -c 'import sys; from pathlib import Path; from heart import _workspace; print(_workspace.repo_path(Path(sys.argv[1]), sys.argv[2]))' "$PYAUTO_MAIN_ROOT" "$1"
+}
+
 HEART_STATE_DIR="${HEART_STATE_DIR:-$HOME/.pyauto-heart}"
 HEART_PER_REPO_DIR="$HEART_STATE_DIR/per-repo"
 # Agent/MCP-supplied CI run payloads, one per repo — the mobile/cloud path

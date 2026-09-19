@@ -35,7 +35,7 @@ check_url_sweep() {
   local rows=""
   local repo dir out rc findings
   for repo in "${URL_CHECK_REPOS[@]}"; do
-    dir="$PYAUTO_MAIN_ROOT/$repo"
+    dir="$(heart_repo_path "$repo")" || return 1
     if [[ ! -d "$dir" ]]; then
       rows+="${repo}|0|0"$'\n'
       continue
@@ -88,4 +88,6 @@ print(json.dumps({
   fi
 }
 
-check_url_sweep "$@"
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  check_url_sweep "$@"
+fi

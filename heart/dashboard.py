@@ -190,7 +190,7 @@ def theme():
     """
     for cand in (os.environ.get("PYAUTO_BRAIN"), HEART_HOME / "PyAutoBrain",
                  HEART_HOME.parent / "PyAutoBrain",
-                 _workspace_root() / "PyAutoBrain"):
+                 _workspace.repo_path(_workspace_root(), "PyAutoBrain")):
         if not cand:
             continue
         board_dir = pathlib.Path(cand) / "board"

@@ -58,6 +58,8 @@ __all__ = [
     "canonical_root",
     "canonical_root_reason",
     "wt_root",
+    "repo_path",
+    "iter_checkouts",
     "ROOT_MARKER",
 ]
 
@@ -96,6 +98,7 @@ def _shared():
         os.environ.get("PYAUTO_BRAIN"),
         HEART_HOME.parent / "PyAutoBrain",
         HEART_HOME / "PyAutoBrain",
+        *(child / "PyAutoBrain" for child in HEART_HOME.parent.iterdir() if child.is_dir() and not (child / ".git").exists()),
     ):
         if not cand:
             continue
@@ -158,6 +161,45 @@ def workspace_root_reason() -> tuple[Path, str]:
 def workspace_root() -> Path:
     """The workspace root — the directory holding the organ checkouts."""
     return Path(workspace_root_reason()[0])
+
+
+def _repo_paths():
+    for base in (os.environ.get("PYAUTO_BRAIN"), HEART_HOME.parent / "PyAutoBrain", HEART_HOME / "PyAutoBrain", workspace_root() / "PyAutoBrain", *(child / "PyAutoBrain" for child in workspace_root().iterdir() if child.is_dir() and not (child / ".git").exists())):
+        if not base:
+            continue
+        source = Path(base) / "agents" / "_repo_paths.py"
+        if source.is_file():
+            spec = importlib.util.spec_from_file_location("_pyauto_repo_paths", source)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            return module
+    return None
+
+
+def repo_path(root: Path, name: str, required: bool = False) -> Path:
+    """Locate a checkout through Brain when available, with flat CI fallback."""
+    shared = _repo_paths()
+    if shared is not None and callable(getattr(shared, "repo_path", None)):
+        return shared.repo_path(Path(root), name, required=required)
+    path = Path(root) / name
+    if required and not (path / ".git").exists():
+        raise FileNotFoundError(f"Missing checkout {name}: {path}")
+    if not path.exists() and any(
+        child.is_dir() and (child / name).exists() for child in Path(root).iterdir()
+    ):
+        raise RuntimeError(f"Grouped checkout {name} needs PyAutoBrain repo resolver")
+    return path
+
+
+def iter_checkouts(root: Path) -> list[Path]:
+    shared = _repo_paths()
+    if shared is not None and callable(getattr(shared, "iter_checkouts", None)):
+        return shared.iter_checkouts(Path(root))
+    if any((nested / ".git").exists() for child in Path(root).iterdir()
+           if child.is_dir() and not (child / ".git").exists()
+           for nested in child.iterdir() if nested.is_dir()):
+        raise RuntimeError("Grouped checkouts need PyAutoBrain repo resolver")
+    return [p for p in Path(root).iterdir() if (p / ".git").exists()]
 
 
 _canonical_cache: tuple[Path, str] | None = None

@@ -86,7 +86,7 @@ def default_runner(root: Path, python: str, timeout: float) -> Runner:
     }
 
     def run_script(workspace: str, rel: str) -> float | None:
-        workspace_dir = root / workspace
+        workspace_dir = _workspace.repo_path(root, workspace)
         script = workspace_dir / rel
         if not script.is_file():
             return None

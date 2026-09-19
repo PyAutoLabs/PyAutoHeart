@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Iterable, Mapping, Sequence
 
 import yaml
+from heart import _workspace
 
 FINGERPRINT_SCHEMA = 1
 MARKER_NAME = ".pyauto-smoke-environment.json"
@@ -133,9 +134,9 @@ def environment_fingerprint(
     python_identity: Mapping[str, str],
 ) -> dict:
     """Return the complete, serialisable cache contract for one workspace."""
-    workspace = organism_root / spec.directory
+    workspace = _workspace.repo_path(organism_root, spec.directory)
     watched = [workspace / ".github" / "scripts" / "smoke_install.sh"]
-    watched.extend(organism_root / repo / "pyproject.toml" for repo in spec.chain)
+    watched.extend(_workspace.repo_path(organism_root, repo) / "pyproject.toml" for repo in spec.chain)
     files = {
         str(path.relative_to(organism_root)): _sha256(path)
         for path in watched
@@ -226,8 +227,8 @@ def runtime_environment(
     for name in tuple(env):
         if name.startswith("PYAUTO_"):
             env.pop(name)
-    source_paths = [str(organism_root / repo) for repo in spec.chain]
-    source_paths.append(str(organism_root / "PyAutoHands" / "autohands"))
+    source_paths = [str(_workspace.repo_path(organism_root, repo)) for repo in spec.chain]
+    source_paths.append(str(_workspace.repo_path(organism_root, "PyAutoHands") / "autohands"))
     cache_dir = state_root / "smoke-runtime" / spec.key
     (cache_dir / "numba").mkdir(parents=True, exist_ok=True)
     (cache_dir / "matplotlib").mkdir(parents=True, exist_ok=True)
@@ -252,7 +253,7 @@ def runtime_environment(
 def _optional_local_targets(organism_root: Path, chain: Iterable[str]) -> list[str]:
     targets: list[str] = []
     for repo in chain:
-        pyproject = organism_root / repo / "pyproject.toml"
+        pyproject = _workspace.repo_path(organism_root, repo) / "pyproject.toml"
         if not pyproject.is_file():
             continue
         with pyproject.open("rb") as stream:
@@ -310,7 +311,7 @@ def _install_environment(
     if spec.arcticpy:
         _install_arcticpy(python, env)
 
-    workspace = organism_root / spec.directory
+    workspace = _workspace.repo_path(organism_root, spec.directory)
     installer = workspace / ".github" / "scripts" / "smoke_install.sh"
     if installer.is_file():
         _run(["bash", installer], cwd=organism_root, env=env)
@@ -415,7 +416,7 @@ def _preflight(
     _pip_check(python, env, spec)
 
     expected = {
-        IMPORT_NAMES[repo]: str((organism_root / repo).resolve())
+        IMPORT_NAMES[repo]: str((_workspace.repo_path(organism_root, repo)).resolve())
         for repo in spec.chain
         if repo in IMPORT_NAMES
     }
@@ -430,7 +431,7 @@ def _preflight(
     )
     _run([python, "-c", probe, json.dumps(expected)], env=env, capture_output=True)
 
-    notebook_list = organism_root / spec.directory / "smoke_notebooks.txt"
+    notebook_list = _workspace.repo_path(organism_root, spec.directory) / "smoke_notebooks.txt"
     if notebook_list.is_file() and notebook_list.read_text().strip():
         jupyter = _environment_bin(environment) / "jupyter"
         if not jupyter.is_file():
@@ -564,7 +565,7 @@ def _run_legacy_workspace(
     env: Mapping[str, str],
 ) -> int:
     """Run an allowlist for the one legacy workspace without a runner."""
-    hands_path = organism_root / "PyAutoHands" / "autohands"
+    hands_path = _workspace.repo_path(organism_root, "PyAutoHands") / "autohands"
     sys.path.insert(0, str(hands_path))
     try:
         from env_config import build_env_for_script, load_env_config
@@ -615,7 +616,7 @@ def run_workspace(
     state_root: Path,
     spec: WorkspaceSpec,
 ) -> int:
-    workspace = organism_root / spec.directory
+    workspace = _workspace.repo_path(organism_root, spec.directory)
     _wipe_output(workspace)
     env = runtime_environment(environment, organism_root, spec, state_root)
     python = _environment_python(environment)
@@ -672,7 +673,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     failures = 0
     for key in selected:
         spec = WORKSPACES[key]
-        workspace = root / spec.directory
+        workspace = _workspace.repo_path(root, spec.directory)
         if not workspace.is_dir():
             print(f"[{key}] missing workspace: {workspace}", file=sys.stderr)
             failures += 1

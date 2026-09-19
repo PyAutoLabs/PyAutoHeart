@@ -21,7 +21,8 @@ bash "$HEART_HOME/heart/checks/open_prs.sh"        || heart_log WARN "$(c_warn '
 bash "$HEART_HOME/heart/checks/worktree_drift.sh"  || heart_log WARN "$(c_warn 'worktree_drift failed')"
 
 # Python: script timing regressions. Needs a local PyAutoHands run_logs/latest.
-if [[ -d "$PYAUTO_MAIN_ROOT/PyAutoHands/run_logs/latest" ]]; then
+hands_checkout="$(heart_repo_path PyAutoHands)" || exit 1
+if [[ -d "$hands_checkout/run_logs/latest" ]]; then
   PYTHONPATH="$HEART_HOME" python3 -m heart.checks.script_timing || heart_log WARN "$(c_warn 'script_timing failed')"
 else
   heart_log INFO "$(c_meta 'script_timing: skipped (no PyAutoHands/run_logs/latest)')"
@@ -33,7 +34,8 @@ fi
 # guard firing on a tree the check then failed to find. Every guard here reads
 # $PYAUTO_MAIN_ROOT, the tree the checks themselves grade, from
 # heart/_workspace.{sh,py}.
-if [ -d "$PYAUTO_MAIN_ROOT/autolens_profiling/results" ] 2>/dev/null; then
+profiling_checkout="$(heart_repo_path autolens_profiling)" || exit 1
+if [ -d "$profiling_checkout/results" ]; then
   PYTHONPATH="$HEART_HOME" python3 -m heart.checks.profiling_drift || heart_log WARN "$(c_warn 'profiling_drift failed')"
 else
   heart_log INFO "$(c_meta 'profiling_drift: skipped (no autolens_profiling/results)')"
@@ -61,7 +63,8 @@ PYTHONPATH="$HEART_HOME" python3 -m heart.checks.required_workflow_drift || hear
 
 # Python: body-map identity drift — PyAutoMind/repos.yaml vs Heart/Build/labels
 # repo lists and every checkout's origin (delegates to repos_sync.py --check).
-if [[ -f "$PYAUTO_MAIN_ROOT/PyAutoMind/scripts/repos_sync.py" ]]; then
+mind_checkout="$(heart_repo_path PyAutoMind)" || exit 1
+if [[ -f "$mind_checkout/scripts/repos_sync.py" ]]; then
   PYTHONPATH="$HEART_HOME" python3 -m heart.checks.manifest_drift || heart_log WARN "$(c_warn 'manifest_drift failed')"
 else
   heart_log INFO "$(c_meta 'manifest_drift: skipped (no PyAutoMind checkout)')"

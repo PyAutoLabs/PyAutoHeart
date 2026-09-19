@@ -80,7 +80,7 @@ CONFIG_PATH = HEART_HOME / "config" / "repos.yaml"
 # The MAIN checkout via the one shared resolver — grading reads the
 # canonical tree, not a task bundle. See heart/_workspace.py.
 PYAUTO_ROOT = _workspace.canonical_root()
-TEST_RESULTS_LATEST = PYAUTO_ROOT / "PyAutoHands" / "run_logs" / "latest"
+TEST_RESULTS_LATEST = _workspace.repo_path(PYAUTO_ROOT, "PyAutoHands") / "run_logs" / "latest"
 
 # Distinct runs the prior window must hold before a ratio is a verdict rather
 # than a coin flip. Below this the script is counted as "building" a baseline.

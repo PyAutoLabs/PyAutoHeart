@@ -41,7 +41,7 @@ HEART_HOME = Path(__file__).resolve().parents[2]
 # The MAIN checkout via the one shared resolver — grading reads the
 # canonical tree, not a task bundle. See heart/_workspace.py.
 PYAUTO_ROOT = _workspace.canonical_root()
-RESULTS_ROOT = PYAUTO_ROOT / "autolens_profiling" / "results"
+RESULTS_ROOT = _workspace.repo_path(PYAUTO_ROOT, "autolens_profiling") / "results"
 
 
 def scan_results(results_root: Path) -> dict[str, Any]:
