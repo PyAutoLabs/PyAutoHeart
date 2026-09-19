@@ -53,9 +53,6 @@ else:  # standalone script from another checkout
     _workspace = importlib.util.module_from_spec(_spec)
     _spec.loader.exec_module(_workspace)
 
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
 
 SCAN_SUFFIXES = {
@@ -212,6 +209,10 @@ def _colab_to_raw(url: str) -> str | None:
 
 
 def _build_session() -> requests.Session:
+    import requests
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
+
     s = requests.Session()
     retry = Retry(
         total=2, connect=2, read=2, backoff_factor=0.3,
@@ -226,6 +227,8 @@ def _build_session() -> requests.Session:
 
 
 def check_url(session: requests.Session, url: str, timeout: float = 12.0) -> Result:
+    import requests
+
     raw = _colab_to_raw(url)
     probe_url = raw if raw else url
 
