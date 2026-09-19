@@ -43,9 +43,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
 
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+if __package__:
+    from heart import _workspace
+else:  # standalone script from another checkout
+    import importlib.util
+    _spec = importlib.util.spec_from_file_location(
+        "_heart_workspace", Path(__file__).resolve().parents[1] / "_workspace.py"
+    )
+    _workspace = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_workspace)
+
 
 
 SCAN_SUFFIXES = {
@@ -202,6 +209,10 @@ def _colab_to_raw(url: str) -> str | None:
 
 
 def _build_session() -> requests.Session:
+    import requests
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
+
     s = requests.Session()
     retry = Retry(
         total=2, connect=2, read=2, backoff_factor=0.3,
@@ -216,6 +227,8 @@ def _build_session() -> requests.Session:
 
 
 def check_url(session: requests.Session, url: str, timeout: float = 12.0) -> Result:
+    import requests
+
     raw = _colab_to_raw(url)
     probe_url = raw if raw else url
 
@@ -400,7 +413,9 @@ def main(argv: list[str] | None = None) -> int:
     for r in repo_args:
         path = Path(r)
         if not path.is_absolute():
-            path = root / r
+            path = (_workspace.repo_path(root, r)
+                    if path.parts == (r,) and r not in (".", "..")
+                    else root / path)
         repos.append((path, path.resolve()))
 
     print(f"Scanning {len(repos)} repo(s) under {root}", file=sys.stderr)

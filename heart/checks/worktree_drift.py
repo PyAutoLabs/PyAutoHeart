@@ -56,8 +56,8 @@ HEART_HOME = Path(__file__).resolve().parents[2]
 # $PYAUTO_WT_ROOT still win, so grading a branch stays a one-variable opt-in.
 PYAUTO_ROOT = _workspace.canonical_root()
 PYAUTO_WT_ROOT = _workspace.wt_root()
-ACTIVE_MD = PYAUTO_ROOT / "PyAutoMind" / "active.md"
-PARKED_MD = PYAUTO_ROOT / "PyAutoMind" / "parked.md"
+ACTIVE_MD = _workspace.repo_path(PYAUTO_ROOT, "PyAutoMind") / "active.md"
+PARKED_MD = _workspace.repo_path(PYAUTO_ROOT, "PyAutoMind") / "parked.md"
 HEART_STATE_DIR = Path(os.environ.get("HEART_STATE_DIR") or Path.home() / ".pyauto-heart")
 
 

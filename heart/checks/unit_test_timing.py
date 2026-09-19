@@ -155,7 +155,7 @@ def run(runner: Runner | None = None, repos: list[str] | None = None) -> dict[st
     new_tests = 0
 
     for repo in repos:
-        durations = runner(root / repo)
+        durations = runner(_workspace.repo_path(root, repo))
         if durations is None:
             unavailable.append(repo)
             continue

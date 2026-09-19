@@ -63,7 +63,7 @@ def parse_check_output(text: str) -> dict[str, dict[str, Any]]:
 
 
 def run() -> dict[str, Any]:
-    script = PYAUTO_ROOT / "PyAutoMind" / "scripts" / "repos_sync.py"
+    script = _workspace.repo_path(PYAUTO_ROOT, "PyAutoMind") / "scripts" / "repos_sync.py"
     result: dict[str, Any]
     if not script.is_file():
         result = {"available": False, "reason": f"missing {script}", "checks": {}}
