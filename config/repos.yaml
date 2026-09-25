@@ -77,11 +77,11 @@ repos:
   organism:
     - name: PyAutoBrain
       owner: PyAutoLabs
-    - name: PyAutoHeart
-      owner: PyAutoLabs
     - name: PyAutoMemory
       owner: PyAutoLabs
     - name: PyAutoEyes
+      owner: PyAutoLabs
+    - name: PyAutoHeart
       owner: PyAutoLabs
 
 # Required gating workflows per group, keyed by the GitHub Actions workflow
