@@ -76,6 +76,7 @@ _SIBLING_ORGANS = (
     "PyAutoHands",
     "PyAutoNerves",
     "PyAutoGut",
+    "PyAutoEyes",
 )
 
 _DEGRADED = " (no PyAutoBrain in reach)"
