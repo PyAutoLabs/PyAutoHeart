@@ -1694,3 +1694,93 @@ def test_an_unknown_or_absent_unit_cache_state_leaves_the_line_unchanged():
     for cache in (None, {}, {"jax": "unknown", "numba": "unknown"},
                   {"jax": "warm", "numba": None}, "nonsense"):
         assert _unit_line(cache) == unchanged
+
+
+# --- the organ-cockpit state.json feed (PyAutoBrain#416, contract v1) --------
+STATE_KEYS = {"schema_version", "organ", "repo", "status", "headline",
+              "updated", "pages_url", "items"}
+
+
+def _assert_valid_state(doc):
+    assert set(doc) == STATE_KEYS
+    assert doc["schema_version"] == 1
+    assert doc["organ"] == "heart" and doc["repo"] == "PyAutoHeart"
+    assert doc["status"] in ("green", "yellow", "red", "stale", "grey")
+    assert doc["updated"].endswith("Z")
+    datetime.datetime.strptime(doc["updated"], "%Y-%m-%dT%H:%M:%SZ")
+    assert doc["pages_url"] == dashboard.PAGES_URL
+    assert isinstance(doc["headline"], str) and doc["headline"]
+    for item in doc["items"]:
+        assert item["severity"] in ("red", "yellow", "info")
+        assert len(item["text"]) <= 160
+        assert "url" in item
+
+
+def test_to_state_green_board():
+    board = dashboard.build_board(make_snapshot(), make_verdict(), now=FRESH_NOW)
+    doc = dashboard.to_state(board)
+    _assert_valid_state(doc)
+    assert doc["status"] == "green"
+    assert doc["updated"] == "2026-06-01T00:00:00Z"
+    assert "100" in doc["headline"] and doc["items"] == []
+
+
+def test_to_state_red_items_carry_url_and_prompt():
+    snap = make_snapshot()
+    snap["repos"]["PyAutoFit"]["ci_status"].update(
+        conclusion="failure", url="https://github.com/PyAutoLabs/PyAutoFit/actions/runs/1")
+    v = make_verdict("red", 40, red_reasons=["PyAutoFit: CI failure " + "x" * 300],
+                     yellow_reasons=["autolens_workspace: open PR"])
+    doc = dashboard.to_state(dashboard.build_board(snap, v, now=FRESH_NOW))
+    _assert_valid_state(doc)
+    assert doc["status"] == "red"
+    assert doc["headline"].startswith("PyAutoFit: CI failure")
+    red = [i for i in doc["items"] if i["severity"] == "red"]
+    assert red and red[0]["url"].endswith("/actions/runs/1")
+    assert red[0]["prompt"].startswith("/bug")
+    assert any(i["severity"] == "yellow" for i in doc["items"])
+
+
+def test_to_state_stale_reasons_become_info_items():
+    v = make_verdict("stale", 90)
+    v["stale_reasons"] = ["release validation: evidence expired"]
+    doc = dashboard.to_state(dashboard.build_board(make_snapshot(), v, now=FRESH_NOW))
+    _assert_valid_state(doc)
+    assert doc["status"] == "stale"
+    assert doc["headline"] == "release validation: evidence expired"
+    assert [i["severity"] for i in doc["items"]] == ["info"]
+
+
+def test_to_state_naive_and_microsecond_ts_normalise_to_z():
+    board = dashboard.build_board(make_snapshot(ts="2026-06-01T00:00:00.123456"),
+                                  make_verdict(), now=FRESH_NOW)
+    assert dashboard.to_state(board)["updated"] == "2026-06-01T00:00:00Z"
+
+
+def test_to_state_unknown_verdict_is_grey():
+    board = dashboard.build_board({"ts": ""}, {}, now=FRESH_NOW)
+    doc = dashboard.to_state(board)
+    _assert_valid_state(doc)
+    assert doc["status"] == "grey"
+
+
+def test_state_fmt_renders_json():
+    doc = json.loads(dashboard.render(make_snapshot(), make_verdict(), fmt="state",
+                                      now=FRESH_NOW))
+    _assert_valid_state(doc)
+
+
+def test_main_no_cache_state_emits_grey(monkeypatch, tmp_path, capsys):
+    from heart import state
+    monkeypatch.setattr(state, "HEART_STATE_FILE", tmp_path / "absent.json")
+    rc = dashboard.main(["--state"])
+    doc = json.loads(capsys.readouterr().out)
+    assert rc == 0
+    _assert_valid_state(doc)
+    assert doc["status"] == "grey"
+
+
+def test_state_fmt_without_verdict_is_grey():
+    doc = json.loads(dashboard.render(make_snapshot(), None, fmt="state", now=FRESH_NOW))
+    _assert_valid_state(doc)
+    assert doc["status"] == "grey"

@@ -2006,6 +2006,95 @@ def badge_endpoint(board: Board) -> dict[str, Any]:
     }
 
 
+# --- the organ-cockpit feed (PyAutoBrain#416) --------------------------------
+# One small, schema-pinned document per organ that the Brain's cockpit polls
+# (``state.json`` on Pages). It is a PROJECTION of the same Board every other
+# surface renders, so the cockpit can never disagree with the Heart's own page;
+# the contract (v1) is owned by the Brain (``board/state_schema.json``) and the
+# Heart only ever emits it — it never imports the Brain to do so.
+STATE_SCHEMA_VERSION = 1
+STATE_STATUSES = ("green", "yellow", "red", "stale", "grey")
+_STATE_TEXT_MAX = 160
+
+
+def _iso_z(ts: Any) -> str:
+    """``ts`` as ISO-8601 UTC with a ``Z`` suffix, whole seconds.
+
+    The snapshot stamps ``datetime.now(utc).isoformat()`` (``+00:00`` with
+    microseconds), and older snapshots may be naive; the contract admits only
+    the ``Z`` form, so both are normalised here. An unparseable or empty stamp
+    becomes *now* — the moment this feed was written — rather than a non-Z
+    string the validator would reject (the status already says grey then).
+    """
+    t = _parse_ts(ts) if ts else None
+    if t is None:
+        t = datetime.datetime.now(datetime.timezone.utc)
+    return t.astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _clip(text: Any, limit: int = _STATE_TEXT_MAX) -> str:
+    text = " ".join(str(text).split())
+    return text if len(text) <= limit else text[: limit - 1] + "\u2026"
+
+
+def grey_state(headline: str = "no Heart snapshot yet") -> dict[str, Any]:
+    """A valid feed for when there is nothing to project (no cache yet).
+
+    The cockpit must always get a document it can render; grey means "unknown",
+    never "fine", so an unobserved Heart can not masquerade as green.
+    """
+    return {
+        "schema_version": STATE_SCHEMA_VERSION,
+        "organ": "heart",
+        "repo": "PyAutoHeart",
+        "status": "grey",
+        "headline": _clip(headline),
+        "updated": _iso_z(None),
+        "pages_url": PAGES_URL,
+        "items": [],
+    }
+
+
+def to_state(board: Board) -> dict[str, Any]:
+    """The organ-cockpit feed (fmt='state'): contract v1 of PyAutoBrain#416.
+
+    status is the readiness verdict (anything outside the four tiers is grey);
+    the headline is the worst reason, else a clear line worded like the badge;
+    items are the structured blockers (each keeping its failing-run link and
+    its copy-for-Claude prompt) so the cockpit acts on them without
+    re-deriving anything.
+    """
+    status = board.verdict if board.verdict in STATE_STATUSES[:4] else "grey"
+    # build_board defaults a MISSING verdict to green; a board with no snapshot
+    # timestamp observed nothing, so the cockpit is told grey, not green.
+    if status == "grey" or _parse_ts(board.ts) is None:
+        return grey_state()
+    first = next((r for rs in (board.red_reasons, board.yellow_reasons,
+                               board.stale_reasons) for r in rs), None)
+    if first is not None:
+        headline = str(first)
+    else:
+        headline = f"{_VERDICT_WORD.get(status, 'GREEN')} \u00b7 {board.score} \u2014 all clear"
+    items: list[dict[str, Any]] = []
+    for b in board.blockers:
+        sev = b.get("severity")
+        items.append({
+            "severity": sev if sev in ("red", "yellow") else "info",
+            "text": _clip(b.get("text", "")),
+            "url": b.get("run_url") or b.get("repo_url") or None,
+            "prompt": b.get("prompt"),
+        })
+    # blockers already carry the stale reasons (severity "stale" → info); fall
+    # back to the flat list only for a verdict whose blockers were not built.
+    if not any(b.get("severity") == "stale" for b in board.blockers):
+        items += [{"severity": "info", "text": _clip(r), "url": None,
+                   "prompt": None} for r in board.stale_reasons]
+    state = grey_state()
+    state.update(status=status, headline=_clip(headline),
+                 updated=_iso_z(board.ts), items=items)
+    return state
+
+
 def render(
     snapshot: dict | None,
     verdict: dict | None,
@@ -2035,6 +2124,11 @@ def render(
         return _render_html(board)
     if fmt == "json":
         return json.dumps(to_dict(board), indent=2, sort_keys=True)
+    if fmt == "state":
+        if not verdict:
+            # No readiness verdict computed yet: unknown, never a default green.
+            return json.dumps(grey_state("no readiness verdict yet"), indent=2)
+        return json.dumps(to_state(board), indent=2)
     raise ValueError(f"unknown dashboard fmt: {fmt!r}")
 
 
@@ -2060,6 +2154,8 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--html", action="store_true", help="standalone self-contained HTML page")
     g.add_argument("--json", action="store_true", help="the machine surface (Health Agent / mobile)")
     g.add_argument("--badge", action="store_true", help="emit a shields.io endpoint-badge JSON")
+    g.add_argument("--state", action="store_true",
+                   help="emit the organ-cockpit state.json feed (PyAutoBrain#416 contract v1)")
     ap.add_argument("--cloud", action="store_true",
                     help="mark local-only checks as 'not observed here' (cloud job vantage)")
     ap.add_argument("--devbox", metavar="PATH", default=None,
@@ -2075,7 +2171,8 @@ def main(argv: list[str] | None = None) -> int:
 
     fmt = "term"
     for name, label in (("oneline", "oneline"), ("md", "md"),
-                        ("md_brief", "md-brief"), ("html", "html"), ("json", "json")):
+                        ("md_brief", "md-brief"), ("html", "html"), ("json", "json"),
+                        ("state", "state")):
         if getattr(ns, name):
             fmt = label
             break
@@ -2091,6 +2188,10 @@ def main(argv: list[str] | None = None) -> int:
         if fmt == "badge":
             print(json.dumps({"schemaVersion": 1, "label": "health",
                               "message": "unknown", "color": "lightgrey"}))
+            return 0
+        if fmt == "state":
+            # The cockpit must always receive a valid document: grey, not a crash.
+            print(json.dumps(grey_state(), indent=2))
             return 0
         print("no cache yet — run `pyauto-heart tick` first", file=sys.stderr)
         return 2
