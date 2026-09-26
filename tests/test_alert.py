@@ -23,7 +23,7 @@ def _state(status: str, **kw) -> dict:
         "schema_version": 1, "organ": "heart", "repo": "PyAutoHeart",
         "status": status, "headline": kw.get("headline", f"{status} headline"),
         "updated": "2026-09-26T05:31:00Z",
-        "pages_url": "https://pyautolabs.github.io/PyAutoHeart/",
+        "pages_url": "https://example.org/heart/",
         "items": kw.get("items", []),
     }
     return doc
@@ -48,9 +48,9 @@ def test_render_message_shape():
     items = [{"severity": "red", "text": f"repo{i}: CI failure",
               "url": f"https://github.com/o/r{i}", "prompt": "/bug x"} for i in range(8)]
     title, body, priority, tags = alert.render_message(
-        f"green{ARROW}red", _state("red", headline="PyAutoFit: CI failure", items=items))
+        f"green{ARROW}red", _state("red", headline="SomeLib: CI failure", items=items))
     assert title == f"Heart: GREEN {ARROW} RED"
-    assert body.splitlines()[0] == "PyAutoFit: CI failure"
+    assert body.splitlines()[0] == "SomeLib: CI failure"
     item_lines = [ln for ln in body.splitlines() if ln.startswith("- ")]
     assert len(item_lines) == alert.MAX_ITEMS
     assert "https://github.com/o/r0" in item_lines[0]
@@ -91,7 +91,7 @@ def _write(tmp_path, name, doc):
 
 def test_cli_green_to_red_posts_once(tmp_path, posts, capsys):
     prev = _write(tmp_path, "prev.json", _state("green"))
-    cur = _write(tmp_path, "cur.json", _state("red", headline="PyAutoFit: CI failure"))
+    cur = _write(tmp_path, "cur.json", _state("red", headline="SomeLib: CI failure"))
     rc = alert.main(["--previous", prev, "--current", cur, "--url", "https://ntfy.example/t"])
     assert rc == 0
     assert len(posts) == 1
@@ -102,7 +102,7 @@ def test_cli_green_to_red_posts_once(tmp_path, posts, capsys):
     assert headers["title"] == "Heart: GREEN -> RED"
     assert headers["priority"] == "5"
     assert "red" in headers["tags"]
-    assert b"PyAutoFit: CI failure" in req.data
+    assert b"SomeLib: CI failure" in req.data
     assert f"alert: green{ARROW}red sent" in capsys.readouterr().out
 
 

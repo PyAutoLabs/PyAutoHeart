@@ -1728,7 +1728,7 @@ def test_to_state_green_board():
 def test_to_state_red_items_carry_url_and_prompt():
     snap = make_snapshot()
     snap["repos"]["PyAutoFit"]["ci_status"].update(
-        conclusion="failure", url="https://github.com/PyAutoLabs/PyAutoFit/actions/runs/1")
+        conclusion="failure", url="https://example.org/actions/runs/1")
     v = make_verdict("red", 40, red_reasons=["PyAutoFit: CI failure " + "x" * 300],
                      yellow_reasons=["autolens_workspace: open PR"])
     doc = dashboard.to_state(dashboard.build_board(snap, v, now=FRESH_NOW))
