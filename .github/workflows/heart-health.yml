@@ -31,8 +31,9 @@ name: Heart Health
 #
 # Observer boundary: everything here writes ONLY within PyAutoHeart's own repo
 # (its gh-pages, its README, its [heart-health] issue), the job step summary, or
-# the job workspace. No foreign repo, no build/workflow dispatch, no secret
-# beyond the auto-provisioned GITHUB_TOKEN.
+# the job workspace. No foreign repo, no build/workflow dispatch. The one
+# outbound side effect is the transition-only push alert (below) to the private
+# ntfy topic named by the optional HEART_NTFY_URL secret.
 
 on:
   schedule:
@@ -170,11 +171,22 @@ jobs:
           # each already carrying its own /bug prompt — without re-deriving
           # anything (schema v2; the same JSON the Health Agent consumes).
           PYTHONPATH="$PWD" python -m heart.dashboard --cloud --json     > _site/board.json
+          # The organ-cockpit feed (PyAutoBrain#416, contract v1): one small
+          # status document the Brain's cockpit polls. Same snapshot, so it can
+          # never disagree with the page; no snapshot → a valid grey feed.
+          PYTHONPATH="$PWD" python -m heart.dashboard --cloud --state    > _site/state.json
           PYTHONPATH="$PWD" python -m heart.dashboard --cloud --md       > board.md
           cp board.md _site/dashboard.md
           # The README carries only the brief strip; the full board lives on
           # the Pages page (one-tap 📋 fix prompts) and the step summary.
           PYTHONPATH="$PWD" python -m heart.dashboard --cloud --md-brief > readme_strip.md
+
+      - name: Validate the cockpit feed against the Brain contract
+        run: |
+          # The contract is owned by the Brain (board/_state.py +
+          # board/state_schema.json); the Heart only emits it. A feed the
+          # cockpit can not read must fail this job loudly rather than publish.
+          python3 PyAutoBrain/board/_state.py _site/state.json
 
       - name: Write the board to the job step summary
         run: |
@@ -222,6 +234,23 @@ jobs:
           else
             echo "README health block and timing record unchanged — nothing to commit."
           fi
+
+      # Transition-only push alert. Compare the feed published by the PREVIOUS
+      # run (live on Pages until this run deploys) with the one just rendered
+      # and notify only when the status CHANGED (green→red, red→green,
+      # stale↔green…): a board that stays red pages once, not daily. An unknown
+      # previous (first run, fetch failure, grey) never alerts. Never fails the
+      # job. The [heart-health] issue channel below is unchanged.
+      # HUMAN STEP: create the repo secret HEART_NTFY_URL pointing at a private
+      # ntfy topic (e.g. https://ntfy.sh/<unguessable-topic>) and subscribe to
+      # it on your phone; without it this step reports "skipped".
+      - name: Push a transition alert
+        env:
+          HEART_NTFY_URL: ${{ secrets.HEART_NTFY_URL }}
+        run: |
+          curl -fsS https://pyautolabs.github.io/PyAutoHeart/state.json -o prev_state.json \
+            || echo '{}' > prev_state.json
+          PYTHONPATH="$PWD" python -m heart.alert --previous prev_state.json --current _site/state.json
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
