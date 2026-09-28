@@ -4,7 +4,7 @@
     "profiling_drift": {
       "details": [],
       "state": "ok",
-      "summary": "233 results clean"
+      "summary": "306 results clean"
     },
     "script_timing": {
       "details": [],
@@ -13,12 +13,10 @@
     },
     "test_run": {
       "details": [
-        "\u2717 autolens notebooks/cluster/modeling.ipynb (failed)",
-        "\u2717 autolens notebooks/weak/a2744.ipynb (failed)",
-        "\u2717 autolens scripts/cluster/modeling.py (failed)"
+        "\u2717 autolens_test scripts/multi_dataset/rectangular.py (timeout)"
       ],
       "state": "fail",
-      "summary": "NOT ready \u2014 1390p / 4f / 123s @ cloud#35579888156"
+      "summary": "NOT ready \u2014 1345p / 0f / 121s @ cloud#36404726969"
     },
     "version_skew": {
       "details": [],
@@ -29,15 +27,16 @@
       "details": [
         "hst-gpu-residue-p1/autolens_profiling: 3 dirty",
         "mass-field-profiling-live/autolens_profiling: 2 dirty",
-        "canonical PyAutoCortex: 3 dirty",
-        "canonical PyAutoMind: 3 dirty",
+        "vis-lp-inspection-bundle/euclid_strong_lens_modeling_pipeline: 3 dirty",
+        "canonical PyAutoCortex: 7 dirty",
         "canonical autofit_assistant: 1 dirty",
         "canonical autolens_assistant: 2 dirty",
-        "canonical autolens_inference: 2 dirty"
+        "canonical autolens_inference: 1 dirty",
+        "canonical autolens_profiling: 1 dirty"
       ],
       "state": "fail",
-      "summary": "12 orphan / 1 missing / 2 dirty"
+      "summary": "14 orphan / 0 missing / 3 dirty"
     }
   },
-  "ts": "2026-09-22T05:43:16.407980+00:00"
+  "ts": "2026-09-28T15:53:34.544987+00:00"
 }
