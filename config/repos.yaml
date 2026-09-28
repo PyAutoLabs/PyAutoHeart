@@ -190,6 +190,7 @@ excluded:
   - autolens_assistant    # public-facing template
   - autolens_profiling    # profiling project
   - autolens_inference    # inference benchmark project (search/inference runs; results tracked)
+  - autolens_visualization  # lens figure gallery project (PNGs + manifest tracked; re-rendered on release)
   - z_help                # scratch
   - z_projects            # in-progress science
   - z_projects_complete   # archived science
