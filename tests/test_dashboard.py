@@ -1069,9 +1069,16 @@ def test_html_wears_the_shared_family_theme():
     assert "#58a6ff" not in out  # the old hard-coded GitHub blue
 
 
-# The canonical board family, in the order `PyAutoBrain/config/policy.yaml`
-# declares it. This board is `heart`, so its own chip never appears.
-FAMILY_WITHOUT_HEART = ["brain", "mind", "cortex", "memory", "hands", "organism"]
+def _family_without_heart() -> list[str]:
+    """The canonical board family, in the order `PyAutoBrain/config/policy.yaml`
+    `board: boards:` declares it, minus this board (`heart`).
+
+    Derived from the Brain — the same `_theme.board_links` read the renderer
+    makes — never written out here. A literal in this file pinned the
+    six-board family and went red the day the Nerves and the Gut got boards
+    (PyAutoMind#450); the next organ birth must not re-break it.
+    """
+    return list(dashboard.theme().board_links("", dashboard.BOARD_KEY))
 
 
 def test_the_family_footer_carries_the_cortex_in_the_canonical_order():
@@ -1085,7 +1092,9 @@ def test_the_family_footer_carries_the_cortex_in_the_canonical_order():
     out = dashboard.render(_failing_snapshot(), make_verdict("red", 45),
                            fmt="html", now=FRESH_NOW)
     footer = re.search(r'<ul class="boards">.*?</ul>', out, re.S).group(0)
-    assert re.findall(r'data-organ="(\w+)"', footer) == FAMILY_WITHOUT_HEART
+    family = _family_without_heart()
+    assert "cortex" in family and dashboard.BOARD_KEY not in family
+    assert re.findall(r'data-organ="(\w+)"', footer) == family
     assert "PyAutoCortex" in footer
 
 
