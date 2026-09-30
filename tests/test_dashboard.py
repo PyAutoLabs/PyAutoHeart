@@ -1229,7 +1229,7 @@ def test_surfaces_render_the_remedies_and_the_plan():
     snap = make_snapshot()
 
     html = dashboard.render(snap, v, fmt="html", now=FRESH_NOW)
-    assert "\U0001f4cb clear them all" in html and "command chain" in html
+    assert "Refresh all missing evidence" in html and "copy command" in html
     assert dashboard.VERIFY_INSTALL_CMD in html
 
     md = dashboard.render(snap, v, fmt="md", now=FRESH_NOW)
@@ -1261,18 +1261,20 @@ def test_a_worded_copy_face_is_a_chip_and_a_glyph_stays_a_square():
         assert is_chip == (len(face.split()) > 1), (cls, face)
 
     faces = [f for _, f in buttons]
-    assert "\U0001f4cb clear them all" in faces   # a worded chip is on show
-    assert "\U0001f4cb" in faces                  # and a bare glyph beside it
+    assert "Refresh all missing evidence" in faces
+    assert "copy prompt" in faces
+    assert all(len(face.split()) > 1 for face in faces)
 
 
-def test_the_plan_stays_off_a_board_showing_another_tier():
-    # The board shows one tier at a time; a plan for gaps the reader cannot see
-    # is noise (the json surface still carries it as data).
+def test_the_plan_and_gaps_remain_visible_alongside_release_blockers():
+    # Mixed tiers must remain actionable instead of disappearing behind RED.
     v = _stale_verdict(GAPS, ["install_unknown", "test_unknown"], score=45)
     v.update(verdict="red", red_reasons=["PyAutoLens: CI failure"])
     html = dashboard.render(make_snapshot(), v, fmt="html", now=FRESH_NOW)
 
-    assert "\U0001f4cb clear them all" not in html
+    assert "Refresh all missing evidence" in html
+    assert "Release blockers (1)" in html
+    assert "Evidence gaps (2)" in html
     assert json.loads(dashboard.render(make_snapshot(), v, fmt="json",
                                        now=FRESH_NOW))["stale_plan"]["count"] == 2
 

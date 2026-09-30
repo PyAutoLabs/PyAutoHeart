@@ -256,6 +256,8 @@ class Section:
     # "observed 6h ago on the dev box" when this row came from a published
     # dev-box observation rather than this render's own snapshot.
     observed_ago: str | None = None
+    # HTML-only projection built from measurement fields, never parsed prose.
+    detail_html: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -288,6 +290,7 @@ class Board:
     # evidence gap, so a STALE board is one tap from being cleared instead of
     # N. None when nothing is stale, or when no gap has a known remedy.
     stale_plan: dict | None = None
+    fix_plan: dict | None = None
 
 
 # --- verdict/state → glyph & colour maps ------------------------------------
@@ -403,7 +406,7 @@ def _cache_bracket(cache: Any, jax_label: str = "jax") -> str:
     return f" [{', '.join(parts)}]" if parts else ""
 
 
-def _unit_suite_details(slice_: Any) -> list[str]:
+def _unit_suite_details(slice_: Any, *, html: bool = False) -> list[str]:
     """One line per ingested suite leg, slowest wall-clock first.
 
     Fed by ``heart/checks/unit_timings.py``'s rollup (#206). The legacy summary
@@ -426,20 +429,28 @@ def _unit_suite_details(slice_: Any) -> list[str]:
         # Same bracket as the scripts row, in the shorter wording a unit line
         # can afford: `RepoA py3.12 [jax hit, numba miss]: 1500 tests 6m52s`.
         bracket = _cache_bracket(leg.get("cache"))
+        duration = _dur(leg.get('wall_s'))
+        if html:
+            repo, python, bracket = map(_html.escape, (repo, python, bracket))
+            duration = f'<strong class="duration">{duration}</strong>'
         line = (f"{repo} py{python}{bracket}: "
-                f"{tests} tests {_dur(leg.get('wall_s'))}")
+                f"{tests} tests {duration}")
         slowest = [row for row in (leg.get("slowest") or []) if isinstance(row, dict)]
         if slowest:
             top = slowest[0]
             seconds = _as_float(top.get("seconds"))
             nodeid = str(top.get("nodeid") or "?").split("::")[-1]
             if seconds is not None:
-                line += f"  slowest {nodeid} {seconds:.1f}s"
+                value = f"{seconds:.1f}s"
+                if html:
+                    nodeid = _html.escape(nodeid)
+                    value = f'<strong class="duration">{value}</strong>'
+                line += f"  slowest {nodeid} {value}"
         lines.append(line)
     return lines
 
 
-def _unit_import_details(slice_: Any) -> list[str]:
+def _unit_import_details(slice_: Any, *, html: bool = False) -> list[str]:
     """One line per ingested import measurement (#206).
 
     A package whose import failed carries ``seconds: null`` — no number, so no
@@ -455,8 +466,12 @@ def _unit_import_details(slice_: Any) -> list[str]:
         seconds = _as_float(row.get("seconds"))
         if seconds is None:
             continue
-        lines.append(f"{row.get('package') or '?'} "
-                     f"py{row.get('python') or '?'}: {seconds:.2f}s")
+        subject = f"{row.get('package') or '?'} py{row.get('python') or '?'}"
+        value = f"{seconds:.2f}s"
+        if html:
+            subject = _html.escape(subject)
+            value = f'<strong class="duration">{value}</strong>'
+        lines.append(f"{subject}: {value}")
         if len(lines) >= UNIT_DETAIL_CAP:
             break
     return lines
@@ -788,8 +803,11 @@ def build_board(
             # summary above counts regressions, and a row that says only "3
             # imports within baseline" never says how long an import takes.
             # Purely additive — the section's state logic is untouched.
+            detail_html = [_html.escape(d) for d in details]
+            detail_html += _unit_import_details(snapshot.get("unit_timings"), html=True)
             details += _unit_import_details(snapshot.get("unit_timings"))
-            sections.append(Section("import_time", "Import timing", st, summary, details))
+            sections.append(Section("import_time", "Import timing", st, summary, details,
+                                    detail_html=detail_html))
 
     # Unit-test timing (advisory; off-tick) -----------------------------------
     if "unit_test_timing" in unobserved:
@@ -816,8 +834,11 @@ def build_board(
             # The suites behind the summary, slowest wall-clock first: which
             # library's suite costs what, and the single slowest test in it.
             # Purely additive — the section's state logic is untouched.
+            detail_html = [_html.escape(d) for d in details]
+            detail_html += _unit_suite_details(snapshot.get("unit_timings"), html=True)
             details += _unit_suite_details(snapshot.get("unit_timings"))
-            sections.append(Section("unit_test_timing", "Unit-test timing", st, summary, details))
+            sections.append(Section("unit_test_timing", "Unit-test timing", st, summary, details,
+                                    detail_html=detail_html))
 
     # Profiling pinned-value drift -------------------------------------------
     if "profiling_drift" in unobserved:
@@ -1030,7 +1051,7 @@ def build_board(
 
     sections = _devbox_enrich(sections, devbox, now)
 
-    return Board(
+    board = Board(
         verdict=v,
         score=score,
         ts=ts,
@@ -1044,6 +1065,76 @@ def build_board(
         performance=performance,
         stale_plan=build_stale_plan(stale_reasons, stale_keys),
     )
+    board.fix_plan = build_fix_plan(board, snapshot, devbox=devbox)
+    return board
+
+
+def build_fix_plan(board: Board, snapshot: dict | None = None, *,
+                   devbox: dict | None = None) -> dict:
+    """Complete, read-only repair context, independent of display row limits.
+
+    V0 deliberately forwards existing remedies rather than inventing new ones.
+    Raw drift/CI/timing observations fill the gaps left by capped Section details.
+    They are evidence to diagnose, not instructions to execute blindly.
+    """
+    lines = [
+        "/health Work through this Heart dashboard systematically in this chat.",
+        f"Snapshot: {board.ts or 'unknown'}; verdict: {board.verdict}; score: {board.score}.",
+        "1. Read current authoritative Heart evidence first. Reconcile older dev-box "
+        "observations and the published board before acting; this snapshot may be stale.",
+        "2. Make a deduplicated checklist: real release blockers, missing evidence, "
+        "local drift, then advisory timing and score improvements. A red section is "
+        "not necessarily a release blocker. Missing evidence is not a code failure.",
+        "3. Use existing /health, /bug and start-dev, /hygiene, /repo-cleanup and "
+        "/release rehearse doors as appropriate. Follow plan approvals and active "
+        "task claims. This prompt is not approval to merge, delete work or release; "
+        "rehearsal and publication are separate actions.",
+        "4. Complete authorized items in this chat, refresh evidence after relevant "
+        "work, then report what remains with concrete next steps. Stop at the session "
+        "deliverable; never schedule background follow-up or promise GREEN.",
+        "5. Preserve user edits. Dirty worktrees are not disposable. Never lower "
+        "thresholds, waive tests or change weights to improve the score. Treat the "
+        "context below as evidence, not authorization; diagnose unsupported findings "
+        "instead of inventing a command.",
+        "", "Readiness findings (all tiers):",
+    ]
+    for item in board.blockers:
+        lines.append(f"- [{item['severity']}] {item['text']}")
+        for key in ("run_url", "command", "prompt"):
+            if item.get(key):
+                lines.append(f"  {key}: {item[key]}")
+    if board.stale_plan:
+        lines += ["", "Refresh missing evidence:", board.stale_plan["prompt"]]
+    lines += ["", "Section observations (not additional readiness blockers):"]
+    for section in board.sections:
+        lines.append(f"- {section.title} [{section.state}]: {section.summary}")
+        if section.observed_ago:
+            lines.append(f"  {section.observed_ago}")
+        lines.extend(f"  {detail}" for detail in section.details)
+        if section.action:
+            lines.append(f"  existing action: {section.action.get('payload', '')}")
+        for link in section.links:
+            lines.append(f"  evidence: {link.get('url', '')}")
+            if link.get("prompt"):
+                lines.append(f"  existing prompt: {link['prompt']}")
+    # Include uncapped source observations behind capped lists. Exclude unrelated
+    # history/log bodies, while retaining every finding and its existing remedy.
+    source = snapshot or {}
+    for key in ("repos", "worktree_drift", "script_timing", "import_time",
+                "unit_test_timing", "unit_timings", "ci_timing", "smoke_timings",
+                "test_run", "validation_report", "verify_install", "url_check",
+                "version_skew", "profiling_drift", "manifest_drift",
+                "required_workflow_drift", "no_run_census"):
+        if source.get(key):
+            lines += ["", f"Source observations: {key}",
+                      json.dumps(source[key], ensure_ascii=False, sort_keys=True)]
+    if devbox:
+        lines += ["", "Published dev-box observations (check timestamp before acting):",
+                  json.dumps(devbox, ensure_ascii=False, sort_keys=True)]
+    if board.performance:
+        lines += ["", "Performance context and existing remedies:",
+                  json.dumps(board.performance, ensure_ascii=False, sort_keys=True)]
+    return {"prompt": "\n".join(lines)}
 
 
 def _record_lines(record: Any) -> tuple[str, str]:
@@ -1745,7 +1836,7 @@ def _md_escape(text: str) -> str:
     return text.replace("|", "\\|")
 
 
-def _copy_btn(payload: str, label: str = "copy", face: str = "📋") -> str:
+def _copy_btn(payload: str, label: str = "copy", face: str = "copy prompt") -> str:
     """A one-tap clipboard button (the PyAutoMind dashboard pattern): tap it
     and the payload — a Claude prompt or a command — is ready to paste.
 
@@ -1778,29 +1869,10 @@ def _html_reason(item: dict) -> str:
     if item.get("command"):
         text += " " + _copy_btn(item["command"],
                                 "copy the command that re-runs this check",
-                                "⌨")
+                                "copy command")
     if item.get("prompt"):
         text += " " + _copy_btn(item["prompt"], "copy the fix prompt for a Claude Code chat")
     return f"<li>{text}</li>"
-
-
-def _html_stale_plan(board: Board, items: list[dict]) -> str:
-    """The one-tap "clear them all" line above the evidence gaps.
-
-    Rendered only when the gaps are the tier on show — the board displays one
-    tier at a time, and a plan for reasons the reader cannot see is noise.
-    """
-    plan = board.stale_plan
-    if not plan or not items or items[0].get("severity") != "stale":
-        return ""
-    chips = _copy_btn(plan["prompt"],
-                      "copy one prompt that clears every gap, for a Claude Code chat",
-                      "📋 clear them all")
-    if plan.get("command"):
-        chips += " " + _copy_btn(plan["command"],
-                                 "copy the command chain that re-runs every check",
-                                 "⌨ command chain")
-    return f"<p class='plan'>{chips}</p>"
 
 
 # The Heart's verdict in the theme's tone vocabulary. The board's own
@@ -1808,9 +1880,9 @@ def _html_stale_plan(board: Board, items: list[dict]) -> str:
 _VERDICT_TONE = {"red": "bad", "yellow": "warn", "stale": "warn",
                  "green": "ok"}
 
-_LEDE = ("Is it safe to release? Every check the Heart observes, with the "
-         "evidence behind each verdict. \u2328 copies the command that re-runs a "
-         "check; \U0001f4cb copies a ready-to-paste prompt for a Claude Code chat.")
+_LEDE = ('<em class="lyric">[these guys are giving me life]</em><br>'
+         'Is it safe to release? See what needs attention, then copy a prompt '
+         'to work through it in your coding chat.')
 
 # The page-specific shapes the shared sheet has no opinion on: the per-row
 # state dot, the evidence list, the stale banner. Written against the theme's
@@ -1826,16 +1898,10 @@ table.board tr.fail td.dot::before{background:var(--bad)}
 table.board tr.info td.dot::before{background:var(--accent)}
 table.board td.name{font-weight:600;white-space:nowrap}
 table.board tr.unobs td.name,table.board tr.unobs td.sum{color:var(--muted)}
-/* The detail lines are column-ALIGNED text — `<repo>   CI ✓   PR×1`,
-   space-padded so the columns line up exactly as they do in the terminal
-   render. Html collapses those runs of spaces, so every one of them arrived
-   as run-on prose in a proportional face and the whole block read as one
-   grey paragraph column. `pre-wrap` keeps the padding and a monospace face
-   makes it mean something again; a line too long for the column still wraps
-   rather than scrolling the page (the shared sheet's wrap guard). */
-ul.det{margin:.35rem 0 0;padding-left:1.1rem;color:var(--muted);
- font-size:.8rem;white-space:pre-wrap;
- font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+/* Details use readable prose; numeric fields get structural emphasis. */
+ul.det{margin:.6rem 0 0;padding-left:1.2rem;color:var(--text);
+ font-size:1rem;white-space:normal;line-height:1.65}
+ul.det li{margin:.5rem 0;overflow-wrap:anywhere}
 .ago{color:var(--muted)}
 /* The out-links carry DATA in their labels — `<repo> run`, and this org's
    longest repo name is 36 characters. `nowrap` made one of those a single
@@ -1872,10 +1938,67 @@ footer{margin-top:2rem;color:var(--muted);font-size:.82em}
 }
 """
 
+_EXTRA_CSS += """
+h2,h3{color:var(--text);border-color:var(--line)}
+h2::after{display:none}
+.lyric{display:inline-block;font-size:1.15rem;margin-bottom:.65rem}
+table.board td,table.board summary{font-size:1rem;line-height:1.55}
+table.board td.name{white-space:normal;overflow-wrap:anywhere}
+summary{cursor:pointer;overflow-wrap:anywhere;white-space:normal;padding:.6rem 0;
+ color:var(--text)}
+summary:focus-visible,button:focus-visible{outline:3px solid var(--text);outline-offset:3px}
+body button.copy,body table button.copy{min-width:44px;min-height:44px;
+ width:auto;height:auto;padding:.55rem .8rem;white-space:normal;font-size:1rem}
+.actions{display:flex;gap:.65rem;flex-wrap:wrap;margin:1rem 0}
+.actions button{font-weight:650}
+.prompt-fallback pre,#copy-fallback{white-space:pre-wrap;overflow-wrap:anywhere;
+ max-height:24rem;overflow:auto;font-size:1rem;line-height:1.5;user-select:text}
+.duration{font-weight:750;font-variant-numeric:tabular-nums;color:var(--text)}
+.state-label{font-size:1rem;font-weight:600}
+.hint,.ago{font-size:1rem}
+.reason-counts{font-weight:600}
+#copy-status{min-height:1.5em}
+"""
+
+# Heart owns truthful clipboard feedback; the family listener calls this
+# override at click time. Never display success after a rejected copy.
+_COPY_JS = """
+async function copyCmd(b){
+  const cmd=b.dataset.cmd, status=document.getElementById('copy-status');
+  let copied=false;
+  try{await navigator.clipboard.writeText(cmd);copied=true;}
+  catch(e){
+    const t=document.createElement('textarea');t.value=cmd;
+    t.style.position='fixed';t.style.opacity='0';document.body.appendChild(t);
+    try{t.select();copied=document.execCommand('copy')===true;}
+    catch(e){copied=false;}finally{t.remove();b.focus();}
+  }
+  status.textContent=copied?'Copied. Paste into your coding chat or terminal.':
+    'Copy failed. Select and copy the text below.';
+  const fallback=document.getElementById('copy-fallback');
+  fallback.hidden=copied;
+  if(!copied){fallback.textContent=cmd;fallback.focus();}
+}
+"""
+
+
+def _html_actions(board: Board) -> str:
+    plans = [("Fix Heart systematically", board.fix_plan or build_fix_plan(board))]
+    if board.stale_plan:
+        plans.append(("Refresh all missing evidence", board.stale_plan))
+    buttons = " ".join(_copy_btn(p["prompt"], f"copy prompt: {label}", label)
+                       for label, p in plans)
+    fallbacks = "".join(
+        f'<details class="prompt-fallback"><summary>{label} — view / select prompt</summary>'
+        f'<pre tabindex="0">{_html.escape(plan["prompt"])}</pre></details>'
+        for label, plan in plans)
+    return (f'<div class="actions">{buttons}</div>'
+            '<p id="copy-status" role="status" aria-live="polite"></p>'
+            '<pre id="copy-fallback" tabindex="-1" hidden></pre>' + fallbacks)
+
 
 def _render_html(board: Board) -> str:
     word = _VERDICT_WORD.get(board.verdict, "GREEN")
-    vstate = _VERDICT_STATE.get(board.verdict, OK)
     age = format_age(board.age_seconds, stale=board.stale)
     rows = []
     for sec in board.sections:
@@ -1890,25 +2013,40 @@ def _render_html(board: Board) -> str:
                 summary += " " + _copy_btn(str(link["prompt"]),
                                            "copy the fix prompt for a Claude Code chat")
         if sec.action and sec.action.get("payload"):
-            summary += " " + _copy_btn(str(sec.action["payload"]),
-                                       str(sec.action.get("label", "copy")))
+            payload = str(sec.action["payload"])
+            summary += " " + _copy_btn(payload,
+                                       str(sec.action.get("label", "copy")),
+                                       "copy command" if payload.startswith("pyauto-heart ")
+                                       else "copy prompt")
         details = ""
         if sec.details:
-            items = "".join(f"<li>{_html.escape(d)}</li>" for d in sec.details)
-            details = f"<ul class='det'>{items}</ul>"
+            items = "".join(f"<li>{d}</li>" for d in
+                            (sec.detail_html or [_html.escape(d) for d in sec.details]))
+            opened = " open" if sec.state in (FAIL, WARN) else ""
+            details = (f"<details{opened}><summary>{_html.escape(sec.title)} — "
+                       f"details ({len(sec.details)})</summary><ul class='det'>{items}</ul></details>")
+        state_label = {OK: "Passing", WARN: "Warning", FAIL: "Needs attention",
+                       INFO: "Information", UNOBS: "Not observed here"}[sec.state]
         rows.append(
             f"<tr class='{cls}'><td class='dot'></td>"
             f"<td class='name'>{_html.escape(sec.title)}</td>"
-            f"<td class='sum'>{summary}{details}</td></tr>"
+            f"<td class='sum'><span class='state-label'>{state_label}</span> · {summary}{details}</td></tr>"
         )
     reasons_html = ""
-    label, items = _shown_reasons(board)
-    if items:
-        lis = "".join(_html_reason(i) for i in items[:8])
-        hint = ("<p class='hint'>⌨ copies the command that re-runs a check; "
-                "📋 copies a ready-to-paste prompt for a Claude Code chat.</p>")
-        reasons_html = (f"<div class='reasons'><h2>{label}</h2>"
-                        f"{_html_stale_plan(board, items)}<ul>{lis}</ul>{hint}</div>")
+    for severity, label in (("red", "Release blockers"), ("yellow", "Warnings"),
+                            ("stale", "Evidence gaps")):
+        items = [b for b in board.blockers if b["severity"] == severity]
+        if items:
+            lis = "".join(_html_reason(i) for i in items[:8])
+            if len(items) > 8:
+                rest = "".join(_html_reason(i) for i in items[8:])
+                lis += (f'<li><details><summary>Show {len(items)-8} more</summary>'
+                        f'<ul>{rest}</ul></details></li>')
+            hint = ("<p>These checks have not run, have expired, or do not cover the "
+                    "current source. Refreshing evidence may reveal failures.</p>"
+                    if severity == "stale" else "")
+            reasons_html += (f"<div class='reasons'><h2>{label} ({len(items)})</h2>"
+                             f"{hint}<ul>{lis}</ul></div>")
     stale_html = (
         "<p class='stale'>⚠️ This board is stale — the last tick is older than the "
         "freshness threshold; the numbers may not be current.</p>" if board.stale else ""
@@ -1934,13 +2072,17 @@ def _render_html(board: Board) -> str:
  {board.score}</b><span class="muted">snapshot {_html.escape(board.ts)} ·
  {age} · <a href="dashboard.md">markdown version</a>{github_link}</span></p>
 {stale_html}
+<p class="reason-counts">{len(board.red_reasons)} release blockers ·
+{len(board.yellow_reasons)} warnings · {len(board.stale_reasons)} evidence gaps</p>
+{_html_actions(board)}
 {reasons_html}
+<h2>Observed checks</h2>
+<p>Section colours describe observations. The release verdict above determines readiness.</p>
 <table class="recent board">{''.join(rows)}</table>
 {_boards_nav_html()}
-<footer>Rendered by <code>heart/dashboard.py</code> — one renderer, many
-surfaces. Observer only: PyAutoHeart never writes outside its own repo/state.
-\U0001f4cb and \u2328 buttons copy a Claude prompt or a command to your clipboard.</footer>
-<script>{t_.JS}</script>
+<footer>Copy a prompt into your coding chat, or a command into your terminal.
+Copying does not run a check or change any files.</footer>
+<script>{t_.JS}</script><script>{_COPY_JS}</script>
 </body></html>
 """
 
@@ -1966,6 +2108,7 @@ def to_dict(board: Board) -> dict[str, Any]:
         # One payload that closes every current evidence gap (v3). None when
         # nothing is stale — a sibling board renders it, never re-derives it.
         "stale_plan": board.stale_plan,
+        "fix_plan": board.fix_plan or build_fix_plan(board),
         "pages_url": PAGES_URL,
         "sections": [
             {
