@@ -264,6 +264,7 @@ def compute(
     # module docstring's "Profiles" section is the rule's home.
     na: list[str] = []
     counts: dict[str, int] = {}
+    repository_reasons: list[dict[str, str]] = []
 
     def hit(key: str, n: int = 1) -> None:
         counts[key] = counts.get(key, 0) + n
@@ -273,6 +274,12 @@ def compute(
         stale.append(msg)
         stale_keys.append(key)
         hit(key)
+
+    def repo_red(repo: str, key: str, text: str, workflow: str = "") -> None:
+        red.append(text)
+        hit(key)
+        repository_reasons.append({"repo": repo, "key": key, "text": text,
+                                   "severity": "red", "workflow": workflow})
 
     def scope_local(msg: str, key: str) -> None:
         """File a *gap* in dev-box-local evidence: stale on the default
@@ -297,22 +304,20 @@ def compute(
             # silent unknown here is indistinguishable from a healthy repo.
             add_stale(f"{lib}: CI status unavailable ({ci['error']})",
                       "lib_ci_unavailable")
+            repository_reasons.append({"repo": lib, "key": "lib_ci_unavailable",
+                                       "text": stale[-1], "severity": "stale"})
         elif conclusion not in (None, "", "success"):
-            red.append(f"{lib}: CI {conclusion}")
-            hit("lib_ci")
+            repo_red(lib, "lib_ci", f"{lib}: CI {conclusion}")
         rs = body.get("repo_state", {}) or {}
         branch = rs.get("branch")
         if branch and branch != "main":
-            red.append(f"{lib}: on branch {branch} (not main)")
-            hit("lib_branch")
+            repo_red(lib, "lib_branch", f"{lib}: on branch {branch} (not main)")
         dirty_real = _as_int(rs.get("dirty_real", rs.get("dirty_files", 0)))
         if dirty_real > 0:
-            red.append(f"{lib}: {dirty_real} uncommitted source change(s)")
-            hit("lib_dirty")
+            repo_red(lib, "lib_dirty", f"{lib}: {dirty_real} uncommitted source change(s)")
         behind = _as_int(rs.get("behind", 0))
         if behind > 0:
-            red.append(f"{lib}: {behind} commit(s) behind origin")
-            hit("lib_behind")
+            repo_red(lib, "lib_behind", f"{lib}: {behind} commit(s) behind origin")
 
     # --- workspace CI gate (RED) ---
     # Gate each gated workspace/howto repo on the conclusion of its REQUIRED
@@ -335,14 +340,12 @@ def compute(
             for wf in required:
                 concl = (workflows.get(wf) or {}).get("conclusion")
                 if concl in FAILURE_CONCLUSIONS:
-                    red.append(f"{name}: {wf} {concl} on main")
-                    hit("ws_ci")
+                    repo_red(name, "ws_ci", f"{name}: {wf} {concl} on main", wf)
         else:
             # Pre-structured sidecar: fall back to the rolled-up conclusion.
             concl = ci.get("conclusion")
             if concl in FAILURE_CONCLUSIONS:
-                red.append(f"{name}: CI {concl} on main")
-                hit("ws_ci")
+                repo_red(name, "ws_ci", f"{name}: CI {concl} on main")
 
     # --- test-run gate (RED if false, YELLOW if unknown) ---
     test_run = snapshot.get("test_run")
@@ -679,6 +682,8 @@ def compute(
         if _as_int(pr.get("open_count", 0)) > 0 and _as_int(pr.get("max_age_days", 0)) >= 7:
             yellow.append(f"{name}: open PR {_as_int(pr.get('max_age_days'))}d old")
             hit("open_pr")
+            repository_reasons.append({"repo": name, "key": "open_pr",
+                                       "text": yellow[-1], "severity": "yellow"})
 
     # --- release-ci: name the dev-box-local evidence this snapshot never
     # carried, so "out of scope" is a stated fact, not an assumption. Slices
@@ -701,15 +706,21 @@ def compute(
 
     # --- score ---
     score = 100
+    penalties = []
     for key, n in counts.items():
         w, cap = _WEIGHTS.get(key, (0, 0))
-        score -= min(n * w, cap)
+        points = min(n * w, cap)
+        score -= points
+        penalties.append({"key": key, "count": n, "weight": w,
+                          "cap": cap, "points": points})
     score = max(0, min(100, score))
 
     verdict = "red" if red else ("yellow" if yellow else ("stale" if stale else "green"))
     return {
         "verdict": verdict,
         "score": score,
+        "penalties": penalties,
+        "repository_reasons": repository_reasons,
         "profile": profile,
         "reasons": red + yellow + stale,
         "red_reasons": red,

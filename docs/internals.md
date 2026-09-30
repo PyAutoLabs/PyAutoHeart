@@ -29,6 +29,26 @@ first; read this only when changing Heart's own code.
    the bash equivalent (`heart_write_json` in `_common.sh`). Concurrent
    ticks must not corrupt `state.json`.
 
+## Dashboard consumer contract
+
+Readiness emits additive `repository_reasons` with gate keys, plus a `penalties`
+breakdown (count, weight, cap and deducted points). The dashboard projects these
+into `sections[].entries`; `affects_release` comes from readiness, not a separate
+dashboard policy. Legacy verdicts keep their original score and display an
+unavailable breakdown until refreshed.
+
+Brain board consumers forward `blockers[].prompt` and `command` verbatim.
+Checkout-behind prompts now request a clean canonical-main fast-forward followed
+by a tick; dirty/wrong-branch observations use `fix dirty`, rather than `/bug`.
+CI failures retain their existing bug route. No new blocker severity is added.
+`fix_plan`, `penalties`, `vantage`, `devbox_observed` and section entries are
+additive; existing `stale_plan` and `performance` consumers need no migration.
+
+Published dev-box entries use the existing path scrub on the complete entry,
+including its evidence and prompt. Entries containing private local paths stay
+local. Fresh observations retain their timestamp; expired observations remain
+unobserved on the cloud board.
+
 ## Repo structure
 
 ```
