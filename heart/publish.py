@@ -9,8 +9,8 @@ repo/state). The cloud render then fills those rows, age-stamped
 "observed Nh ago on the dev box", falling back to grey once the observation
 expires (``dashboard.DEVBOX_FRESH_SECONDS``).
 
-Privacy: the distilled file carries section states, summaries, and detail
-lines ONLY — and any detail line naming a local filesystem path (``/home/``,
+Privacy: the distilled file carries section states, summaries, detail lines
+and structured entries — any detail line or entry naming a local filesystem path (``/home/``,
 ``~``, the expanded home dir) is dropped before it leaves the machine. The
 repo is public; worktree names and repo names are fine, absolute local paths
 are not. ``tests/test_publish.py`` pins this.
@@ -71,6 +71,13 @@ def build_devbox_board(snapshot: dict | None, verdict: dict | None) -> dict[str,
             "summary": sec.summary,
             "details": _scrub(sec.details)[:8],
         }
+        if sec.entries:
+            # Structured observations obey the same public-path boundary as
+            # plain detail lines, including paths inside prompts/evidence.
+            sections[sec.key]["entries"] = [
+                entry for entry in sec.entries
+                if _scrub([json.dumps(entry, ensure_ascii=False)])
+            ]
     return {
         "schema_version": DEVBOX_SCHEMA_VERSION,
         "ts": (snapshot or {}).get("ts") or "",

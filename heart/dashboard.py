@@ -49,6 +49,7 @@ import html as _html
 import json
 import os
 import pathlib
+import shlex
 import sys
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Sequence
@@ -258,6 +259,7 @@ class Section:
     observed_ago: str | None = None
     # HTML-only projection built from measurement fields, never parsed prose.
     detail_html: list[str] = field(default_factory=list)
+    entries: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -291,6 +293,9 @@ class Board:
     # N. None when nothing is stale, or when no gap has a known remedy.
     stale_plan: dict | None = None
     fix_plan: dict | None = None
+    penalties: list[dict] | None = None
+    vantage: str = "local snapshot"
+    devbox_observed: str | None = None
 
 
 # --- verdict/state → glyph & colour maps ------------------------------------
@@ -583,85 +588,143 @@ def _ci_fragment(ci: dict) -> tuple[str, str] | None:
     return None
 
 
-def _lib_row(name: str, body: dict, *, unobserved: Sequence[str]) -> tuple[str, str]:
-    """(state, one-line label) for a single library/workspace repo row."""
-    frags: list[tuple[str, str]] = []
+def _repo_remedy(name: str, key: str) -> dict | None:
+    """Typed checkout remedies; canonical paths are resolved by the receiving chat."""
+    if key == "lib_behind":
+        return {"label": "update the canonical checkout", "kind": "prompt",
+                "payload": (f"/health {name} is behind origin. Resolve its canonical main "
+                            "checkout from the workspace repository manifest (not a task worktree). "
+                            "Inspect branch, status and active claims. Only if clean on main, run "
+                            "git -C <resolved-canonical-checkout> pull --ff-only, then "
+                            "pyauto-heart tick and pyauto-heart readiness. Preserve edits; "
+                            "stop and diagnose divergence or an unexpected branch.")}
+    if key in ("lib_dirty", "lib_branch"):
+        return {"label": "inspect checkout changes", "kind": "command",
+                "payload": f"pyauto-heart fix dirty {shlex.quote(name)}"}
+    if key == "open_pr":
+        return {"label": "review the open PR", "kind": "prompt",
+                "payload": f"/health Review the aging open PRs for {name}; report CI and next steps. Do not merge or close without approval."}
+    if key == "ahead":
+        return {"label": "inspect unpublished commits", "kind": "prompt",
+                "payload": f"/health Inspect {name}'s ahead-of-origin commits and active task claims. Preserve commits; propose the next step before pushing or resetting anything."}
+    return None
+
+
+def _repo_entries(name: str, body: dict, *, unobserved: Sequence[str],
+                  repository_reasons: list[dict], ts: str = "") -> list[dict]:
+    """Observations retain their identity and the impact emitted by readiness."""
+    impacts = [r for r in repository_reasons if r.get("repo") == name]
+    entries = []
+
+    def add(key, reason, state, source, evidence=None, action=None, impact=None):
+        matched = impact or next((r for r in impacts if r.get("key") == key), None)
+        if matched:
+            state = FAIL if matched["severity"] == "red" else WARN
+        sidecar = {"CI": "ci_status", "local checkout": "repo_state", "GitHub PRs": "open_prs"}.get(source)
+        observed_at = (body.get(sidecar) or {}).get("ts") if sidecar else None
+        entries.append({"id": f"{name}:{key}", "subject": name, "key": key,
+                        "state": state, "reason": reason, "source": source,
+                        "observed_at": observed_at or ts or None, "evidence": evidence,
+                        "affects_release": bool(matched),
+                        "release_severity": matched.get("severity") if matched else None,
+                        "action": action})
+
     ci = body.get("ci_status") or {}
-    ci_frag = _ci_fragment(ci)
-    if ci_frag:
-        frags.append(ci_frag)
+    fragment = _ci_fragment(ci)
+    ci_impacts = [r for r in impacts if r.get("key") in ("lib_ci", "ws_ci", "lib_ci_unavailable")]
+    if ci_impacts:
+        for impact in ci_impacts:
+            workflow = impact.get("workflow")
+            detail = ((ci.get("workflows") or {}).get(workflow) or {}) if workflow else ci
+            url = detail.get("url") or ci.get("url")
+            key = impact["key"]
+            prompt = (f"/health Refresh CI evidence for {name}" if impact["severity"] == "stale"
+                      else f"/bug Heart board: {name} {workflow or ci.get('workflow') or 'CI'} failing on main")
+            if url:
+                prompt += f" — failing run: {url}"
+            add(key + (":" + workflow if workflow else ""), impact["text"], WARN,
+                "CI", url, {"label": "inspect CI", "kind": "prompt", "payload": prompt}, impact)
+    elif fragment:
+        state, reason = fragment
+        # Non-gating failures remain advisory, never red release blockers.
+        add("ci", reason, WARN if state == FAIL else state, "CI", ci.get("url"),
+            {"label": "inspect CI", "kind": "prompt",
+             "payload": f"/health Inspect CI for {name}: {reason}"} if state != OK else None)
 
     if "repo_state" in unobserved:
-        frags.append((UNOBS, "repo state n/a here"))
+        add("checkout_unobserved", "repo state n/a here", UNOBS, "local checkout")
     else:
         rs = body.get("repo_state") or {}
         branch = rs.get("branch")
-        dirty_real = _as_int(rs.get("dirty_real", rs.get("dirty_files", 0)))
+        dirty = _as_int(rs.get("dirty_real", rs.get("dirty_files", 0)))
+        findings = []
         if branch and branch != "main":
-            frags.append((FAIL, f"branch={branch}"))
-        if dirty_real:
-            frags.append((FAIL, f"dirty={dirty_real}"))
-        if _as_int(rs.get("ahead")):
-            frags.append((WARN, f"ahead={rs['ahead']}"))
+            findings.append(("lib_branch", f"branch={branch} (not main)"))
+        if dirty:
+            findings.append(("lib_dirty", f"dirty={dirty} uncommitted source change(s)"))
         if _as_int(rs.get("behind")):
-            frags.append((FAIL, f"behind={rs['behind']}"))
+            findings.append(("lib_behind", f"behind={rs['behind']} commit(s)"))
+        if _as_int(rs.get("ahead")):
+            findings.append(("ahead", f"ahead={rs['ahead']} commit(s)"))
+        for key, reason in findings:
+            add(key, reason, WARN, "local checkout", action=_repo_remedy(name, key))
 
     pr = body.get("open_prs") or {}
     if _as_int(pr.get("open_count")):
-        n = _as_int(pr.get("open_count"))
-        age = _as_int(pr.get("max_age_days"))
-        if age >= 30:
-            frags.append((FAIL, f"PR×{n} ({age}d)"))
-        elif age >= 7:
-            frags.append((WARN, f"PR×{n} ({age}d)"))
-        else:
-            frags.append((INFO, f"PR×{n}"))
+        n, age = _as_int(pr.get("open_count")), _as_int(pr.get("max_age_days"))
+        add("open_pr", f"PR×{n} ({age}d)", INFO, "GitHub PRs",
+            action=_repo_remedy(name, "open_pr") if age >= 7 else None)
+    if not entries:
+        add("nominal", "clean / nominal", OK, "snapshot")
+    return entries
 
-    if not frags:
-        return OK, "clean / nominal"
-    # State reflects the OBSERVED signals; an "n/a here" annotation never drags
-    # a row with a real green CI down to unobserved. A row that is *only*
-    # unobserved fragments stays unobserved.
-    observed = [s for s, _ in frags if s != UNOBS]
-    state = _worst(observed) if observed else UNOBS
-    label = "  ".join(t for _, t in frags)
-    return state, label
+
+def _lib_row(name: str, body: dict, *, unobserved: Sequence[str],
+             repository_reasons: list[dict] | None = None) -> tuple[str, str]:
+    if repository_reasons is None:
+        from heart import readiness
+        repository_reasons = readiness.compute({"repos": {name: body}})["repository_reasons"]
+    entries = _repo_entries(name, body, unobserved=unobserved,
+                            repository_reasons=repository_reasons)
+    observed = [e["state"] for e in entries if e["state"] != UNOBS]
+    return (_worst(observed) if observed else UNOBS,
+            "  ".join(e["reason"] for e in entries))
 
 
 def _repo_section(
-    key: str, title: str, repos: dict, want_lib: bool, *, unobserved: Sequence[str]
+    key: str, title: str, repos: dict, want_lib: bool, *, unobserved: Sequence[str],
+    repository_reasons: list[dict] | None = None, ts: str = "",
 ) -> Section | None:
-    rows: list[tuple[str, str, str]] = []  # (state, name, label)
-    links: list[dict] = []
+    if repository_reasons is None:
+        from heart import readiness
+        repository_reasons = readiness.compute({"repos": repos})["repository_reasons"]
+    rows, entries, links = [], [], []
     for name, body in sorted(repos.items()):
-        if not isinstance(body, dict):
+        if not isinstance(body, dict) or _is_library(name, body) != want_lib:
             continue
-        if _is_library(name, body) != want_lib:
-            continue
-        # Workspaces are gated only for a handful of groups; skip ungrouped noise.
         if not want_lib and _repo_group(body) not in GATED_WORKSPACE_GROUPS:
             continue
-        state, label = _lib_row(name, body, unobserved=unobserved)
-        rows.append((state, name, label))
-        # The way OUT of a red row: the failing run itself, plus a ready-made
-        # /bug prompt (rendered as the link's paired 📋 on the html surface).
-        ci = body.get("ci_status") or {}
-        if (state == FAIL and ci.get("url")
-                and str(ci.get("conclusion") or "") not in ("", "success")):
-            wf = ci.get("workflow") or "CI"
-            links.append({
-                "label": f"{name} run", "url": str(ci["url"]),
-                "prompt": (f"/bug Heart board: {name} {wf} failing on main — "
-                           f"failing run: {ci['url']}"),
-            })
+        observations = _repo_entries(name, body, unobserved=unobserved,
+                                     repository_reasons=repository_reasons, ts=ts)
+        entries.extend(observations)
+        observed = [e["state"] for e in observations if e["state"] != UNOBS]
+        state = _worst(observed) if observed else UNOBS
+        rows.append((state, name, "  ".join(e["reason"] for e in observations)))
+        for e in observations:
+            if e["state"] == FAIL and e.get("evidence"):
+                links.append({"label": f"{name} run", "url": e["evidence"],
+                              "prompt": (e.get("action") or {}).get("payload")})
     if not rows:
         return None
-    overall = _worst(s for s, _, _ in rows)
-    n_bad = sum(1 for s, _, _ in rows if s in (FAIL, WARN))
+    entries.sort(key=lambda e: ({FAIL: 0, WARN: 1, INFO: 2, UNOBS: 3, OK: 4}[e["state"]], e["id"]))
+    n_bad = sum(1 for state, _, _ in rows if state in (FAIL, WARN))
     summary = f"{len(rows)} repos" + (f", {n_bad} need attention" if n_bad else " nominal")
-    details = [f"{name:<26} {label}" for _, name, label in rows]
-    return Section(key=key, title=title, state=overall, summary=summary,
-                   details=details, links=links[:4])
+    if n_bad:
+        impacted = {e["subject"] for e in entries if e["affects_release"]}
+        summary += f" · {len(impacted)} affect release"
+    return Section(key, title, _worst(s for s, _, _ in rows), summary,
+                   [f"{name:<26} {label}" for _, name, label in rows],
+                   links=links[:4], entries=entries)
 
 
 def build_board(
@@ -701,11 +764,19 @@ def build_board(
         stale_keys = []
 
     sections: list[Section] = []
+    repository_reasons = verdict.get("repository_reasons")
+    if repository_reasons is None:
+        # Legacy snapshots have no typed repository reasons. Ask Heart's own
+        # gate, never invent a second library/workflow policy in the renderer.
+        from heart import readiness
+        repository_reasons = readiness.compute(snapshot)["repository_reasons"]
 
-    lib_sec = _repo_section("libraries", "Libraries", repos, True, unobserved=unobserved)
+    lib_sec = _repo_section("libraries", "Libraries", repos, True, unobserved=unobserved,
+                            repository_reasons=repository_reasons, ts=ts)
     if lib_sec:
         sections.append(lib_sec)
-    ws_sec = _repo_section("workspaces", "Workspaces", repos, False, unobserved=unobserved)
+    ws_sec = _repo_section("workspaces", "Workspaces", repos, False, unobserved=unobserved,
+                           repository_reasons=repository_reasons, ts=ts)
     if ws_sec:
         sections.append(ws_sec)
 
@@ -744,8 +815,31 @@ def build_board(
             ]
             action = ({"label": "triage the drift", "payload": "pyauto-heart fix drift"}
                       if st in (FAIL, WARN) else None)
+            entries = []
+            for category, findings in (("dirty", dirty), ("missing", missing),
+                                       ("orphan", orphans), ("canonical_dirty", canonical)):
+                for finding in findings:
+                    path = finding.get("path") or "/".join(str(finding[k]) for k in
+                            ("worktree", "repo") if finding.get(k)) or str(finding.get("task") or "unknown")
+                    reason = {
+                        "dirty": f"{finding.get('dirty_files', '?')} uncommitted file(s) in task worktree",
+                        "missing": "claimed by the task ledger but absent on disk",
+                        "orphan": "directory exists without an active task claim; inspect before cleanup",
+                        "canonical_dirty": f"{finding.get('dirty_files', '?')} uncommitted file(s) in canonical checkout",
+                    }[category]
+                    entries.append({"id": f"drift:{category}:{path}", "subject": path,
+                                    "key": category, "reason": reason, "state": WARN,
+                                    "affects_release": False, "release_severity": None,
+                                    "source": "local worktree inventory", "observed_at": ts,
+                                    "evidence": path,
+                                    "action": {"kind": "prompt", "label": "triage drift",
+                                               "payload": f"/health Inspect worktree drift: {path} — {reason}. "
+                                               "Run pyauto-heart fix drift for context; reconcile active claims, "
+                                               "preserve user edits and obtain approval before cleanup."}})
+            # Local details are uncapped; publication still scrubs private paths.
+            details = [f"{e['subject']}: {e['reason']}" for e in entries]
             sections.append(Section("worktree_drift", "Worktree drift", st, summary,
-                                    details, action=action))
+                                    details, action=action, entries=entries))
 
     # Script timing ----------------------------------------------------------
     if "script_timing" in unobserved:
@@ -1050,6 +1144,15 @@ def build_board(
                                     f"{len(uc['repos'])} repos clean (swept {uc.get('ts', '?')})", []))
 
     sections = _devbox_enrich(sections, devbox, now)
+    for section in sections:
+        if section.key == "release_validation" and section.state in (FAIL, WARN):
+            section.action = {"label": "inspect release validation", "kind": "prompt",
+                              "payload": "/release Review the current release-validation evidence and failing stages; "
+                              "plan any repair or rehearsal through the existing gates. Do not publish a release."}
+        elif section.key == "test_run" and section.state in (FAIL, WARN):
+            section.action = {"label": "inspect workspace validation", "kind": "prompt",
+                              "payload": "/health Inspect the latest workspace validation report, identify failures "
+                              "and timeouts, and route confirmed repairs through /bug and start-dev."}
 
     board = Board(
         verdict=v,
@@ -1061,9 +1164,14 @@ def build_board(
         yellow_reasons=yellow,
         sections=sections,
         stale_reasons=stale_reasons,
-        blockers=_structure_reasons(red, yellow, stale_reasons, repos, stale_keys),
+        blockers=_structure_reasons(red, yellow, stale_reasons, repos, stale_keys,
+                                    repository_reasons=repository_reasons),
         performance=performance,
         stale_plan=build_stale_plan(stale_reasons, stale_keys),
+        penalties=verdict.get("penalties"),
+        vantage="cloud snapshot" if unobserved else "local snapshot",
+        devbox_observed=(f"dev box last observed {format_age(_age_seconds(devbox.get('ts'), now))}"
+                         if isinstance(devbox, dict) and devbox.get("ts") else None),
     )
     board.fix_plan = build_fix_plan(board, snapshot, devbox=devbox)
     return board
@@ -1113,6 +1221,11 @@ def build_fix_plan(board: Board, snapshot: dict | None = None, *,
         lines.extend(f"  {detail}" for detail in section.details)
         if section.action:
             lines.append(f"  existing action: {section.action.get('payload', '')}")
+        for entry in section.entries:
+            lines.append(f"  {entry['subject']}: {entry['reason']} "
+                         f"({'affects release' if entry['affects_release'] else 'advisory'})")
+            if entry.get("action"):
+                lines.append(f"  next action: {entry['action']['payload']}")
         for link in section.links:
             lines.append(f"  evidence: {link.get('url', '')}")
             if link.get("prompt"):
@@ -1581,7 +1694,8 @@ def build_stale_plan(stale_reasons: list, stale_keys: list) -> dict | None:
     return {"count": len(stale_reasons), "command": command, "prompt": prompt}
 
 
-def _reason_item(text: str, severity: str, repos: dict, key: str = "") -> dict:
+def _reason_item(text: str, severity: str, repos: dict, key: str = "",
+                 detail: dict | None = None) -> dict:
     """Structure one flat reason string into an actionable blocker.
 
     Reasons follow the ``"<repo>: <problem>"`` convention (readiness.py), so
@@ -1611,18 +1725,29 @@ def _reason_item(text: str, severity: str, repos: dict, key: str = "") -> dict:
         prompt = f"/bug Heart board: {text}"
         if run_url:
             prompt += f" — failing run: {run_url}"
+        remedy = _repo_remedy(repo or "", (detail or {}).get("key", ""))
+        if remedy:
+            # A checkout observation is not a CI failure even while CI runs.
+            run_url = None
+            if remedy["kind"] == "command":
+                command = remedy["payload"]
+                prompt = f"/health Inspect {repo}'s checkout using `{command}`; preserve user edits and review before changing it."
+            else:
+                prompt = remedy["payload"]
     return {"text": text, "severity": severity, "repo": repo,
             "repo_url": repo_url, "run_url": run_url, "prompt": prompt,
             "command": command}
 
 
 def _structure_reasons(red: list, yellow: list, stales: list, repos: dict,
-                       stale_keys: list | None = None) -> list[dict]:
+                       stale_keys: list | None = None, *,
+                       repository_reasons: Sequence[dict] = ()) -> list[dict]:
     """Every reason as an actionable item. ``stale_keys`` rides index for index
     with ``stales`` (empty when the verdict predates them)."""
     keys = list(stale_keys or [])
     keys += [""] * (len(stales) - len(keys))
-    items = [_reason_item(str(t), sev, repos)
+    typed = {r["text"]: r for r in repository_reasons}
+    items = [_reason_item(str(t), sev, repos, detail=typed.get(str(t)))
              for sev, texts in (("red", red), ("yellow", yellow))
              for t in texts]
     items += [_reason_item(str(t), "stale", repos, k) for t, k in zip(stales, keys)]
@@ -1659,6 +1784,9 @@ def _devbox_enrich(
                 [str(x) for x in (d.get("details") or [])][:8],
                 links=sec.links, action=sec.action,
                 observed_ago=f"observed {ago} on the dev box",
+                entries=[{**e, "source": "published dev-box observation",
+                          "observed_at": devbox.get("ts")} for e in d.get("entries", [])
+                         if isinstance(e, dict)],
             ))
         else:
             out.append(Section(
@@ -1680,7 +1808,7 @@ def render_readiness_block(verdict: dict[str, Any], *, quiet: bool = False) -> l
     reds = verdict.get("red_reasons") or []
     yellows = verdict.get("yellow_reasons") or []
     stales = verdict.get("stale_reasons") or []
-    limit = 1 if quiet else 6
+    limit = 1 if quiet else len(reds) + len(yellows) + len(stales)
     shown = 0
     for r in reds:
         lines.append("  " + c_fail(f"✗ {r}"))
@@ -1776,7 +1904,7 @@ def _md_prompts_block(items: list[dict], plan: dict | None = None) -> list[str]:
         lines += ["**Clear every gap in one go:**", "", "```", plan["prompt"], "```", ""]
         if plan.get("command"):
             lines += ["```", plan["command"], "```", ""]
-    for it in items[:6]:
+    for it in items:
         if it.get("command"):
             lines += ["```", it["command"], "```", ""]
         lines += ["```", it["prompt"], "```", ""]
@@ -1795,11 +1923,12 @@ def _render_md(board: Board) -> str:
         + ("  ⚠️ **stale — run `pyauto-heart tick`**" if board.stale else ""),
         "",
     ]
-    label, items = _shown_reasons(board)
-    if items:
-        lines.append(f"**{label}:** " + "; ".join(_md_reason(i) for i in items[:6]))
-        lines.append("")
-        lines += _md_prompts_block(items, board.stale_plan)
+    for severity, label in (("red", "Blockers"), ("yellow", "Warnings"), ("stale", "Evidence gaps")):
+        items = [b for b in board.blockers if b["severity"] == severity]
+        if items:
+            lines.append(f"**{label}:** " + "; ".join(_md_reason(i) for i in items))
+            lines.append("")
+            lines += _md_prompts_block(items, board.stale_plan)
     lines += ["| | Check | Status |", "|--|--|--|"]
     for sec in board.sections:
         em = _STATE_MD[sec.state]
@@ -1895,11 +2024,11 @@ table.board td.dot::before{content:"";display:inline-block;width:10px;
 table.board tr.ok td.dot::before{background:var(--ok)}
 table.board tr.warn td.dot::before{background:var(--warn)}
 table.board tr.fail td.dot::before{background:var(--bad)}
-table.board tr.info td.dot::before{background:var(--accent)}
+table.board tr.info td.dot::before{background:var(--muted)}
 table.board td.name{font-weight:600;white-space:nowrap}
 table.board tr.unobs td.name,table.board tr.unobs td.sum{color:var(--muted)}
 /* Details use readable prose; numeric fields get structural emphasis. */
-ul.det{margin:.6rem 0 0;padding-left:1.2rem;color:var(--text);
+ul.det{margin:.6rem 0 0;padding-left:1.2rem;color:var(--fg);
  font-size:1rem;white-space:normal;line-height:1.65}
 ul.det li{margin:.5rem 0;overflow-wrap:anywhere}
 .ago{color:var(--muted)}
@@ -1939,22 +2068,26 @@ footer{margin-top:2rem;color:var(--muted);font-size:.82em}
 """
 
 _EXTRA_CSS += """
-h2,h3{color:var(--text);border-color:var(--line)}
+h2,h3{color:var(--fg);border-color:var(--line)}
 h2::after{display:none}
 .lyric{display:inline-block;font-size:1.15rem;margin-bottom:.65rem}
 table.board td,table.board summary{font-size:1rem;line-height:1.55}
 table.board td.name{white-space:normal;overflow-wrap:anywhere}
 summary{cursor:pointer;overflow-wrap:anywhere;white-space:normal;padding:.6rem 0;
- color:var(--text)}
-summary:focus-visible,button:focus-visible{outline:3px solid var(--text);outline-offset:3px}
+ color:var(--fg)}
+summary:focus-visible,button:focus-visible{outline:3px solid var(--fg);outline-offset:3px}
 body button.copy,body table button.copy{min-width:44px;min-height:44px;
  width:auto;height:auto;padding:.55rem .8rem;white-space:normal;font-size:1rem}
 .actions{display:flex;gap:.65rem;flex-wrap:wrap;margin:1rem 0}
 .actions button{font-weight:650}
 .prompt-fallback pre,#copy-fallback{white-space:pre-wrap;overflow-wrap:anywhere;
  max-height:24rem;overflow:auto;font-size:1rem;line-height:1.5;user-select:text}
-.duration{font-weight:750;font-variant-numeric:tabular-nums;color:var(--text)}
+.duration{font-weight:750;font-variant-numeric:tabular-nums;color:var(--fg)}
 .state-label{font-size:1rem;font-weight:600}
+.entry.fail > b{color:var(--bad)}
+.entry.warn > b{color:var(--warn)}
+.entry.ok > b{color:var(--ok)}
+.entry{color:var(--fg)}
 .hint,.ago{font-size:1rem}
 .reason-counts{font-weight:600}
 #copy-status{min-height:1.5em}
@@ -1980,6 +2113,60 @@ async function copyCmd(b){
   if(!copied){fallback.textContent=cmd;fallback.focus();}
 }
 """
+
+
+def _html_entries(entries: list[dict]) -> str:
+    attention, other = [], []
+    for entry in entries:
+        e = lambda value: _html.escape(str(value or ""))
+        impact = ("Release blocker" if entry.get("release_severity") == "red" else
+                  "Release evidence needed" if entry.get("release_severity") == "stale" else
+                  "Release warning" if entry.get("affects_release") else "Advisory")
+        if entry.get("state") == OK:
+            impact = "Passing"
+        action = entry.get("action") or {}
+        button = (_copy_btn(action["payload"], action.get("label", "copy"),
+                            "copy command" if action.get("kind") == "command" else "copy prompt")
+                  if action.get("payload") else "")
+        evidence = entry.get("evidence")
+        link = (f' <a href="{e(evidence)}">evidence ↗</a>'
+                if isinstance(evidence, str) and evidence.startswith(("https://", "http://")) else "")
+        row = (f'<li class="entry {e(entry.get("state"))}"><strong>{e(entry.get("subject"))}</strong>'
+                    f' · <b>{impact}</b><br>{e(entry.get("reason"))}{link} {button}'
+                    f'<details><summary>Observation source</summary>{e(entry.get("source"))}'
+                    f' · {e(entry.get("observed_at") or "time unknown")}</details></li>')
+        (attention if entry.get("state") in (FAIL, WARN) else other).append(row)
+    if not attention:
+        return '<ul class="det">' + ''.join(other) + '</ul>'
+    result = '<ul class="det">' + ''.join(attention[:3]) + '</ul>'
+    for label, rows in (("more findings", attention[3:]), ("passing / informational observations", other)):
+        if rows:
+            result += (f'<details><summary>Show {len(rows)} {label}</summary>'
+                       '<ul class="det">' + ''.join(rows) + '</ul></details>')
+    return result
+
+
+def _html_score(board: Board) -> str:
+    if board.penalties is None:
+        body = "This older verdict did not record a breakdown. Refresh Heart evidence to see it."
+    else:
+        labels = {"lib_ci": "Library CI failure", "lib_branch": "Library checkout on another branch",
+                  "lib_dirty": "Uncommitted library source", "lib_behind": "Library checkout behind origin",
+                  "ws_ci": "Required workspace CI failure", "validation_failed": "Release validation failed",
+                  "validation_absent": "Missing release validation", "install_unknown": "Missing install verification",
+                  "test_unknown": "Missing workspace test report", "test_failing": "Workspace validation not passing",
+                  "open_pr": "Aging open PRs"}
+        rows = []
+        for penalty in board.penalties:
+            key = str(penalty.get("key", "unknown"))
+            label = _html.escape(labels.get(key, key.replace("_", " ")))
+            rows.append(f"<li>{label}: <strong>−{_as_int(penalty.get('points'))}</strong> "
+                        f"({_as_int(penalty.get('count'))} × {_as_int(penalty.get('weight'))}, "
+                        f"cap {_as_int(penalty.get('cap'))})</li>")
+        body = ("Start at 100; subtract these capped penalties, with a floor of 0. "
+                "The verdict is determined by the reasons, not the score.<ul>" +
+                ("".join(rows) or "<li>No penalties recorded.</li>") + "</ul>")
+    return f'<details class="score"><summary>Why this score: {board.score}/100</summary>{body}</details>'
 
 
 def _html_actions(board: Board) -> str:
@@ -2019,7 +2206,11 @@ def _render_html(board: Board) -> str:
                                        "copy command" if payload.startswith("pyauto-heart ")
                                        else "copy prompt")
         details = ""
-        if sec.details:
+        if sec.entries:
+            opened = " open" if sec.state in (FAIL, WARN) else ""
+            details = (f'<details{opened}><summary>{_html.escape(sec.title)} — '
+                       f'observations ({len(sec.entries)})</summary>{_html_entries(sec.entries)}</details>')
+        elif sec.details:
             items = "".join(f"<li>{d}</li>" for d in
                             (sec.detail_html or [_html.escape(d) for d in sec.details]))
             opened = " open" if sec.state in (FAIL, WARN) else ""
@@ -2072,6 +2263,9 @@ def _render_html(board: Board) -> str:
  {board.score}</b><span class="muted">snapshot {_html.escape(board.ts)} ·
  {age} · <a href="dashboard.md">markdown version</a>{github_link}</span></p>
 {stale_html}
+<p class="vantage">{_html.escape(board.vantage)} ·
+{_html.escape(board.devbox_observed or ('no dev-box observation attached' if board.vantage == 'cloud snapshot' else 'observed on this dev box'))}</p>
+{_html_score(board)}
 <p class="reason-counts">{len(board.red_reasons)} release blockers ·
 {len(board.yellow_reasons)} warnings · {len(board.stale_reasons)} evidence gaps</p>
 {_html_actions(board)}
@@ -2109,6 +2303,9 @@ def to_dict(board: Board) -> dict[str, Any]:
         # nothing is stale — a sibling board renders it, never re-derives it.
         "stale_plan": board.stale_plan,
         "fix_plan": board.fix_plan or build_fix_plan(board),
+        "penalties": board.penalties,
+        "vantage": board.vantage,
+        "devbox_observed": board.devbox_observed,
         "pages_url": PAGES_URL,
         "sections": [
             {
@@ -2120,6 +2317,7 @@ def to_dict(board: Board) -> dict[str, Any]:
                 "links": s.links,
                 "action": s.action,
                 "observed_ago": s.observed_ago,
+                "entries": s.entries,
             }
             for s in board.sections
         ],
