@@ -54,7 +54,7 @@ import sys
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Sequence
 
-from heart import _workspace, validate
+from heart import _workspace, validate, timing_display
 from heart.checks.test_run import counts_measured as tr_counts_measured
 from heart.heart_color import (
     c_bold, c_dim, c_fail, c_info, c_meta, c_ok, c_warn,
@@ -260,6 +260,7 @@ class Section:
     # HTML-only projection built from measurement fields, never parsed prose.
     detail_html: list[str] = field(default_factory=list)
     entries: list[dict] = field(default_factory=list)
+    timing_html: str = ""
 
 
 @dataclass
@@ -365,12 +366,6 @@ def _dur(seconds: Any) -> str:
     return f"{int(round(seconds / 60))}m"
 
 
-# How many ingested unit rows a section shows before it is a wall of text. Six
-# is two python legs across three libraries — enough to see the shape, short
-# enough to stay a detail block under a one-line summary.
-UNIT_DETAIL_CAP = 6
-
-
 def _setup_seconds(cache):
     """A leg's measured setup seconds out of its cache block, or ``None``.
 
@@ -409,77 +404,6 @@ def _cache_bracket(cache: Any, jax_label: str = "jax") -> str:
         if value in ("hit", "miss"):
             parts.append(f"{label} {value}")
     return f" [{', '.join(parts)}]" if parts else ""
-
-
-def _unit_suite_details(slice_: Any, *, html: bool = False) -> list[str]:
-    """One line per ingested suite leg, slowest wall-clock first.
-
-    Fed by ``heart/checks/unit_timings.py``'s rollup (#206). The legacy summary
-    above counts regressions; this says what was measured — how long each
-    library's suite takes on CI and what the slowest test in it is. Absent slice
-    => no lines at all, so a snapshot from before the ingest renders exactly as
-    it did.
-    """
-    if not isinstance(slice_, dict):
-        return []
-    legs = [leg for leg in (slice_.get("repos") or []) if isinstance(leg, dict)]
-    legs.sort(key=lambda leg: (-(_as_float(leg.get("wall_s")) or 0.0),
-                               str(leg.get("repo") or ""),
-                               str(leg.get("python") or "")))
-    lines: list[str] = []
-    for leg in legs[:UNIT_DETAIL_CAP]:
-        repo = str(leg.get("repo") or "?")
-        python = str(leg.get("python") or "?")
-        tests = _as_int(leg.get("tests"))
-        # Same bracket as the scripts row, in the shorter wording a unit line
-        # can afford: `RepoA py3.12 [jax hit, numba miss]: 1500 tests 6m52s`.
-        bracket = _cache_bracket(leg.get("cache"))
-        duration = _dur(leg.get('wall_s'))
-        if html:
-            repo, python, bracket = map(_html.escape, (repo, python, bracket))
-            duration = f'<strong class="duration">{duration}</strong>'
-        line = (f"{repo} py{python}{bracket}: "
-                f"{tests} tests {duration}")
-        slowest = [row for row in (leg.get("slowest") or []) if isinstance(row, dict)]
-        if slowest:
-            top = slowest[0]
-            seconds = _as_float(top.get("seconds"))
-            nodeid = str(top.get("nodeid") or "?").split("::")[-1]
-            if seconds is not None:
-                value = f"{seconds:.1f}s"
-                if html:
-                    nodeid = _html.escape(nodeid)
-                    value = f'<strong class="duration">{value}</strong>'
-                line += f"  slowest {nodeid} {value}"
-        lines.append(line)
-    return lines
-
-
-def _unit_import_details(slice_: Any, *, html: bool = False) -> list[str]:
-    """One line per ingested import measurement (#206).
-
-    A package whose import failed carries ``seconds: null`` — no number, so no
-    line: a fabricated 0.00s would be worse than the silence, and the row is
-    already counted as unavailable in the summary above.
-    """
-    if not isinstance(slice_, dict):
-        return []
-    lines: list[str] = []
-    for row in (slice_.get("imports") or []):
-        if not isinstance(row, dict):
-            continue
-        seconds = _as_float(row.get("seconds"))
-        if seconds is None:
-            continue
-        subject = f"{row.get('package') or '?'} py{row.get('python') or '?'}"
-        value = f"{seconds:.2f}s"
-        if html:
-            subject = _html.escape(subject)
-            value = f'<strong class="duration">{value}</strong>'
-        lines.append(f"{subject}: {value}")
-        if len(lines) >= UNIT_DETAIL_CAP:
-            break
-    return lines
 
 
 def _gate_spark(history: Sequence[Any], key: str) -> str:
@@ -880,28 +804,25 @@ def build_board(
             r = _as_int(imp.get("red_count"))
             y = _as_int(imp.get("yellow_count"))
             g = _as_int(imp.get("green_count"))
+            building = _as_int(imp.get("new_packages_no_baseline"))
+            unavailable = len(imp.get("packages_unavailable") or [])
             if r:
                 st, summary = FAIL, f"{r} import regressions (>3× baseline), {y} slow (>1.5×)"
             elif y:
                 st, summary = WARN, f"{y} imports >1.5× baseline, {g} within"
             elif not _as_int(imp.get("packages_measured")):
                 st, summary = WARN, "no libraries importable (set HYGIENE_PYTHON)"
+            elif unavailable or building or not g:
+                st, summary = (WARN if unavailable else INFO), "import comparisons incomplete"
             else:
                 st, summary = OK, f"{g} imports within baseline"
-            details = [
-                f"✗ {e['package']}  "
-                f"{e['latest_seconds']:.2f}s vs {e['baseline_seconds']:.2f}s ({e['ratio']}×)"
-                for e in (imp.get("red") or [])[:5]
-            ]
-            # What was actually measured, when the CI ingest observed it: the
-            # summary above counts regressions, and a row that says only "3
-            # imports within baseline" never says how long an import takes.
-            # Purely additive — the section's state logic is untouched.
-            detail_html = [_html.escape(d) for d in details]
-            detail_html += _unit_import_details(snapshot.get("unit_timings"), html=True)
-            details += _unit_import_details(snapshot.get("unit_timings"))
+            if building:
+                summary += f" · {building} baseline building"
+            if unavailable:
+                summary += f" · {unavailable} unavailable"
+            details, timing_html = timing_display.imports(snapshot.get("unit_timings"), imp)
             sections.append(Section("import_time", "Import timing", st, summary, details,
-                                    detail_html=detail_html))
+                                    timing_html=timing_html))
 
     # Unit-test timing (advisory; off-tick) -----------------------------------
     if "unit_test_timing" in unobserved:
@@ -925,14 +846,14 @@ def build_board(
                 f"{e['latest_seconds']:.2f}s vs {e['baseline_seconds']:.2f}s ({e['ratio']}×)"
                 for e in (ut.get("red") or [])[:5]
             ]
-            # The suites behind the summary, slowest wall-clock first: which
-            # library's suite costs what, and the single slowest test in it.
-            # Purely additive — the section's state logic is untouched.
-            detail_html = [_html.escape(d) for d in details]
-            detail_html += _unit_suite_details(snapshot.get("unit_timings"), html=True)
-            details += _unit_suite_details(snapshot.get("unit_timings"))
+            suite_details, timing_html = timing_display.suites(snapshot.get("unit_timings"))
+            if details and timing_html:
+                timing_html = ('<p>Measured regressions</p><ul>' +
+                               ''.join(f'<li>{_html.escape(d)}</li>' for d in details) +
+                               '</ul>' + timing_html)
+            details += suite_details
             sections.append(Section("unit_test_timing", "Unit-test timing", st, summary, details,
-                                    detail_html=detail_html))
+                                    timing_html=timing_html))
 
     # Profiling pinned-value drift -------------------------------------------
     if "profiling_drift" in unobserved:
@@ -1291,6 +1212,8 @@ def _ci_timing_section(ct: dict, gates: list[dict], events: list[dict],
         st = FAIL
     elif warned or errors:
         st = WARN
+    elif not timed:
+        st = INFO
     else:
         st = OK
 
@@ -1306,19 +1229,13 @@ def _ci_timing_section(ct: dict, gates: list[dict], events: list[dict],
     if errors:
         bits.append(f"{len(errors)} unavailable")
 
-    details = []
-    for g in sorted(timed, key=lambda g: g.get("median_s") or 0, reverse=True)[:5]:
-        # Coverage beside time, always: a speed row without the run count
-        # rewards a gate that got faster by running less.
-        line = (f"{g.get('repo')} {g.get('workflow')}  p50 {_dur(g.get('median_s'))}  "
-                f"max {_dur(g.get('max_s'))}  ({_as_int(g.get('runs_counted'))} runs)")
-        spark = _gate_spark(history, f"{g.get('repo')}/{g.get('workflow')}")
-        details.append(f"{line}  {spark}" if spark else line)
+    details, timing_html = timing_display.gates(ct)
     # How much durable history stands behind those sparklines. Absent census
     # (an older snapshot) adds no line at all.
     gates_line = _record_lines(record)[0]
     if gates_line:
         details.append(gates_line)
+        timing_html += f"<p>{_html.escape(gates_line)}</p>"
 
     links = [
         {"label": f"{e.get('repo')} {e.get('kind')}", "url": str(e.get("run_url")),
@@ -1335,7 +1252,7 @@ def _ci_timing_section(ct: dict, gates: list[dict], events: list[dict],
         action = {"label": "copy the slowdown prompt", "payload": str(warned[0]["prompt"])}
 
     return Section("ci_timing", "CI wall-clock", st, " · ".join(bits), details,
-                   links=links, action=action)
+                   links=links, action=action, timing_html=timing_html)
 
 
 def _smoke_timings_section(st: dict, repos: list[dict], rows: list[dict],
@@ -2076,8 +1993,9 @@ table.board td.name{white-space:normal;overflow-wrap:anywhere}
 summary{cursor:pointer;overflow-wrap:anywhere;white-space:normal;padding:.6rem 0;
  color:var(--fg)}
 summary:focus-visible,button:focus-visible{outline:3px solid var(--fg);outline-offset:3px}
-body button.copy,body table button.copy{min-width:44px;min-height:44px;
- width:auto;height:auto;padding:.55rem .8rem;white-space:normal;font-size:1rem}
+body button.copy,body table.board button.copy.text{min-width:44px;min-height:44px;
+ width:auto;height:auto;padding:.55rem .8rem;white-space:normal;font-size:1rem;
+ overflow:visible;text-overflow:clip}
 .actions{display:flex;gap:.65rem;flex-wrap:wrap;margin:1rem 0}
 .actions button{font-weight:650}
 .prompt-fallback pre,#copy-fallback{white-space:pre-wrap;overflow-wrap:anywhere;
@@ -2091,6 +2009,25 @@ body button.copy,body table button.copy{min-width:44px;min-height:44px;
 .hint,.ago{font-size:1rem}
 .reason-counts{font-weight:600}
 #copy-status{min-height:1.5em}
+"""
+
+_EXTRA_CSS += """
+.timings{margin-top:.8rem;min-width:0}
+.timing-card{border:1px solid var(--line);border-radius:10px;padding:1rem;margin:.75rem 0;
+ overflow-wrap:anywhere;min-width:0;color:var(--fg)}
+.timing-card h4{font:inherit;font-weight:700;color:var(--fg);margin:0 0 .65rem}
+.timing-card p{margin:.6rem 0}
+.timing-metrics{display:flex;gap:.6rem 1.5rem;flex-wrap:wrap}
+.timing-metrics span{display:flex;flex-direction:column}
+.timings .duration{color:#075a9c;font-size:1.25rem}
+@media(prefers-color-scheme:dark){.timings .duration{color:#7cc9ff}}
+.bottlenecks{padding-left:1.3rem}.bottlenecks li{margin:.8rem 0}
+.test-name{overflow-wrap:anywhere}
+.timing-chart{margin:1rem 0 0;max-width:30rem}.timing-chart svg{display:block;width:100%;height:auto;color:#075a9c}
+.timing-chart polyline{fill:none;stroke:currentColor;stroke-width:2}
+.timing-chart circle{fill:currentColor}
+@media(prefers-color-scheme:dark){.timing-chart svg{color:#7cc9ff}}
+.chart-dates{display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap}
 """
 
 # Heart owns truthful clipboard feedback; the family listener calls this
@@ -2206,7 +2143,9 @@ def _render_html(board: Board) -> str:
                                        "copy command" if payload.startswith("pyauto-heart ")
                                        else "copy prompt")
         details = ""
-        if sec.entries:
+        if sec.timing_html:
+            details = sec.timing_html
+        elif sec.entries:
             opened = " open" if sec.state in (FAIL, WARN) else ""
             details = (f'<details{opened}><summary>{_html.escape(sec.title)} — '
                        f'observations ({len(sec.entries)})</summary>{_html_entries(sec.entries)}</details>')

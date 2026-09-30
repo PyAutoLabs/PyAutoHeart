@@ -590,9 +590,9 @@ def test_the_ingested_summaries_drive_the_board_ok_warn_and_fail(tmp_path):
     unit, imports = ut.legacy_summaries(fail_roll, THRESHOLDS)
     sections = _board(unit_summary=unit, import_summary=imports)
     assert sections["unit_test_timing"].state == dashboard.FAIL
-    # The import summary of the same rollup measured its package and found
-    # nothing red: the two sections are fed from one rollup and judge apart.
-    assert sections["import_time"].state == dashboard.OK
+    # No import baseline exists yet: absence of a regression is not a pass.
+    assert sections["import_time"].state == dashboard.INFO
+    assert "baseline building" in sections["import_time"].summary
 
 
 # --- thresholds --------------------------------------------------------------
