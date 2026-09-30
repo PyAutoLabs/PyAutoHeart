@@ -1989,7 +1989,10 @@ h2,h3{color:var(--fg);border-color:var(--line)}
 h2::after{display:none}
 .lyric{display:inline-block;font-size:1.15rem;margin-bottom:.65rem}
 table.board td,table.board summary{font-size:1rem;line-height:1.55}
-table.board td.name{white-space:normal;overflow-wrap:anywhere}
+/* The table algorithm otherwise gives this column its one-character minimum
+   width (body defaults to overflow-wrap:anywhere), splitting Libraries and
+   Worktree drift even on tablet screens. The phone rows already stack. */
+table.board td.name{white-space:nowrap;overflow-wrap:normal}
 summary{cursor:pointer;overflow-wrap:anywhere;white-space:normal;padding:.6rem 0;
  color:var(--fg)}
 summary:focus-visible,button:focus-visible{outline:3px solid var(--fg);outline-offset:3px}
