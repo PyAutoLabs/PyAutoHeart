@@ -371,6 +371,7 @@ Bundle context for a specific failing topic and emit a Claude Code
 invocation you can paste/run.
 
 Topics:
+  all                    — one systematic prompt for all observed Heart findings
   ci <repo>              — the latest red CI run on that repo
   dirty <repo>           — clean up a dirty working tree (real vs generated)
   drift                  — current worktree drift entries
@@ -386,7 +387,7 @@ cmd_fix() {
   fi
   local topic="$1"; shift
   case "$topic" in
-    ci|dirty|drift|timing|stale)
+    all|ci|dirty|drift|timing|stale)
       env PYTHONPATH="$HEART_HOME" python3 -m heart.fix "$topic" "$@"
       ;;
     *)

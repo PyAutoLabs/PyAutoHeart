@@ -2,6 +2,7 @@
 Code invocation the user can paste/run.
 
 Topics:
+  all          — one systematic prompt over every observed Heart finding.
   ci <repo>     — the latest red CI run on that repo: dump the failing
                   job log tail + the most recent commit on main.
   drift         — current worktree drift entries: lists orphans, missing,
@@ -248,12 +249,28 @@ def fix_stale() -> int:
     return 0
 
 
+def fix_all() -> int:
+    """Print the dashboard's context-only plan from the same cached inputs."""
+    from heart import dashboard, readiness
+
+    snapshot = state.load()
+    if snapshot is None:
+        print("no cache yet — run `pyauto-heart tick` first", file=sys.stderr)
+        return 2
+    board = dashboard.build_board(snapshot, readiness.load_verdict(),
+                                  snapshot.get("validation_report") or {})
+    print(board.fix_plan["prompt"])
+    return 0
+
+
 def main(argv: list[str]) -> int:
     if len(argv) < 2:
         print("usage: pyauto-heart fix <topic> [...]", file=sys.stderr)
         return 2
     topic = argv[1]
     args = argv[2:]
+    if topic == "all":
+        return fix_all()
     if topic == "ci":
         if not args:
             print("usage: pyauto-heart fix ci <repo>", file=sys.stderr)
