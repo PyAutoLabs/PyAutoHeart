@@ -735,9 +735,9 @@ def test_ci_timing_section_states_and_summary():
     assert "2 gates" in sec.summary
     assert "slowest RepoA Gate One 15m" in sec.summary
     assert "1 slowed" in sec.summary and "1 hang event" in sec.summary
-    # coverage beside time, always — and the gate's own history as a sparkline
-    assert sec.details[0].startswith("RepoA Gate One  p50 15m  max 20m  (17 runs)")
-    assert sec.details[0].rstrip().endswith("▁▃█")
+    # Coverage beside time; accessible history is separate from the summary.
+    assert sec.details[0].startswith("RepoA · Gate One: median 900.00s · max 1,200.00s · 17 completed runs")
+    assert 'role="img"' in sec.timing_html
 
 
 def test_ci_timing_without_events_is_warn_when_a_gate_slowed():
@@ -1443,15 +1443,14 @@ def test_the_ingested_sections_render_their_detail_lines_only_with_the_slice():
                       unit_timings=_unit_timings_slice()),
         make_verdict(), now=FRESH_NOW)
     unit = _section(board, "unit_test_timing")
-    # Worst wall-clock first, with the slowest test in the suite beside it.
-    assert unit.details == [
-        "RepoA py3.12: 1500 tests 7m  slowest test_x 12.5s",
-        "RepoB py3.12: 200 tests 30s",
-    ]
+    # Suite wall-clock is separate from per-test comparisons and never summed.
+    assert unit.details[0].startswith("RepoA · Python 3.12: wall-clock 412.00s · 1500 tests")
+    assert "tests/foo/test_bar.py::test_x: 12.50s" in unit.details[1]
+    assert "measured regression" in unit.details[1]
+    assert unit.details[2].startswith("RepoB · Python 3.12: wall-clock 30.00s · 200 tests")
     imports = _section(board, "import_time")
-    # A null-seconds import has no number, so it gets no line — never a 0.00s.
-    assert imports.details == ["pkg_a py3.12: 3.60s"]
-    # ...and neither section's state came from the new lines.
+    assert "pkg_a · Python 3.12: 3.60s · Baseline 1.00s · change +260%" in imports.details[0]
+    assert "pkg_b · Python 3.12: unavailable" in imports.details[1]
     assert unit.state == dashboard.OK and imports.state == dashboard.OK
 
 
@@ -1686,23 +1685,16 @@ def _unit_line(cache):
     return _section(board, "unit_test_timing").details[0]
 
 
-def test_a_known_unit_cache_state_is_bracketed_on_the_suite_line():
-    """Same format as the scripts row, in the shorter wording a unit line can
-    afford — and the numbers after it are untouched."""
-    assert _unit_line({"jax": "hit", "numba": "miss", "epoch": "1"}) == (
-        "RepoA py3.12 [jax hit, numba miss]: 1500 tests 7m  slowest test_x 12.5s")
-    assert _unit_line({"jax": "miss", "numba": "miss", "epoch": "1"}) == (
-        "RepoA py3.12 [jax miss, numba miss]: 1500 tests 7m  slowest test_x 12.5s")
-    # One known half is still worth saying; the unknown half is simply absent.
-    assert _unit_line({"jax": "hit", "numba": "unknown"}) == (
-        "RepoA py3.12 [jax hit]: 1500 tests 7m  slowest test_x 12.5s")
+def test_a_known_unit_cache_state_is_beside_the_suite_time():
+    assert "jax cache hit · numba cache miss" in _unit_line({"jax": "hit", "numba": "miss"})
+    assert "jax cache miss · numba cache miss" in _unit_line({"jax": "miss", "numba": "miss"})
+    assert _unit_line({"jax": "hit", "numba": "unknown"}).endswith("jax cache hit")
 
 
 def test_an_unknown_or_absent_unit_cache_state_leaves_the_line_unchanged():
-    """A leg from before the sidecar existed renders exactly as it always did —
-    no bracket, and certainly no claim that it ran cold."""
-    unchanged = "RepoA py3.12: 1500 tests 7m  slowest test_x 12.5s"
-    for cache in (None, {}, {"jax": "unknown", "numba": "unknown"},
+    unchanged = _unit_line(None)
+    assert "cache" not in unchanged
+    for cache in ({}, {"jax": "unknown", "numba": "unknown"},
                   {"jax": "warm", "numba": None}, "nonsense"):
         assert _unit_line(cache) == unchanged
 

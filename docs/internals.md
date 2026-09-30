@@ -49,6 +49,16 @@ including its evidence and prompt. Entries containing private local paths stay
 local. Fresh observations retain their timestamp; expired observations remain
 unobserved on the cloud board.
 
+Timing cards are a pure presentation layer in `heart/timing_display.py`.
+They expose seconds, comparison coverage and source separately; missing imports
+and baseline-building observations never imply a passing comparison. Suite
+legs stay separate (parallel wall-clocks are never summed); the three slowest
+measured tests appear first, with remaining tests and legs under disclosures.
+CI charts use dated daily medians with gaps for missing observations and an
+equivalent text list. `performance` schema 1, its values and `gates[].spark`
+remain unchanged for Brain and hygiene consumers. Plain section details retain
+all measured rows; disclosures are HTML-only.
+
 ## Repo structure
 
 ```

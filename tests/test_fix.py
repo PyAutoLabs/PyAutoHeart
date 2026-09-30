@@ -94,9 +94,9 @@ def test_html_all_tiers_complete_disclosure_and_safe_fallback():
 
 def test_numeric_emphasis_is_built_from_fields_and_escapes_subjects():
     row = {"imports": [{"package": "<pkg>", "python": "3.12", "seconds": 3.5}]}
-    html = dashboard._unit_import_details(row, html=True)[0]
+    plain, html = dashboard.timing_display.imports(row, {})
     assert '&lt;pkg&gt;' in html and '<strong class="duration">3.50s</strong>' in html
-    assert dashboard._unit_import_details(row)[0] == "<pkg> py3.12: 3.50s"
+    assert plain[0].startswith("<pkg> · Python 3.12: 3.50s")
 
 
 def test_bash_dispatch_exposes_all_topic(tmp_path):
