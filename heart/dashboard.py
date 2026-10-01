@@ -1121,11 +1121,10 @@ def build_board(
 
 def build_fix_plan(board: Board, snapshot: dict | None = None, *,
                    devbox: dict | None = None) -> dict:
-    """Complete, read-only repair context, independent of display row limits.
+    """Bounded repair prompt; complete source observations remain in evidence.
 
-    V0 deliberately forwards existing remedies rather than inventing new ones.
-    Raw drift/CI/timing observations fill the gaps left by capped Section details.
-    They are evidence to diagnose, not instructions to execute blindly.
+    Keep below the family's 50,000-character clipboard ceiling without making
+    non-HTML Heart consumers depend on a Brain checkout.
     """
     lines = [
         "Use the health skill. Work through this Heart dashboard systematically in this chat.",
@@ -1172,24 +1171,55 @@ def build_fix_plan(board: Board, snapshot: dict | None = None, *,
             lines.append(f"  evidence: {link.get('url', '')}")
             if link.get("prompt"):
                 lines.append(f"  existing prompt: {link['prompt']}")
-    # Include uncapped source observations behind capped lists. Exclude unrelated
-    # history/log bodies, while retaining every finding and its existing remedy.
+    # Keep the raw observations in the machine surface, not the clipboard.
+    # Small slices remain useful inline; large slices get explicit references.
     source = snapshot or {}
+    evidence = {}
     for key in ("repos", "worktree_drift", "script_timing", "import_time",
                 "unit_test_timing", "unit_timings", "ci_timing", "smoke_timings",
                 "test_run", "validation_report", "verify_install", "url_check",
                 "version_skew", "profiling_drift", "manifest_drift",
                 "required_workflow_drift", "no_run_census"):
         if source.get(key):
-            lines += ["", f"Source observations: {key}",
-                      json.dumps(source[key], ensure_ascii=False, sort_keys=True)]
+            evidence[key] = source[key]
     if devbox:
-        lines += ["", "Published dev-box observations (check timestamp before acting):",
-                  json.dumps(devbox, ensure_ascii=False, sort_keys=True)]
+        evidence["devbox"] = devbox
     if board.performance:
-        lines += ["", "Performance context and existing remedies:",
-                  json.dumps(board.performance, ensure_ascii=False, sort_keys=True)]
-    return {"prompt": "\n".join(lines)}
+        evidence["performance"] = board.performance
+    for key, value in evidence.items():
+        detail = json.dumps(value, ensure_ascii=False, sort_keys=True)
+        if len(detail) > 8_000:
+            count = len(value) if isinstance(value, (dict, list)) else 1
+            detail = (f"{count} top-level records; full observations in "
+                      f"fix_plan.evidence.{key} (omitted from this prompt).")
+        lines += ["", f"Source observations: {key} (check timestamp before acting)", detail]
+
+    evidence_note = (
+        "\n\nFull evidence: read the published Heart board.json at "
+        f"{PAGES_URL}board.json, including blockers, sections, performance and "
+        "fix_plan.evidence. For local evidence use pyauto-heart dashboard --json "
+        "and the state.json/release_ready.json files in HEART_STATE_DIR "
+        "(default ~/.pyauto-heart). Reconcile timestamps before acting. "
+        "This prompt is a summary, not the complete checklist; read the full "
+        "evidence before deciding scope. If unavailable, report the missing "
+        "evidence rather than assuming the omitted findings are resolved."
+    )
+    # Whole lines only: never cut a command, safety instruction or Unicode
+    # character mid-way. The fixed instructions always fit; oversized dynamic
+    # fields and exhausted summaries are explicitly accounted for below.
+    kept = []
+    remaining = 45_000 - len(evidence_note) - 150
+    omitted = 0
+    for line in lines:
+        if len(line) + 1 <= remaining:
+            kept.append(line)
+            remaining -= len(line) + 1
+        else:
+            omitted += 1
+    if omitted:
+        kept.append(f"\n{omitted} summary lines omitted to fit the prompt budget; "
+                    "read the full evidence below.")
+    return {"prompt": "\n".join(kept) + evidence_note, "evidence": evidence}
 
 
 def _record_lines(record: Any) -> tuple[str, str]:
@@ -2064,6 +2094,7 @@ _EXTRA_CSS += """
 _COPY_JS = """
 async function copyCmd(b){
   const cmd=b.dataset.cmd, status=document.getElementById('copy-status');
+  if(!guardPrompt(cmd,b))return;
   let copied=false;
   try{await navigator.clipboard.writeText(cmd);copied=true;}
   catch(e){

@@ -44,6 +44,15 @@ CI failures retain their existing bug route. No new blocker severity is added.
 `fix_plan`, `penalties`, `vantage`, `devbox_observed` and section entries are
 additive; existing `stale_plan` and `performance` consumers need no migration.
 
+`fix_plan.prompt` is a bounded summary (under 45,000 characters), suitable for
+copying into an assistant. It preserves workflow constraints and references the
+full `board.json` evidence. `fix_plan.evidence` holds the uncapped source
+observations that used to be embedded in that prompt; consumers needing the
+complete checklist must read it together with blockers and sections. Large
+slices and omitted summary lines are explicitly identified. The shared browser
+clipboard ceiling is 50,000 characters; larger requests are offered as complete
+text downloads for attachment, never silently truncated.
+
 Published dev-box entries use the existing path scrub on the complete entry,
 including its evidence and prompt. Entries containing private local paths stay
 local. Fresh observations retain their timestamp; expired observations remain
