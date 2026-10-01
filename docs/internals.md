@@ -112,3 +112,20 @@ NUMBA_CACHE_DIR=/tmp/numba_cache MPLCONFIGDIR=/tmp/matplotlib \
 
 The never-rewrite-history rules live in [`AGENTS.md`](../AGENTS.md) and apply
 here as everywhere.
+
+## Cloud validation evidence
+
+The daily board runs the existing smoke-result reader and the read-only
+`heart.checks.cloud_validation` collector before aggregation. The latter reads
+only the newest main integration run and searches at most 20 main rehearsal
+runs in the configured `release_evidence.rehearsal_repo`. It requires exact
+version, run ID, attempt, producer SHA and chronology agreement. Missing or
+expired rehearsal artifacts leave validation incomplete. Failed producers
+remain adverse even when their report claims success; no older integration
+pass is substituted. No build is dispatched.
+
+The canonical validator receives the artifacts and their original producer
+time (the earlier stage start), so a new cloud runner cannot rejuvenate an
+old pass. Installation checks retain their own timestamps and source/index.
+Readiness still checks release fidelity, current library SHAs and evidence age.
+This bounded search is daily-only and does not add work to the fast local tick.

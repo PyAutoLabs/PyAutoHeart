@@ -286,3 +286,7 @@ thresholds:
   worktree_drift:
     orphan_red: true      # orphan WT with uncommitted work → red
     orphan_yellow: true   # orphan WT (clean) → yellow
+
+# Read-only cloud evidence producer (identity from the body map).
+release_evidence:
+  rehearsal_repo: PyAutoLabs/PyAutoHands
