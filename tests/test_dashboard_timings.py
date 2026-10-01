@@ -129,3 +129,25 @@ def test_zero_run_ci_is_information_and_not_a_passing_gate():
     section = _section(board, "ci_timing")
     assert section.state == dashboard.INFO
     assert "Median <strong class=\"duration\">unavailable" in section.timing_html
+
+
+def test_legacy_timing_prompt_conversion_preserves_evidence_and_commands():
+    from heart.dashboard import _portable_cached_prompts
+    snapshot = {"ci_timing": {"gates": [{"prompt": "/bug CI slow\nKeep edits.",
+                                        "command": "/bug", "median_s": 91}]}}
+    converted = _portable_cached_prompts(snapshot)
+    row = converted["ci_timing"]["gates"][0]
+    assert row["prompt"] == "Use the bug skill. CI slow\nKeep edits."
+    assert row["command"] == "/bug"
+    assert row["median_s"] == 91
+    assert snapshot["ci_timing"]["gates"][0]["prompt"].startswith("/bug")
+
+
+def test_legacy_devbox_actions_only_convert_prompt_payloads():
+    from heart.dashboard import _portable_cached_prompts
+    entries = [{"action": {"kind": "prompt", "payload": "/health Inspect CI"}},
+               {"action": {"kind": "command", "payload": "/health Inspect CI"}}]
+    converted = _portable_cached_prompts({"entries": entries})["entries"]
+    assert converted[0]["action"]["payload"] == "Use the health skill. Inspect CI"
+    assert converted[1] == entries[1]
+    assert entries[0]["action"]["payload"] == "/health Inspect CI"

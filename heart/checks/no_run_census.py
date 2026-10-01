@@ -105,15 +105,15 @@ def _truncate(text: str, limit: int = REASON_LIMIT) -> str:
 
 def row_prompt(repo: str, entry: str, marker: str, date: str, reason: str,
                measured: bool) -> str | None:
-    """The ready-to-paste /bug prompt for one row (None for permanent skips)."""
+    """The ready-to-paste Use the bug skill. prompt for one row (None for permanent skips)."""
     when = date or "unknown date"
     if marker == SLOW and not measured:
-        return (f"/bug no_run: {repo} {entry} SLOW since {when} with no measurement — "
+        return (f"Use the bug skill. no_run: {repo} {entry} SLOW since {when} with no measurement — "
                 f"retime against the real cap, then fix it or delete the marker")
     if marker == SLOW:
-        return f"/bug no_run: {repo} {entry} SLOW since {when} — {_truncate(reason)}"
+        return f"Use the bug skill. no_run: {repo} {entry} SLOW since {when} — {_truncate(reason)}"
     if marker == NEEDS_FIX:
-        return (f"/bug no_run: {repo} {entry} NEEDS_FIX since {when} — "
+        return (f"Use the bug skill. no_run: {repo} {entry} NEEDS_FIX since {when} — "
                 f"{_truncate(reason)}. Reproduce before fixing: stale markers have "
                 f"evaporated before")
     return None

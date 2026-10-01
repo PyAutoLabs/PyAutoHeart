@@ -93,28 +93,28 @@ def test_measured_flag_lands_on_the_row():
 
 def test_unmeasured_slow_prompt_is_exact():
     assert _rows()["imaging/slow_capped.py"]["prompt"] == (
-        "/bug no_run: RepoA imaging/slow_capped.py SLOW since 2026-07-14 with no "
+        "Use the bug skill. no_run: RepoA imaging/slow_capped.py SLOW since 2026-07-14 with no "
         "measurement — retime against the real cap, then fix it or delete the marker"
     )
 
 
 def test_undated_unmeasured_slow_says_unknown_date():
     assert _rows()["imaging/slow_undated.py"]["prompt"] == (
-        "/bug no_run: RepoA imaging/slow_undated.py SLOW since unknown date with no "
+        "Use the bug skill. no_run: RepoA imaging/slow_undated.py SLOW since unknown date with no "
         "measurement — retime against the real cap, then fix it or delete the marker"
     )
 
 
 def test_measured_slow_prompt_is_exact():
     assert _rows()["imaging/slow_measured.py"]["prompt"] == (
-        "/bug no_run: RepoA imaging/slow_measured.py SLOW since 2026-07-14 — "
+        "Use the bug skill. no_run: RepoA imaging/slow_measured.py SLOW since 2026-07-14 — "
         "takes 233.7s, over the 300s cap"
     )
 
 
 def test_needs_fix_prompt_is_exact():
     assert _rows()["imaging/broken.py"]["prompt"] == (
-        "/bug no_run: RepoA imaging/broken.py NEEDS_FIX since 2026-07-14 — "
+        "Use the bug skill. no_run: RepoA imaging/broken.py NEEDS_FIX since 2026-07-14 — "
         "raises on the new API. Reproduce before fixing: stale markers have "
         "evaporated before"
     )

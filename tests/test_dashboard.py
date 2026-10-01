@@ -508,7 +508,7 @@ def test_blockers_are_structured_with_links_and_prompts():
     assert b["repo"] == "autolens_workspace"
     assert b["repo_url"] == WS_REPO_URL
     assert b["run_url"] == RUN_URL
-    assert b["prompt"].startswith("/bug Heart board: autolens_workspace")
+    assert b["prompt"].startswith("Use the bug skill. Heart board: autolens_workspace")
     assert b["run_url"] in b["prompt"]
 
 
@@ -517,7 +517,7 @@ def test_html_carries_copy_buttons_and_run_links():
                      red_reasons=["autolens_workspace: Smoke Tests failure on main"])
     out = dashboard.render(_failing_snapshot(), v, fmt="html", now=FRESH_NOW)
     assert "data-cmd=" in out  # the shared copy handler's payload hook
-    assert "/bug Heart board: autolens_workspace" in out
+    assert "Use the bug skill. Heart board: autolens_workspace" in out
     assert RUN_URL in out
     # the failing repo group row links the run too
     assert "autolens_workspace run" in out
@@ -529,7 +529,7 @@ def test_md_links_blockers_and_collapses_prompts():
     out = dashboard.render(_failing_snapshot(), v, fmt="md", now=FRESH_NOW)
     assert f"[autolens_workspace]({WS_REPO_URL})" in out
     assert f"([run]({RUN_URL}))" in out
-    assert "<details>" in out and "/bug Heart board:" in out
+    assert "<details>" in out and "Use the bug skill. Heart board:" in out
 
 
 def test_md_brief_is_a_strip_not_a_table():
@@ -563,11 +563,11 @@ def test_failing_repo_row_link_carries_its_own_prompt():
     board = dashboard.build_board(_failing_snapshot(), v, now=FRESH_NOW)
     ws = {s.key: s for s in board.sections}["workspaces"]
     (link,) = ws.links
-    assert link["prompt"].startswith("/bug Heart board: autolens_workspace Smoke Tests")
+    assert link["prompt"].startswith("Use the bug skill. Heart board: autolens_workspace Smoke Tests")
     assert RUN_URL in link["prompt"]
     html = dashboard.render(_failing_snapshot(), v, fmt="html", now=FRESH_NOW)
     # the row-level 📋 renders beside the run link, not only in the blockers
-    assert html.count("/bug Heart board: autolens_workspace") >= 2
+    assert html.count("Use the bug skill. Heart board: autolens_workspace") >= 2
 
 
 def test_unobserved_rows_carry_watch_line_and_observe_action():
@@ -627,7 +627,7 @@ def test_json_v2_carries_blockers_and_actions():
                            unobserved=dashboard.LOCAL_ONLY_FAMILIES, now=FRESH_NOW)
     d = json.loads(out)
     assert d["schema_version"] == dashboard.SCHEMA_VERSION
-    assert d["blockers"][0]["prompt"].startswith("/bug ")
+    assert d["blockers"][0]["prompt"].startswith("Use the bug skill. ")
     unobs = [s for s in d["sections"] if s["state"] == "unobserved"]
     assert unobs and all(s["action"]["payload"].startswith("pyauto-heart") for s in unobs)
 
@@ -638,15 +638,15 @@ def test_json_v2_carries_blockers_and_actions():
 EVENT_URL = "https://ci.invalid/actions/runs/9"
 GATE_URL = "https://ci.invalid/RepoA/actions"
 EVENT_PROMPT = (
-    "/bug kill timer: RepoA Gate One timed_out after 18000s on main "
+    "Use the bug skill. kill timer: RepoA Gate One timed_out after 18000s on main "
     f"— {EVENT_URL}"
 )
 GATE_PROMPT = (
-    "/bug smoke gate RepoA: Gate One median wall-clock rose 600s → 900s vs its "
+    "Use the bug skill. smoke gate RepoA: Gate One median wall-clock rose 600s → 900s vs its "
     f"recent history — {GATE_URL}"
 )
 ROW_PROMPT = (
-    "/bug no_run: RepoA imaging/x.py SLOW since 2026-07-14 with no measurement — "
+    "Use the bug skill. no_run: RepoA imaging/x.py SLOW since 2026-07-14 with no measurement — "
     "retime against the real cap, then fix it or delete the marker"
 )
 
@@ -697,7 +697,7 @@ def _no_run_slice():
              "prompt": ROW_PROMPT},
             {"repo": "RepoA", "entry": "imaging/y.py", "marker": "NEEDS_FIX",
              "date": "", "reason": "raises", "measured": False,
-             "prompt": "/bug no_run: RepoA imaging/y.py NEEDS_FIX since unknown date"},
+             "prompt": "Use the bug skill. no_run: RepoA imaging/y.py NEEDS_FIX since unknown date"},
         ],
     }
 
@@ -885,11 +885,11 @@ def test_malformed_performance_slices_never_break_the_board():
 SCRIPT_RUN_URL = "https://ci.invalid/OwnerX/RepoA/actions/runs/7"
 SCRIPT_PREV_RUN_URL = "https://ci.invalid/OwnerX/RepoA/actions/runs/6"
 TIMEOUT_PROMPT = (
-    f"/bug kill timer: RepoA imaging/slow.py TIMEOUT (600s) on {SCRIPT_RUN_URL} "
+    f"Use the bug skill. kill timer: RepoA imaging/slow.py TIMEOUT (600s) on {SCRIPT_RUN_URL} "
     f"— stack tail in the run log"
 )
 SLOW_SCRIPT_PROMPT = (
-    "/bug slow script: RepoA imaging/x.py 10s → 30s between runs "
+    "Use the bug skill. slow script: RepoA imaging/x.py 10s → 30s between runs "
     f"{SCRIPT_PREV_RUN_URL} → {SCRIPT_RUN_URL}"
 )
 
@@ -1166,10 +1166,10 @@ def test_each_gap_carries_the_command_that_closes_it():
     # the prompt names the check AND the gap it closes — not the sentence back
     assert dashboard.VERIFY_INSTALL_CMD in install["prompt"]
     assert GAPS[0] in install["prompt"]
-    assert install["prompt"].startswith("/health")
+    assert install["prompt"].startswith("Use the health skill.")
     # STALE's rule survives the trip to the chip
     assert "never change code" in install["prompt"]
-    assert not any(b["prompt"].startswith("/bug") for b in board.blockers)
+    assert not any(b["prompt"].startswith("Use the bug skill.") for b in board.blockers)
 
 
 def test_a_gap_needing_a_conversation_offers_no_command():
@@ -1178,7 +1178,7 @@ def test_a_gap_needing_a_conversation_offers_no_command():
     (gap,) = board.blockers
 
     assert gap["command"] is None          # the Heart never dispatches a rehearsal
-    assert "/release rehearse" in gap["prompt"]
+    assert "release skill with `rehearse`" in gap["prompt"]
 
 
 def test_an_unkeyed_gap_falls_back_to_the_generic_nudge():
@@ -1190,7 +1190,7 @@ def test_an_unkeyed_gap_falls_back_to_the_generic_nudge():
     (gap,) = board.blockers
 
     assert gap["command"] is None
-    assert gap["prompt"] == "/health re-run the stale evidence: some gap nobody has mapped yet"
+    assert gap["prompt"] == "Use the health skill. re-run the stale evidence: some gap nobody has mapped yet"
     assert board.stale_plan is None
 
 
@@ -1202,7 +1202,7 @@ def test_the_tier_carries_one_plan_that_clears_every_gap():
     assert plan["count"] == 2
     for gap in GAPS:
         assert gap in plan["prompt"]           # every gap named, in order
-    assert plan["prompt"].startswith("/health clear the Heart's 2 evidence gap(s)")
+    assert plan["prompt"].startswith("Use the health skill. clear the Heart's 2 evidence gap(s)")
     # every gap here has a command, so the whole tier is one shell chain that
     # ends by re-reading the verdict
     assert plan["command"] == (f"{dashboard.VERIFY_INSTALL_CMD} && {dashboard.TICK_CMD}"
@@ -1216,7 +1216,7 @@ def test_the_plan_withholds_a_command_chain_it_cannot_complete():
     board = dashboard.build_board(make_snapshot(), v, now=FRESH_NOW)
 
     assert board.stale_plan["command"] is None
-    assert "/release rehearse" in board.stale_plan["prompt"]
+    assert "release skill with `rehearse`" in board.stale_plan["prompt"]
 
 
 def test_no_plan_when_nothing_is_stale():
@@ -1741,7 +1741,7 @@ def test_to_state_red_items_carry_url_and_prompt():
     assert doc["headline"].startswith("PyAutoFit: CI failure")
     red = [i for i in doc["items"] if i["severity"] == "red"]
     assert red and red[0]["url"].endswith("/actions/runs/1")
-    assert red[0]["prompt"].startswith("/bug")
+    assert red[0]["prompt"].startswith("Use the bug skill.")
     assert any(i["severity"] == "yellow" for i in doc["items"])
 
 
