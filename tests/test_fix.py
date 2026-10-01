@@ -78,6 +78,35 @@ def test_no_cache_never_claims_green(monkeypatch, capsys):
     assert "no cache" in capsys.readouterr().err
 
 
+def test_huge_observations_are_recoverable_without_a_huge_clipboard_prompt():
+    snapshot, verdict = inputs()
+    snapshot["validation_report"] = {"log": "🌌" * 1_350_000}
+    board = dashboard.build_board(snapshot, verdict)
+    plan = board.fix_plan
+    assert len(plan["prompt"]) < 50_000
+    assert "Repo11: CI failure" in plan["prompt"]
+    assert "fix_plan.evidence.validation_report" in plan["prompt"]
+    assert "https://pyautolabs.github.io/PyAutoHeart/board.json" in plan["prompt"]
+    assert plan["evidence"]["validation_report"] == snapshot["validation_report"]
+    # Complete evidence survives the published machine surface; HTML and the
+    # CLI use the same bounded prompt without embedding the raw observation.
+    assert dashboard.to_dict(board)["fix_plan"] == plan
+    assert snapshot["validation_report"]["log"] not in dashboard._render_html(board)
+
+
+def test_summary_overflow_preserves_authority_and_explains_omissions():
+    snapshot, verdict = inputs()
+    verdict["red_reasons"] += [f"finding-{i}: " + "x" * 10_000 for i in range(100)]
+    board = dashboard.build_board(snapshot, verdict)
+    prompt = board.fix_plan["prompt"]
+    assert len(prompt) < 50_000
+    assert "summary lines omitted" in prompt
+    assert "not approval to merge, delete work or release" in prompt
+    assert "Dirty worktrees are not disposable" in prompt
+    assert "read the full evidence" in prompt
+    assert len(board.blockers) == 114
+
+
 def test_html_all_tiers_complete_disclosure_and_safe_fallback():
     snapshot, verdict = inputs()
     html = dashboard.render(snapshot, verdict, fmt="html")

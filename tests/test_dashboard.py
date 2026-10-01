@@ -111,10 +111,17 @@ def test_html_is_self_contained():
     assert "fetch(" not in out and "XMLHttpRequest" not in out
     lowered = out.lower()
     assert '<script src' not in lowered and "import(" not in out
-    # every http(s) URL sits in an anchor href, never in a loadable attribute
-    for m in re.finditer(r"(?:http|https)://", out):
-        before = out[max(0, m.start() - 30):m.start()]
-        assert 'href="' in before or "href='" in before, f"non-href URL at {m.start()}"
+    # Evidence URLs may also occur in prompt text/data-cmd. Those are inert;
+    # check actual attributes rather than treating all text as asset loads.
+    from html.parser import HTMLParser
+
+    class Attributes(HTMLParser):
+        def handle_starttag(self, tag, attrs):
+            for name, value in attrs:
+                if value and re.search(r"https?://", value):
+                    assert name in {"href", "data-cmd"}, (tag, name)
+
+    Attributes().feed(out)
 
 
 # --- the unify invariant -----------------------------------------------------
