@@ -142,3 +142,11 @@ def test_the_snapshot_folds_in_the_unit_timings_rollup():
     state_py = (Path(__file__).resolve().parent.parent / "heart" / "state.py").read_text()
     assert '"unit_timings": _read_json_or_default(' in state_py
     assert '"unit_timings.json"' in state_py
+
+
+def test_cloud_reads_validation_before_aggregation():
+    _, job = _job()
+    body = _cloud_step(job)['run']
+    assert 'python -m heart.checks.test_run' in body
+    assert 'python -m heart.checks.cloud_validation' in body
+    assert _step_index(job, 'Run cloud-safe checks') < _step_index(job, 'Aggregate snapshot')

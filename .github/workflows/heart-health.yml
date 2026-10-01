@@ -94,7 +94,7 @@ jobs:
       - name: Install PyYAML
         run: pip install --quiet pyyaml
 
-      - name: Run cloud-safe checks (ci_status, open_prs, ci_timing, no_run_census, smoke_timings, unit_timings)
+      - name: Run cloud-safe checks (CI, timing, smoke and release evidence)
         env:
           # The repo-scoped GITHUB_TOKEN is enough for every check here except
           # the artifact /zip downloads smoke_timings and unit_timings make
@@ -109,7 +109,7 @@ jobs:
           # the auto-provisioned token and Heart's own artifacts still ingest.
           GH_TOKEN: ${{ secrets.HEART_TIMINGS_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          # Six API-only checks: CI conclusions and open PRs (health), then CI
+          # API-only checks: CI conclusions and open PRs (health), then CI
           # wall-clock, the NO_RUN census, the per-script smoke timings and the
           # per-test unit timings (the ⏱ performance surface). ci_timing's and
           # smoke_timings' aggregate steps re-read the board.json published by
@@ -125,6 +125,9 @@ jobs:
           bash heart/checks/no_run_census.sh
           bash heart/checks/smoke_timings.sh
           bash heart/checks/unit_timings.sh
+          # Read validation artifacts before readiness; never dispatch a run.
+          PYTHONPATH="$PWD" python -m heart.checks.test_run
+          PYTHONPATH="$PWD" python -m heart.checks.cloud_validation
           exit 0
 
       - name: Append today's observations to the timing record
