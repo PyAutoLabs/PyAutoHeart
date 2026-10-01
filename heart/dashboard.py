@@ -1923,11 +1923,6 @@ def _html_reason(item: dict) -> str:
     return f"<li>{text}</li>"
 
 
-# The Heart's verdict in the theme's tone vocabulary. The board's own
-# `_VERDICT_STATE` stays the internal truth; this is only how it is painted.
-_VERDICT_TONE = {"red": "bad", "yellow": "warn", "stale": "warn",
-                 "green": "ok"}
-
 _LEDE = ('Is it safe to release? See what needs attention, then copy a prompt '
          'to work through it in your coding chat.')
 
@@ -2006,8 +2001,11 @@ summary:focus-visible,button:focus-visible{outline:3px solid var(--fg);outline-o
 body button.copy{min-width:44px;min-height:44px;
  width:auto;height:auto;padding:.55rem .8rem;white-space:normal;font-size:1rem;
  overflow:visible;text-overflow:clip}
-.actions{display:flex;gap:.65rem;flex-wrap:wrap;margin:1rem 0}
-.actions button{font-weight:650}
+.score-value{display:flex;align-items:baseline;gap:.8rem;flex-wrap:wrap}
+.score-value strong{font-size:1.5rem;font-variant-numeric:tabular-nums}
+.repair{margin:0;min-width:0}
+.repair > summary{padding:.85rem 7rem .85rem 1rem;min-height:3.3rem;box-sizing:border-box}
+.repair pre{padding:0 1rem 1rem;margin:0}
 .prompt-fallback pre,#copy-fallback{white-space:pre-wrap;overflow-wrap:anywhere;
  max-height:24rem;overflow:auto;font-size:1rem;line-height:1.5;user-select:text}
 .duration{font-weight:750;font-variant-numeric:tabular-nums;color:var(--fg)}
@@ -2113,15 +2111,17 @@ def _html_actions(board: Board) -> str:
     plans = [("Fix Heart systematically", board.fix_plan or build_fix_plan(board))]
     if board.stale_plan:
         plans.append(("Refresh all missing evidence", board.stale_plan))
-    buttons = " ".join(_copy_btn(p["prompt"], f"copy prompt: {label}", label)
-                       for label, p in plans)
-    fallbacks = "".join(
-        f'<details class="prompt-fallback"><summary>{label} — view / select prompt</summary>'
-        f'<pre tabindex="0">{_html.escape(plan["prompt"])}</pre></details>'
-        for label, plan in plans)
-    return (f'<div class="actions">{buttons}</div>'
+    rows = []
+    for label, plan in plans:
+        button = _copy_btn(plan["prompt"], label, icon=True)
+        rows.append(
+            '<div class="check-row repair-row">'
+            f'<details class="prompt-fallback repair"><summary>{_html.escape(label)}</summary>'
+            f'<pre tabindex="0">{_html.escape(plan["prompt"])}</pre></details>'
+            f'<div class="row-actions">{button}</div></div>')
+    return ('<div class="board repair-actions">' + ''.join(rows) + '</div>'
             '<p id="copy-status" role="status" aria-live="polite"></p>'
-            '<pre id="copy-fallback" tabindex="-1" hidden></pre>' + fallbacks)
+            '<pre id="copy-fallback" tabindex="-1" hidden></pre>')
 
 
 def _render_html(board: Board) -> str:
@@ -2225,16 +2225,23 @@ def _render_html(board: Board) -> str:
 <h2>Observed checks</h2>
 <p>Expand a check to see its entries. Colours describe observations; the release verdict below determines readiness.</p>
 <div class="board">{''.join(rows)}</div>
-<p class="verdict {_VERDICT_TONE.get(board.verdict, '')}"><b>{word} · score
- {board.score}</b><span class="muted">snapshot {_html.escape(board.ts)} ·
- {age} · <a href="dashboard.md">markdown version</a>{github_link}</span></p>
+<section aria-labelledby="score-heading">
+<h2 id="score-heading">Score</h2>
+<p class="score-value"><strong>{board.score}/100</strong>
+<span class="muted">Release readiness: {word}</span></p>
+<p class="muted">snapshot {_html.escape(board.ts)} ·
+ {age} · <a href="dashboard.md">markdown version</a>{github_link}</p>
 {stale_html}
 <p class="vantage">{_html.escape(board.vantage)} ·
 {_html.escape(board.devbox_observed or ('no dev-box observation attached' if board.vantage == 'cloud snapshot' else 'observed on this dev box'))}</p>
 {_html_score(board)}
 <p class="reason-counts">{len(board.red_reasons)} release blockers ·
 {len(board.yellow_reasons)} warnings · {len(board.stale_reasons)} evidence gaps</p>
+</section>
+<section aria-labelledby="resusitate-heading">
+<h2 id="resusitate-heading">Resusitate</h2>
 {_html_actions(board)}
+</section>
 {reasons_html}
 {_boards_nav_html()}
 <footer>Copy a prompt into your coding chat, or a command into your terminal.
