@@ -56,7 +56,7 @@ def test_all_categories_start_collapsed_with_summary_and_separate_named_icons():
     ) for state in (dashboard.OK, dashboard.WARN, dashboard.FAIL,
                     dashboard.INFO, dashboard.UNOBS)]
     root = Page(dashboard._render_html(board)).root
-    rows = list(root.find(cls='check-row'))
+    rows = list(next(root.find(cls='board')).find(cls='check-row'))
     assert len(rows) == len(board.sections)
     for row, section in zip(rows, board.sections):
         check = next(row.find('details', 'check'))
@@ -120,3 +120,50 @@ def test_icon_copy_payloads_round_trip_quotes_newlines_and_markup():
         assert button.attrs['data-cmd'] == payload
         assert button.attrs['aria-label'].startswith(face + ': ')
         assert button.attrs['title'].endswith('Inspect "repo"')
+
+
+def test_score_and_resusitate_sections_keep_breakdown_and_readiness():
+    verdict = dict(make_verdict('stale', 65),
+                   stale_reasons=['Missing workspace report', 'Missing install evidence',
+                                  'Missing release validation'])
+    board = dashboard.build_board(make_snapshot(), verdict, now=FRESH_NOW)
+    board.penalties = [dict(key=key, points=points, count=1, weight=points, cap=points)
+                       for key, points in [('test_unknown', 10), ('install_unknown', 10),
+                                           ('validation_absent', 15)]]
+    root = Page(dashboard._render_html(board)).root
+    headings = [h.text() for h in root.find('h2')]
+    assert headings == ['Observed checks', 'Score', 'Resusitate', 'Evidence gaps (3)']
+    score = next(s for s in root.find('section')
+                 if s.attrs.get('aria-labelledby') == 'score-heading')
+    assert '65/100' in score.text() and 'Release readiness: STALE' in score.text()
+    assert 'Why this score: 65/100' in score.text()
+    assert 'Missing workspace test report: −10 (1 × 10, cap 10)' in score.text()
+    assert 'Missing install verification: −10 (1 × 10, cap 10)' in score.text()
+    assert 'Missing release validation: −15 (1 × 15, cap 15)' in score.text()
+    assert '0 release blockers ·\n0 warnings · 3 evidence gaps' in score.text()
+    assert not list(root.find(cls='verdict'))
+
+
+def test_repair_rows_copy_exact_prompts_without_toggling_prompt_disclosures():
+    for stale in (False, True):
+        verdict = dict(make_verdict('stale' if stale else 'green'),
+                       stale_reasons=['install verification not run'] if stale else [],
+                       stale_details=[{'key': 'install_unknown'}] if stale else [])
+        board = dashboard.build_board(make_snapshot(), verdict, now=FRESH_NOW)
+        root = Page(dashboard._render_html(board)).root
+        section = next(s for s in root.find('section')
+                       if s.attrs.get('aria-labelledby') == 'resusitate-heading')
+        rows = list(section.find(cls='repair-row'))
+        plans = [board.fix_plan] + ([board.stale_plan] if stale else [])
+        assert len(rows) == len(plans)
+        for row, plan in zip(rows, plans):
+            details = next(row.find('details'))
+            assert 'open' not in details.attrs
+            label = next(details.find('summary')).text()
+            button = next(row.find('button'))
+            assert not list(details.find('button'))
+            assert button.attrs['aria-label'] == f'copy prompt: {label}'
+            assert button.attrs['data-cmd'] == plan['prompt']
+            assert next(details.find('pre')).text() == plan['prompt']
+            assert button.text() == '' and list(button.find('svg'))
+        assert next(section.find('p')).attrs['aria-live'] == 'polite'

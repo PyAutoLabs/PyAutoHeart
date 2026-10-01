@@ -1261,7 +1261,8 @@ def test_a_worded_copy_face_is_a_chip_and_a_glyph_stays_a_square():
         assert is_chip == (len(face.split()) > 1), (cls, face)
 
     faces = [f for _, f in buttons]
-    assert "Refresh all missing evidence" in faces
+    assert "Refresh all missing evidence" not in faces
+    assert "copy prompt: Refresh all missing evidence" in html
     assert "copy prompt" in faces
     assert all(len(face.split()) > 1 for face in faces)
 
