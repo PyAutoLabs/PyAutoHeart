@@ -78,7 +78,7 @@ def test_all_categories_start_collapsed_with_summary_and_separate_named_icons():
 
 def test_libraries_reveal_all_six_compact_repo_lines_and_observation_sources():
     snapshot = make_snapshot()
-    snapshot['repos']['PyAutoCTI'] = _lib('failure')
+    snapshot['repos']['FixtureLibrary'] = _lib('failure')
     board = dashboard.build_board(snapshot, make_verdict(), now=FRESH_NOW,
                                   unobserved=('repo_state',))
     root = Page(dashboard._render_html(board)).root
@@ -88,7 +88,7 @@ def test_libraries_reveal_all_six_compact_repo_lines_and_observation_sources():
     assert len(lines) == 6
     for line in lines:
         assert 'CI' in line.text() and 'repo state n/a here' in line.text()
-    assert 'PyAutoCTI' in lines[1].text()
+    assert any('FixtureLibrary' in line.text() for line in lines)
     entries = list(check.find('li', 'entry'))
     assert len(entries) == len(next(s for s in board.sections if s.key == 'libraries').entries)
     assert 'Observation source' in check.text()
