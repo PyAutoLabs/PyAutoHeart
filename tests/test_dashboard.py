@@ -281,9 +281,11 @@ def test_cloud_marks_local_only_checks_unobserved():
     board = dashboard.build_board(snap, make_verdict(),
                                   unobserved=dashboard.LOCAL_ONLY_FAMILIES, now=FRESH_NOW)
     by_key = {s.key: s for s in board.sections}
-    for fam in ("worktree_drift", "script_timing", "test_run", "version_skew"):
+    for fam in ("worktree_drift", "script_timing", "version_skew"):
         assert by_key[fam].state == dashboard.UNOBS
         assert "not observed here" in by_key[fam].summary
+    assert by_key["test_run"].state == dashboard.OK
+    assert "100p" in by_key["test_run"].summary
     # repo_state is folded into the library rows; those rows must not claim a
     # green working tree the cloud never saw.
     libs = by_key["libraries"]
@@ -1805,3 +1807,30 @@ def test_rendered_copy_payloads_are_assistant_agnostic(verdict):
     page = dashboard.render(make_snapshot(), make_verdict(verdict),
                             fmt="html", now=FRESH_NOW)
     assert_portable_copy_payloads(page)
+
+
+def test_cloud_test_run_without_artifact_is_unobserved():
+    snap = make_snapshot(test_run={})
+    board = dashboard.build_board(snap, make_verdict("stale", 90),
+                                  unobserved=dashboard.LOCAL_ONLY_FAMILIES, now=FRESH_NOW)
+    section = next(s for s in board.sections if s.key == "test_run")
+    assert section.state == dashboard.UNOBS
+    assert "no report.json" in section.summary
+
+
+def test_cloud_test_run_renders_failed_counts_and_no_invented_zeros():
+    snap = make_snapshot(test_run={"ready": False, "counts_measured": True,
+                                   "passed": 1400, "failed": 1, "skipped": 120,
+                                   "run_label": "cloud#42"})
+    board = dashboard.build_board(snap, make_verdict("yellow", 80),
+                                  unobserved=dashboard.LOCAL_ONLY_FAMILIES, now=FRESH_NOW)
+    section = next(s for s in board.sections if s.key == "test_run")
+    assert section.state == dashboard.FAIL
+    assert "1400p / 1f / 120s" in section.summary
+
+    snap["test_run"] = {"ready": False, "run_label": "cloud#43", "source": "cloud"}
+    board = dashboard.build_board(snap, make_verdict("yellow", 80),
+                                  unobserved=dashboard.LOCAL_ONLY_FAMILIES, now=FRESH_NOW)
+    section = next(s for s in board.sections if s.key == "test_run")
+    assert "counts not ingested" in section.summary
+    assert "0p" not in section.summary
