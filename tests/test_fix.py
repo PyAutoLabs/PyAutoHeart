@@ -86,7 +86,7 @@ def test_huge_observations_are_recoverable_without_a_huge_clipboard_prompt():
     assert len(plan["prompt"]) < 50_000
     assert "Repo11: CI failure" in plan["prompt"]
     assert "fix_plan.evidence.validation_report" in plan["prompt"]
-    assert "https://pyautolabs.github.io/PyAutoHeart/board.json" in plan["prompt"]
+    assert f"{dashboard.PAGES_URL}board.json" in plan["prompt"]
     assert plan["evidence"]["validation_report"] == snapshot["validation_report"]
     # Complete evidence survives the published machine surface; HTML and the
     # CLI use the same bounded prompt without embedding the raw observation.
