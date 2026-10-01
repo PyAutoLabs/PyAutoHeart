@@ -1882,24 +1882,26 @@ def _md_escape(text: str) -> str:
     return text.replace("|", "\\|")
 
 
-def _copy_btn(payload: str, label: str = "copy", face: str = "copy prompt") -> str:
-    """A one-tap clipboard button (the PyAutoMind dashboard pattern): tap it
-    and the payload — a Claude prompt or a command — is ready to paste.
-
-    ``face`` is what the button shows: the bare 📋 for a chip beside a row, a
-    short worded face (⌨ command chain) where the board offers more than one
-    payload and the reader has to choose between them.
-
-    A worded face takes the theme's `text` modifier. The base `button.copy` is
-    a fixed 2.6rem SQUARE — right for a bare glyph, and a trap for words: the
-    label wrapped inside 42px into a one-word-per-line column and spilled out
-    of its own box. Whitespace in the face is the test, because that is what
-    makes a face a phrase rather than a glyph.
-    """
+def _copy_btn(payload: str, label: str = "copy", face: str = "copy prompt",
+              *, icon: bool = False) -> str:
+    """Copy a payload with either a named action or an accessible icon."""
     cls = "copy text" if len(face.split()) > 1 else "copy"
+    content = _html.escape(face)
+    if icon:
+        cls = "copy icon"
+        # Terminal for commands; clipboard for prompts. SVGs remain decorative:
+        # the button itself supplies the accessible name and tooltip.
+        path = ('<path d="m5 7 4 5-4 5m7 0h7"/>' if face == "copy command" else
+                '<rect x="6" y="5" width="12" height="16" rx="2"/>'
+                '<rect x="9" y="3" width="6" height="4" rx="1"/>')
+        content = ('<svg viewBox="0 0 24 24" width="20" height="20" '
+                   'fill="none" stroke="currentColor" stroke-width="1.8" '
+                   'aria-hidden="true" focusable="false">' + path + '</svg>')
+        label = f"{face}: {label}"
     return (f"<button class='{cls}' type='button' "
             f"title='{_html.escape(label, quote=True)}' "
-            f"data-cmd=\"{_html.escape(payload, quote=True)}\">{_html.escape(face)}</button>")
+            f"aria-label='{_html.escape(label, quote=True)}' "
+            f"data-cmd=\"{_html.escape(payload, quote=True)}\">{content}</button>")
 
 
 def _html_reason(item: dict) -> str:
@@ -1926,8 +1928,7 @@ def _html_reason(item: dict) -> str:
 _VERDICT_TONE = {"red": "bad", "yellow": "warn", "stale": "warn",
                  "green": "ok"}
 
-_LEDE = ('<em class="lyric">[these guys are giving me life]</em><br>'
-         'Is it safe to release? See what needs attention, then copy a prompt '
+_LEDE = ('Is it safe to release? See what needs attention, then copy a prompt '
          'to work through it in your coding chat.')
 
 # The page-specific shapes the shared sheet has no opinion on: the per-row
@@ -1935,16 +1936,35 @@ _LEDE = ('<em class="lyric">[these guys are giving me life]</em><br>'
 # variables, so this board follows the family accent rather than setting a
 # second palette.
 _EXTRA_CSS = """
-table.board td.dot{width:1.15rem;padding-right:.35rem}
-table.board td.dot::before{content:"";display:inline-block;width:10px;
- height:10px;border-radius:50%;margin-top:.35rem;background:var(--muted)}
-table.board tr.ok td.dot::before{background:var(--ok)}
-table.board tr.warn td.dot::before{background:var(--warn)}
-table.board tr.fail td.dot::before{background:var(--bad)}
-table.board tr.info td.dot::before{background:var(--muted)}
-table.board td.name{font-weight:600;white-space:nowrap}
-table.board tr.unobs td.name,table.board tr.unobs td.sum{color:var(--muted)}
-/* Details use readable prose; numeric fields get structural emphasis. */
+/* All check categories share one compact disclosure grid. */
+.board{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.check-row{position:relative;border-bottom:1px solid var(--line)}
+.check-row:last-child{border-bottom:0}
+.check{min-width:0;margin:0}
+.check > summary{display:grid;grid-template-columns:.8rem .7rem 12rem minmax(0,1fr);
+ align-items:center;gap:.65rem;list-style:none;padding:.7rem 7rem .7rem .8rem;min-height:3.3rem;
+ box-sizing:border-box}
+.check > summary::-webkit-details-marker{display:none}
+.check > summary::before{content:"›";font-size:1.3rem;color:var(--muted)}
+.check[open] > summary::before{transform:rotate(90deg)}
+.check > summary:hover{background:var(--btn)}
+.check .dot{width:10px;height:10px;border-radius:50%;background:var(--muted)}
+.check-row.ok .dot{background:var(--ok)}
+.check-row.warn .dot{background:var(--warn)}
+.check-row.fail .dot{background:var(--bad)}
+.check .name{font-weight:650;overflow-wrap:normal;white-space:nowrap}
+.check .sum{font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.check-row.unobs .name,.check-row.unobs .sum{color:var(--muted)}
+.check-body{padding:0 1rem 1rem 3.5rem;min-width:0}
+.row-actions{position:absolute;top:0;right:0;display:flex;justify-content:flex-end;gap:.25rem;padding:.25rem .5rem}
+body button.copy.icon{display:inline-flex;align-items:center;justify-content:center;
+ width:44px;height:44px;min-width:44px;min-height:44px;padding:0}
+.copy.icon svg{pointer-events:none}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;
+ overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.repo-lines{list-style:none;padding:0}
+.repo-lines li{display:flex;gap:1rem;flex-wrap:wrap;margin:.5rem 0}
+.repo-lines strong{min-width:12rem}
 ul.det{margin:.6rem 0 0;padding-left:1.2rem;color:var(--fg);
  font-size:1rem;white-space:normal;line-height:1.65}
 ul.det li{margin:.5rem 0;overflow-wrap:anywhere}
@@ -1968,35 +1988,22 @@ a.out{font-size:.85rem}
 .reasons li{margin:.3rem 0}
 .hint{color:var(--muted);font-size:.85em;margin:.5rem 0 0}
 footer{margin-top:2rem;color:var(--muted);font-size:.82em}
-/* Narrow screens: the shared theme turns a table row into a stacked card
-   (`table.recent` under its own breakpoint); these three lines say how THIS
-   board's cells fall into it. Measured at a 390px viewport before: the name
-   column held 127px for one short line while the summary was squeezed into
-   213px and ran 472px down the screen — the text bunched to the right with
-   the name column left as empty height beside it. Now the dot and the name
-   read as one header line and the summary takes the full width beneath. */
-@media(max-width:34rem){
- table.board td.dot{width:auto;padding-right:.4rem}
- table.board td.dot::before{margin-top:0}
- table.board td.name{white-space:normal}
- table.board td.sum{flex:1 0 100%;margin-top:.15rem}
- table.board ul.det{padding-left:.9rem}
+@media(max-width:48rem){
+ .check > summary{grid-template-columns:.8rem .7rem minmax(0,1fr);gap:.45rem}
+ .check .sum{grid-column:3;white-space:normal}
+ .check .name{white-space:normal}
+ .check-body{padding:.2rem .8rem .8rem}
 }
+
 """
 
 _EXTRA_CSS += """
 h2,h3{color:var(--fg);border-color:var(--line)}
 h2::after{display:none}
-.lyric{display:inline-block;font-size:1.15rem;margin-bottom:.65rem}
-table.board td,table.board summary{font-size:1rem;line-height:1.55}
-/* The table algorithm otherwise gives this column its one-character minimum
-   width (body defaults to overflow-wrap:anywhere), splitting Libraries and
-   Worktree drift even on tablet screens. The phone rows already stack. */
-table.board td.name{white-space:nowrap;overflow-wrap:normal}
 summary{cursor:pointer;overflow-wrap:anywhere;white-space:normal;padding:.6rem 0;
  color:var(--fg)}
 summary:focus-visible,button:focus-visible{outline:3px solid var(--fg);outline-offset:3px}
-body button.copy,body table.board button.copy.text{min-width:44px;min-height:44px;
+body button.copy{min-width:44px;min-height:44px;
  width:auto;height:auto;padding:.55rem .8rem;white-space:normal;font-size:1rem;
  overflow:visible;text-overflow:clip}
 .actions{display:flex;gap:.65rem;flex-wrap:wrap;margin:1rem 0}
@@ -2056,7 +2063,7 @@ async function copyCmd(b){
 
 
 def _html_entries(entries: list[dict]) -> str:
-    attention, other = [], []
+    rows = []
     for entry in entries:
         e = lambda value: _html.escape(str(value or ""))
         impact = ("Release blocker" if entry.get("release_severity") == "red" else
@@ -2075,15 +2082,8 @@ def _html_entries(entries: list[dict]) -> str:
                     f' · <b>{impact}</b><br>{e(entry.get("reason"))}{link} {button}'
                     f'<details><summary>Observation source</summary>{e(entry.get("source"))}'
                     f' · {e(entry.get("observed_at") or "time unknown")}</details></li>')
-        (attention if entry.get("state") in (FAIL, WARN) else other).append(row)
-    if not attention:
-        return '<ul class="det">' + ''.join(other) + '</ul>'
-    result = '<ul class="det">' + ''.join(attention[:3]) + '</ul>'
-    for label, rows in (("more findings", attention[3:]), ("passing / informational observations", other)):
-        if rows:
-            result += (f'<details><summary>Show {len(rows)} {label}</summary>'
-                       '<ul class="det">' + ''.join(rows) + '</ul></details>')
-    return result
+        rows.append(row)
+    return '<ul class="det">' + ''.join(rows) + '</ul>'
 
 
 def _html_score(board: Board) -> str:
@@ -2130,40 +2130,61 @@ def _render_html(board: Board) -> str:
     rows = []
     for sec in board.sections:
         cls = _STATE_HTML[sec.state]
-        summary = _html.escape(sec.summary)
-        if sec.observed_ago:
-            summary += f" <span class='ago'>· {_html.escape(sec.observed_ago)}</span>"
+        actions, links = [], []
         for link in sec.links:
-            summary += (f" <a class='out' href=\"{_html.escape(str(link.get('url', '')), quote=True)}\">"
-                        f"{_html.escape(str(link.get('label', 'link')))} ↗</a>")
+            links.append(f'<a class="out" href="{_html.escape(str(link.get("url", "")), quote=True)}">'
+                         f'{_html.escape(str(link.get("label", "link")))} ↗</a>')
             if link.get("prompt"):
-                summary += " " + _copy_btn(str(link["prompt"]),
-                                           "copy the fix prompt for a Claude Code chat")
+                links.append(_copy_btn(str(link["prompt"]),
+                                       str(link.get("label", sec.title)), icon=True))
         if sec.action and sec.action.get("payload"):
             payload = str(sec.action["payload"])
-            summary += " " + _copy_btn(payload,
-                                       str(sec.action.get("label", "copy")),
-                                       "copy command" if payload.startswith("pyauto-heart ")
-                                       else "copy prompt")
-        details = ""
+            actions.append(_copy_btn(payload, str(sec.action.get("label", sec.title)),
+                                     "copy command" if payload.startswith("pyauto-heart ")
+                                     else "copy prompt", icon=True))
+        if not actions:
+            prompt = (f'/health Review the Heart dashboard category "{sec.title}". '
+                      f'Current summary: {sec.summary}. Inspect the latest evidence; '
+                      'refresh missing or expired observations before proposing repairs. '
+                      'Route confirmed repairs through the development workflow. '
+                      'This is not approval to merge or release.')
+            actions.append(_copy_btn(prompt, sec.title, icon=True))
         if sec.timing_html:
             details = sec.timing_html
-        elif sec.entries:
-            opened = " open" if sec.state in (FAIL, WARN) else ""
-            details = (f'<details{opened}><summary>{_html.escape(sec.title)} — '
-                       f'observations ({len(sec.entries)})</summary>{_html_entries(sec.entries)}</details>')
-        elif sec.details:
-            items = "".join(f"<li>{d}</li>" for d in
-                            (sec.detail_html or [_html.escape(d) for d in sec.details]))
-            opened = " open" if sec.state in (FAIL, WARN) else ""
-            details = (f"<details{opened}><summary>{_html.escape(sec.title)} — "
-                       f"details ({len(sec.details)})</summary><ul class='det'>{items}</ul></details>")
+        elif sec.entries and sec.key not in ("libraries", "workspaces"):
+            details = _html_entries(sec.entries)
+        else:
+            if sec.key in ("libraries", "workspaces"):
+                items = []
+                for line in sec.details:
+                    name, _, reason = line.partition(" ")
+                    items.append(f'<li><strong>{_html.escape(name)}</strong>'
+                                 f'<span>{_html.escape(reason.strip())}</span></li>')
+                details = '<ul class="repo-lines">' + ''.join(items) + '</ul>'
+                if sec.entries:
+                    details += ('<details><summary>Observation sources and actions</summary>'
+                                + _html_entries(sec.entries) + '</details>')
+            else:
+                items = "".join(f"<li>{d}</li>" for d in
+                                (sec.detail_html or [_html.escape(d) for d in sec.details]))
+                details = f'<ul class="det">{items}</ul>' if items else ''
+        if sec.observed_ago:
+            details = f'<p class="ago">{_html.escape(sec.observed_ago)}</p>' + details
+        if links:
+            details += '<p>' + ' · '.join(links) + '</p>'
+        if not details:
+            details = '<p>No further observations recorded.</p>'
         state_label = {OK: "Passing", WARN: "Warning", FAIL: "Needs attention",
                        INFO: "Information", UNOBS: "Not observed here"}[sec.state]
         rows.append(
-            f"<tr class='{cls}'><td class='dot'></td>"
-            f"<td class='name'>{_html.escape(sec.title)}</td>"
-            f"<td class='sum'><span class='state-label'>{state_label}</span> · {summary}{details}</td></tr>"
+            f'<div class="check-row {cls}"><details class="check" '
+            f'id="check-{_html.escape(sec.key, quote=True)}">'
+            f'<summary><span class="dot" aria-hidden="true"></span>'
+            f'<span class="name">{_html.escape(sec.title)}</span>'
+            f'<span class="sum" title="{_html.escape(sec.summary, quote=True)}"><span class="sr-only">{state_label}: </span>'
+            f'{_html.escape(sec.summary)}</span></summary>'
+            f'<div class="check-body">{details}</div></details>'
+            f'<div class="row-actions">{"".join(actions)}</div></div>'
         )
     reasons_html = ""
     for severity, label in (("red", "Release blockers"), ("yellow", "Warnings"),
@@ -2201,6 +2222,9 @@ def _render_html(board: Board) -> str:
 </head>
 <body>
 {hero}
+<h2>Observed checks</h2>
+<p>Expand a check to see its entries. Colours describe observations; the release verdict below determines readiness.</p>
+<div class="board">{''.join(rows)}</div>
 <p class="verdict {_VERDICT_TONE.get(board.verdict, '')}"><b>{word} · score
  {board.score}</b><span class="muted">snapshot {_html.escape(board.ts)} ·
  {age} · <a href="dashboard.md">markdown version</a>{github_link}</span></p>
@@ -2212,9 +2236,6 @@ def _render_html(board: Board) -> str:
 {len(board.yellow_reasons)} warnings · {len(board.stale_reasons)} evidence gaps</p>
 {_html_actions(board)}
 {reasons_html}
-<h2>Observed checks</h2>
-<p>Section colours describe observations. The release verdict above determines readiness.</p>
-<table class="recent board">{''.join(rows)}</table>
 {_boards_nav_html()}
 <footer>Copy a prompt into your coding chat, or a command into your terminal.
 Copying does not run a check or change any files.</footer>

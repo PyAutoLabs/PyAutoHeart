@@ -150,10 +150,10 @@ def test_validation_actions_and_json_contract_remain_separate():
     assert {r["severity"] for r in payload["blockers"]} <= {"red", "yellow", "stale"}
 
 
-def test_large_inventory_discloses_rest_without_losing_entries():
+def test_expanded_category_shows_complete_inventory_without_another_disclosure():
     rows = [{"subject": f"Repo{i}", "reason": "behind origin", "state": "warn",
              "affects_release": False} for i in range(12)]
     html = dashboard._html_entries(rows)
-    assert "Show 9 more findings" in html
+    assert "more findings" not in html
     assert html.count('class="entry warn"') == 12
-    assert html.index("Repo2") < html.index("Show 9 more findings") < html.index("Repo3")
+    assert html.index("Repo2") < html.index("Repo3") < html.index("Repo11")
