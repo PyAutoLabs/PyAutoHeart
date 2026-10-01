@@ -72,7 +72,9 @@ INFO = "info"
 # these are passed as ``unobserved`` so the board marks them honestly rather
 # than implying they are green. (Spec §2 "Cloud-safe caveat".)
 #
-# Three families LEFT this tuple in #206. `import_time` and `unit_test_timing`
+# Three families LEFT this tuple in #206, and cloud test-run evidence
+# leaves it once the scheduled job ingests the workspace validation artifact.
+# `import_time` and `unit_test_timing`
 # are now cloud-OBSERVED by ingestion: the libraries' own CI emits the
 # `unit-timings-<py>` artifact and `heart/checks/unit_timings.py` writes exactly
 # these two summary files from it, so greying the rows on the cloud job would be
@@ -86,7 +88,6 @@ LOCAL_ONLY_FAMILIES = (
     "worktree_drift",
     "script_timing",
     "profiling_drift",
-    "test_run",
     "version_skew",
 )
 
@@ -130,7 +131,6 @@ UNOBS_WATCHES = {
     "worktree_drift": "task worktrees vs the active.md ledger (orphans, missing, dirty)",
     "script_timing": "workspace script runtimes vs their baselines",
     "profiling_drift": "pinned profiling results vs their baselines",
-    "test_run": "the latest full workspace test-run verdict",
     "version_skew": "workspace version floors vs the newest releases",
 }
 
@@ -957,6 +957,9 @@ def build_board(
             if stale_n:
                 details.append(f"{stale_n} stale parked script(s)")
             sections.append(Section("test_run", "Test run", st, summary, details))
+        elif unobserved:
+            sections.append(Section("test_run", "Test run", UNOBS,
+                                    "test run status unknown (no report.json)", []))
 
     # CI wall-clock, per-script smoke timings + the NO_RUN census (⏱) ---------
     # All three are CLOUD-observed (the Actions API + the contents API), so they are
