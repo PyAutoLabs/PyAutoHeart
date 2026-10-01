@@ -35,7 +35,7 @@ def test_only_configured_library_checkout_is_release_red():
     assert all(e["state"] == "warn" and not e["affects_release"] for e in (other, ws))
     assert v["red_reasons"] == ["LibA: 2 commit(s) behind origin"]
     blocker = next(e for e in b.blockers if e["severity"] == "red")
-    assert "pull --ff-only" in blocker["prompt"] and "/bug" not in blocker["prompt"]
+    assert "pull --ff-only" in blocker["prompt"] and "Use the bug skill." not in blocker["prompt"]
     assert "not a task worktree" in blocker["prompt"]
     assert blocker["run_url"] is None
 
@@ -74,7 +74,7 @@ def test_dirty_and_branch_remedies_are_checkout_diagnostics():
     reasons = [r for r in b.blockers if r["severity"] == "red"]
     assert len(reasons) == 2
     assert all(r["command"] == "pyauto-heart fix dirty LibA" for r in reasons)
-    assert all(r["prompt"].startswith("/health") for r in reasons)
+    assert all(r["prompt"].startswith("Use the health skill.") for r in reasons)
 
 
 def test_fix_dirty_on_clean_wrong_branch_emits_preserving_plan(monkeypatch, capsys, tmp_path):
@@ -142,8 +142,8 @@ def test_validation_actions_and_json_contract_remain_separate():
     b, v = board_for({}, test_run={"ready": False, "failed": 1},
                      validation_report={"release_ready": False, "stages": {"integrate": {"status": "fail"}}})
     sections = {s.key: s for s in b.sections}
-    assert sections["test_run"].action["payload"].startswith("/health")
-    assert sections["release_validation"].action["payload"].startswith("/release")
+    assert sections["test_run"].action["payload"].startswith("Use the health skill.")
+    assert sections["release_validation"].action["payload"].startswith("Use the release skill.")
     payload = dashboard.to_dict(b)
     assert payload["penalties"] == v["penalties"]
     assert all("entries" not in blocker for blocker in payload["blockers"])

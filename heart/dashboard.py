@@ -33,7 +33,7 @@ once the observation is older than ``DEVBOX_FRESH_SECONDS``.
 
 **Actionable, not just readable.** Every blocker/warning is also structured
 (``Board.blockers``: text, repo, run url, and a copyable ``/bug`` prompt), and
-sections that need a hand carry an ``action`` — the exact command or Claude
+sections that need a hand carry an ``action`` — the exact command or AI
 prompt to copy. An evidence gap carries more: the ``command`` that re-runs the
 check behind it (looked up from ``STALE_REMEDIES`` by the readiness gate key,
 never guessed from the sentence), and the whole stale tier carries one
@@ -252,7 +252,7 @@ class Section:
     # {label, url} — e.g. the failing CI runs behind a red repo group.
     links: list[dict] = field(default_factory=list)
     # {label, payload} — what a 📋 button copies for this row (a command or a
-    # Claude prompt), or None when the row needs no hand.
+    # AI prompt), or None when the row needs no hand.
     action: dict | None = None
     # "observed 6h ago on the dev box" when this row came from a published
     # dev-box observation rather than this render's own snapshot.
@@ -516,7 +516,7 @@ def _repo_remedy(name: str, key: str) -> dict | None:
     """Typed checkout remedies; canonical paths are resolved by the receiving chat."""
     if key == "lib_behind":
         return {"label": "update the canonical checkout", "kind": "prompt",
-                "payload": (f"/health {name} is behind origin. Resolve its canonical main "
+                "payload": (f"Use the health skill. {name} is behind origin. Resolve its canonical main "
                             "checkout from the workspace repository manifest (not a task worktree). "
                             "Inspect branch, status and active claims. Only if clean on main, run "
                             "git -C <resolved-canonical-checkout> pull --ff-only, then "
@@ -527,10 +527,10 @@ def _repo_remedy(name: str, key: str) -> dict | None:
                 "payload": f"pyauto-heart fix dirty {shlex.quote(name)}"}
     if key == "open_pr":
         return {"label": "review the open PR", "kind": "prompt",
-                "payload": f"/health Review the aging open PRs for {name}; report CI and next steps. Do not merge or close without approval."}
+                "payload": f"Use the health skill. Review the aging open PRs for {name}; report CI and next steps. Do not merge or close without approval."}
     if key == "ahead":
         return {"label": "inspect unpublished commits", "kind": "prompt",
-                "payload": f"/health Inspect {name}'s ahead-of-origin commits and active task claims. Preserve commits; propose the next step before pushing or resetting anything."}
+                "payload": f"Use the health skill. Inspect {name}'s ahead-of-origin commits and active task claims. Preserve commits; propose the next step before pushing or resetting anything."}
     return None
 
 
@@ -562,8 +562,8 @@ def _repo_entries(name: str, body: dict, *, unobserved: Sequence[str],
             detail = ((ci.get("workflows") or {}).get(workflow) or {}) if workflow else ci
             url = detail.get("url") or ci.get("url")
             key = impact["key"]
-            prompt = (f"/health Refresh CI evidence for {name}" if impact["severity"] == "stale"
-                      else f"/bug Heart board: {name} {workflow or ci.get('workflow') or 'CI'} failing on main")
+            prompt = (f"Use the health skill. Refresh CI evidence for {name}" if impact["severity"] == "stale"
+                      else f"Use the bug skill. Heart board: {name} {workflow or ci.get('workflow') or 'CI'} failing on main")
             if url:
                 prompt += f" — failing run: {url}"
             add(key + (":" + workflow if workflow else ""), impact["text"], WARN,
@@ -573,7 +573,7 @@ def _repo_entries(name: str, body: dict, *, unobserved: Sequence[str],
         # Non-gating failures remain advisory, never red release blockers.
         add("ci", reason, WARN if state == FAIL else state, "CI", ci.get("url"),
             {"label": "inspect CI", "kind": "prompt",
-             "payload": f"/health Inspect CI for {name}: {reason}"} if state != OK else None)
+             "payload": f"Use the health skill. Inspect CI for {name}: {reason}"} if state != OK else None)
 
     if "repo_state" in unobserved:
         add("checkout_unobserved", "repo state n/a here", UNOBS, "local checkout")
@@ -651,6 +651,26 @@ def _repo_section(
                    links=links[:4], entries=entries)
 
 
+def _portable_cached_prompts(value):
+    """Adapt old snapshots without mutating evidence or shell commands."""
+    if isinstance(value, list):
+        return [_portable_cached_prompts(item) for item in value]
+    if isinstance(value, dict):
+        result = {}
+        for key, item in value.items():
+            is_prompt = key == "prompt" or (
+                key == "payload" and value.get("kind") == "prompt")
+            if is_prompt and isinstance(item, str):
+                for skill in ("bug", "health", "release"):
+                    prefix = "/" + skill
+                    if item == prefix or item.startswith(prefix + " "):
+                        item = f"Use the {skill} skill." + item[len(prefix):]
+                        break
+            result[key] = _portable_cached_prompts(item)
+        return result
+    return value
+
+
 def build_board(
     snapshot: dict | None,
     verdict: dict | None,
@@ -662,7 +682,8 @@ def build_board(
     devbox: dict | None = None,
 ) -> Board:
     """Assemble the format-agnostic :class:`Board`. Pure; never raises."""
-    snapshot = snapshot or {}
+    snapshot = _portable_cached_prompts(snapshot or {})
+    devbox = _portable_cached_prompts(devbox)
     verdict = verdict or {}
     unobserved = tuple(unobserved)
     repos = snapshot.get("repos", {}) or {}
@@ -757,7 +778,7 @@ def build_board(
                                     "source": "local worktree inventory", "observed_at": ts,
                                     "evidence": path,
                                     "action": {"kind": "prompt", "label": "triage drift",
-                                               "payload": f"/health Inspect worktree drift: {path} — {reason}. "
+                                               "payload": f"Use the health skill. Inspect worktree drift: {path} — {reason}. "
                                                "Run pyauto-heart fix drift for context; reconcile active claims, "
                                                "preserve user edits and obtain approval before cleanup."}})
             # Local details are uncapped; publication still scrubs private paths.
@@ -1068,12 +1089,12 @@ def build_board(
     for section in sections:
         if section.key == "release_validation" and section.state in (FAIL, WARN):
             section.action = {"label": "inspect release validation", "kind": "prompt",
-                              "payload": "/release Review the current release-validation evidence and failing stages; "
+                              "payload": "Use the release skill. Review the current release-validation evidence and failing stages; "
                               "plan any repair or rehearsal through the existing gates. Do not publish a release."}
         elif section.key == "test_run" and section.state in (FAIL, WARN):
             section.action = {"label": "inspect workspace validation", "kind": "prompt",
-                              "payload": "/health Inspect the latest workspace validation report, identify failures "
-                              "and timeouts, and route confirmed repairs through /bug and start-dev."}
+                              "payload": "Use the health skill. Inspect the latest workspace validation report, identify failures "
+                              "and timeouts, and route confirmed repairs through the bug and start-dev skills."}
 
     board = Board(
         verdict=v,
@@ -1107,15 +1128,15 @@ def build_fix_plan(board: Board, snapshot: dict | None = None, *,
     They are evidence to diagnose, not instructions to execute blindly.
     """
     lines = [
-        "/health Work through this Heart dashboard systematically in this chat.",
+        "Use the health skill. Work through this Heart dashboard systematically in this chat.",
         f"Snapshot: {board.ts or 'unknown'}; verdict: {board.verdict}; score: {board.score}.",
         "1. Read current authoritative Heart evidence first. Reconcile older dev-box "
         "observations and the published board before acting; this snapshot may be stale.",
         "2. Make a deduplicated checklist: real release blockers, missing evidence, "
         "local drift, then advisory timing and score improvements. A red section is "
         "not necessarily a release blocker. Missing evidence is not a code failure.",
-        "3. Use existing /health, /bug and start-dev, /hygiene, /repo-cleanup and "
-        "/release rehearse doors as appropriate. Follow plan approvals and active "
+        "3. Use the health, bug, start-dev, hygiene, repo-cleanup and "
+        "release skills (rehearse for release) as appropriate. Follow plan approvals and active "
         "task claims. This prompt is not approval to merge, delete work or release; "
         "rehearsal and publication are separate actions.",
         "4. Complete authorized items in this chat, refresh evidence after relevant "
@@ -1502,7 +1523,7 @@ def _unobs_section(key: str, title: str) -> Section:
 # and the all-in-one plan are written from, so the two can never disagree.
 TICK_CMD = "pyauto-heart tick"
 VERIFY_INSTALL_CMD = "pyauto-heart verify_install --report-json"
-REHEARSE_STEP = ("dispatch a release rehearsal with `/release rehearse`, then "
+REHEARSE_STEP = ("dispatch a release rehearsal with the release skill with `rehearse`, then "
                  "`pyauto-heart validate --ingest <artifacts>`")
 
 STALE_REMEDIES: dict[str, dict] = {
@@ -1554,7 +1575,7 @@ STALE_REMEDIES: dict[str, dict] = {
 
 # What a stale row copies when its key has no entry here (a gap added since
 # this table, or a verdict from an older Heart that carries no keys at all).
-GENERIC_STALE_PROMPT = "/health re-run the stale evidence: {text}"
+GENERIC_STALE_PROMPT = "Use the health skill. re-run the stale evidence: {text}"
 
 
 def stale_remedy(key: str) -> dict | None:
@@ -1564,10 +1585,10 @@ def stale_remedy(key: str) -> dict | None:
 
 
 def _stale_prompt(text: str, remedy: dict | None) -> str:
-    """One gap's Claude prompt: what to re-run, on which gap, and the rule."""
+    """One gap's AI prompt: what to re-run, on which gap, and the rule."""
     if not remedy:
         return GENERIC_STALE_PROMPT.format(text=text)
-    return (f"/health {remedy['step']} — the Heart's evidence gap: \"{text}\". "
+    return (f"Use the health skill. {remedy['step']} — the Heart's evidence gap: \"{text}\". "
             "Re-run the check only, never change code to clear it; then "
             f"`{TICK_CMD}` and re-read `pyauto-heart readiness`.")
 
@@ -1598,7 +1619,7 @@ def build_stale_plan(stale_reasons: list, stale_keys: list) -> dict | None:
         if cmd and cmd not in commands:
             commands.append(cmd)
     prompt = (
-        f"/health clear the Heart's {len(stale_reasons)} evidence gap(s) — re-run "
+        f"Use the health skill. clear the Heart's {len(stale_reasons)} evidence gap(s) — re-run "
         "the checks named below; never change code to clear one:\n"
         + "\n".join(steps)
         + f"\nThen run `{TICK_CMD} && pyauto-heart readiness` and report the new verdict."
@@ -1639,7 +1660,7 @@ def _reason_item(text: str, severity: str, repos: dict, key: str = "",
         command = (remedy or {}).get("command")
         prompt = _stale_prompt(text, remedy)
     else:
-        prompt = f"/bug Heart board: {text}"
+        prompt = f"Use the bug skill. Heart board: {text}"
         if run_url:
             prompt += f" — failing run: {run_url}"
         remedy = _repo_remedy(repo or "", (detail or {}).get("key", ""))
@@ -1648,7 +1669,7 @@ def _reason_item(text: str, severity: str, repos: dict, key: str = "",
             run_url = None
             if remedy["kind"] == "command":
                 command = remedy["payload"]
-                prompt = f"/health Inspect {repo}'s checkout using `{command}`; preserve user edits and review before changing it."
+                prompt = f"Use the health skill. Inspect {repo}'s checkout using `{command}`; preserve user edits and review before changing it."
             else:
                 prompt = remedy["payload"]
     return {"text": text, "severity": severity, "repo": repo,
@@ -1816,7 +1837,7 @@ def _md_prompts_block(items: list[dict], plan: dict | None = None) -> list[str]:
     if not items:
         return []
     lines = ["<details>",
-             "<summary>📋 fix prompts — copy one into a Claude Code chat</summary>", ""]
+             "<summary>📋 fix prompts — copy one into an AI assistant chat</summary>", ""]
     if plan and items[0].get("severity") == "stale":
         lines += ["**Clear every gap in one go:**", "", "```", plan["prompt"], "```", ""]
         if plan.get("command"):
@@ -1919,7 +1940,7 @@ def _html_reason(item: dict) -> str:
                                 "copy the command that re-runs this check",
                                 "copy command")
     if item.get("prompt"):
-        text += " " + _copy_btn(item["prompt"], "copy the fix prompt for a Claude Code chat")
+        text += " " + _copy_btn(item["prompt"], "copy the fix prompt for an AI assistant chat")
     return f"<li>{text}</li>"
 
 
@@ -2143,7 +2164,7 @@ def _render_html(board: Board) -> str:
                                      "copy command" if payload.startswith("pyauto-heart ")
                                      else "copy prompt", icon=True))
         if not actions:
-            prompt = (f'/health Review the Heart dashboard category "{sec.title}". '
+            prompt = (f'Use the health skill. Review the Heart dashboard category "{sec.title}". '
                       f'Current summary: {sec.summary}. Inspect the latest evidence; '
                       'refresh missing or expired observations before proposing repairs. '
                       'Route confirmed repairs through the development workflow. '
@@ -2372,7 +2393,7 @@ def to_state(board: Board) -> dict[str, Any]:
     status is the readiness verdict (anything outside the four tiers is grey);
     the headline is the worst reason, else a clear line worded like the badge;
     items are the structured blockers (each keeping its failing-run link and
-    its copy-for-Claude prompt) so the cockpit acts on them without
+    its copy-for-assistant prompt) so the cockpit acts on them without
     re-deriving anything.
     """
     status = board.verdict if board.verdict in STATE_STATUSES[:4] else "grey"

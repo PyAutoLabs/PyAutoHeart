@@ -247,7 +247,7 @@ def test_a_timeout_becomes_an_event_with_its_own_prompt(tmp_path):
     assert event["kind"] == "timeout" and event["entry"] == "imaging/slow.py"
     assert event["run_url"] == RUN_URL and event["cap_s"] == 600.0
     assert event["prompt"] == (
-        f"/bug kill timer: {REPO} imaging/slow.py TIMEOUT (600s) on {RUN_URL} "
+        f"Use the bug skill. kill timer: {REPO} imaging/slow.py TIMEOUT (600s) on {RUN_URL} "
         f"— stack tail in the run log"
     )
     # A killed entry has no duration, so it is an event and NOT a timed row.
@@ -256,7 +256,7 @@ def test_a_timeout_becomes_an_event_with_its_own_prompt(tmp_path):
 
 def test_a_timeout_without_a_cap_still_prompts():
     assert smt.timeout_prompt(REPO, "imaging/x.py", None, RUN_URL).startswith(
-        f"/bug kill timer: {REPO} imaging/x.py TIMEOUT (?s) on ")
+        f"Use the bug skill. kill timer: {REPO} imaging/x.py TIMEOUT (?s) on ")
 
 
 def _prev_board(rows):
@@ -317,7 +317,7 @@ def test_aggregate_flags_a_slowed_row_with_its_prompt(tmp_path):
     assert row["prev_s"] == 10.0 and row["prev_run_id"] == 6
     assert row["run_id"] == 7 and row["run_url"] == RUN_URL
     assert row["prompt"] == (
-        f"/bug slow script: {REPO} imaging/x.py 10s → 30s between runs "
+        f"Use the bug skill. slow script: {REPO} imaging/x.py 10s → 30s between runs "
         f"{PREV_RUN_URL} → {RUN_URL}"
     )
     assert roll["slowed"] == [row]

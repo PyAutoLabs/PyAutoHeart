@@ -74,7 +74,7 @@ Per-repo sidecar schema (``<name>.ci_timing.json``)::
       },
       "events": [{"kind": "timed_out", "workflow": ..., "run_url": ...,
                   "duration_s": ..., "head_branch": ..., "at": ...,
-                  "prompt": "/bug kill timer: ..."}]
+                  "prompt": "Use the bug skill. kill timer: ..."}]
     }
 
 Global rollup schema (``ci_timing.json``)::
@@ -261,9 +261,9 @@ def classify_cancelled(run: dict[str, Any], siblings: list[dict[str, Any]]) -> s
 
 
 def event_prompt(repo: str, event: dict[str, Any]) -> str:
-    """The self-contained /bug prompt a hang/kill row copies."""
+    """The self-contained Use the bug skill. prompt a hang/kill row copies."""
     return (
-        f"/bug kill timer: {repo} {event.get('workflow')} {event.get('kind')} after "
+        f"Use the bug skill. kill timer: {repo} {event.get('workflow')} {event.get('kind')} after "
         f"{int(round(float(event.get('duration_s') or 0)))}s on "
         f"{event.get('head_branch') or '?'} — {event.get('run_url') or '?'}"
     )
@@ -271,9 +271,9 @@ def event_prompt(repo: str, event: dict[str, Any]) -> str:
 
 def gate_prompt(repo: str, workflow: str, old_s: float, new_s: float,
                 actions_url: str) -> str:
-    """The self-contained /bug prompt a slowed gate copies."""
+    """The self-contained Use the bug skill. prompt a slowed gate copies."""
     return (
-        f"/bug smoke gate {repo}: {workflow} median wall-clock rose "
+        f"Use the bug skill. smoke gate {repo}: {workflow} median wall-clock rose "
         f"{int(round(old_s))}s → {int(round(new_s))}s vs its recent history — "
         f"{actions_url}"
     )

@@ -542,22 +542,22 @@ def leg_counts(entries: list[dict[str, Any]]) -> dict[str, Any]:
 
 # --- prompts (written by the producer; never re-derived by a renderer) -------
 def timeout_prompt(repo: str, entry: str, cap_s: Any, run_url: str) -> str:
-    """The self-contained /bug prompt a TIMEOUT row copies."""
+    """The self-contained Use the bug skill. prompt a TIMEOUT row copies."""
     cap = _as_float(cap_s)
     cap_text = str(int(round(cap))) if cap is not None else "?"
     return (
-        f"/bug kill timer: {repo} {entry} TIMEOUT ({cap_text}s) on {run_url} "
+        f"Use the bug skill. kill timer: {repo} {entry} TIMEOUT ({cap_text}s) on {run_url} "
         f"— stack tail in the run log"
     )
 
 
 def slow_prompt(repo: str, entry: str, prev_s: Any, now_s: Any,
                 prev_run_url: str, run_url: str) -> str:
-    """The self-contained /bug prompt a slowed script copies."""
+    """The self-contained Use the bug skill. prompt a slowed script copies."""
     prev = _as_float(prev_s) or 0.0
     now = _as_float(now_s) or 0.0
     return (
-        f"/bug slow script: {repo} {entry} {int(round(prev))}s → {int(round(now))}s "
+        f"Use the bug skill. slow script: {repo} {entry} {int(round(prev))}s → {int(round(now))}s "
         f"between runs {prev_run_url} → {run_url}"
     )
 

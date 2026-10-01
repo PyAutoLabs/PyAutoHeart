@@ -113,7 +113,7 @@ def test_timing_cards_are_inside_category_and_checks_precede_score_actions_gaps(
 
 
 def test_icon_copy_payloads_round_trip_quotes_newlines_and_markup():
-    payload = '/health Inspect "repo"\nKeep <evidence> & don\'t execute it.'
+    payload = 'Use the health skill. Inspect "repo"\nKeep <evidence> & don\'t execute it.'
     for face in ('copy command', 'copy prompt'):
         root = Page(dashboard._copy_btn(payload, 'Inspect "repo"', face, icon=True)).root
         button = next(root.find('button'))

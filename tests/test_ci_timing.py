@@ -166,7 +166,7 @@ def test_cancelled_pr_run_with_no_successor_is_suspect(tmp_path):
     assert event["kind"] == "suspect_cancelled"
     assert event["run_url"] == "https://github.invalid/run/77"
     assert event["prompt"] == (
-        "/bug kill timer: RepoA Gate One suspect_cancelled after 3300s on feat/y "
+        "Use the bug skill. kill timer: RepoA Gate One suspect_cancelled after 3300s on feat/y "
         "— https://github.invalid/run/77"
     )
 
@@ -185,7 +185,7 @@ def test_timed_out_is_always_an_event_with_its_prompt(tmp_path):
     assert event["head_branch"] == "main"
     assert event["at"] == "2026-08-20T09:00:00Z"
     assert event["prompt"] == (
-        "/bug kill timer: RepoA Gate One timed_out after 18000s on main "
+        "Use the bug skill. kill timer: RepoA Gate One timed_out after 18000s on main "
         "— https://github.invalid/run/9"
     )
 
@@ -278,7 +278,7 @@ def test_aggregate_flags_a_slowed_gate_with_its_prompt():
     assert gate["state"] == "warn"
     assert gate["baseline_s"] == 600.0
     assert gate["prompt"] == (
-        "/bug smoke gate RepoA: Gate One median wall-clock rose 600s → 1200s "
+        "Use the bug skill. smoke gate RepoA: Gate One median wall-clock rose 600s → 1200s "
         f"vs its recent history — {ACTIONS}"
     )
 
@@ -357,10 +357,10 @@ def test_aggregate_concatenates_events_with_repo_context():
     side = _sidecar(600.0)
     side["events"] = [{"kind": "timed_out", "workflow": "Gate One",
                        "run_url": "u", "duration_s": 900.0, "head_branch": "main",
-                       "at": "t", "prompt": "/bug kill timer: RepoA ..."}]
+                       "at": "t", "prompt": "Use the bug skill. kill timer: RepoA ..."}]
     roll = ct.aggregate([side], {}, "2026-08-24", "T", ct.DEFAULT_CI_TIMING_THRESHOLDS)
     assert roll["events"][0]["repo"] == "RepoA"
-    assert roll["events"][0]["prompt"].startswith("/bug kill timer:")
+    assert roll["events"][0]["prompt"].startswith("Use the bug skill. kill timer:")
 
 
 def test_summary_line_counts_gates_slowdowns_and_events(monkeypatch):
