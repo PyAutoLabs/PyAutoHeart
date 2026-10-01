@@ -88,7 +88,7 @@ def test_html_all_tiers_complete_disclosure_and_safe_fallback():
     assert '<script>unsafe</script>' not in html
     assert 'role="status" aria-live="polite"' in html
     assert 'class="prompt-fallback"' in html
-    assert "[these guys are giving me life]" in html
+    assert "[these guys are giving me life]" not in html
     assert html.index("Fix Heart systematically") < html.index("Release blockers (12)")
 
 
