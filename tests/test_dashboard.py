@@ -1788,3 +1788,13 @@ def test_state_fmt_without_verdict_is_grey():
     doc = json.loads(dashboard.render(make_snapshot(), None, fmt="state", now=FRESH_NOW))
     _assert_valid_state(doc)
     assert doc["status"] == "grey"
+
+
+@pytest.mark.parametrize("verdict", ["green", "yellow", "red", "stale"])
+def test_rendered_copy_payloads_are_assistant_agnostic(verdict):
+    # theme() resolves the shared Brain board directory in local and CI layouts.
+    dashboard.theme()
+    from copy_contract import assert_portable_copy_payloads
+    page = dashboard.render(make_snapshot(), make_verdict(verdict),
+                            fmt="html", now=FRESH_NOW)
+    assert_portable_copy_payloads(page)
