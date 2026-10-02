@@ -178,7 +178,10 @@ def run(runner: Runner | None = None, repos: list[str] | None = None) -> dict[st
                 "samples": len(history) - 1,
             })
 
+    import datetime as observation_time
+
     summary = {
+        "ts": observation_time.datetime.now(observation_time.timezone.utc).isoformat(),
         "python": python,
         "repos_measured": repos_measured,
         "repos_unavailable": unavailable,

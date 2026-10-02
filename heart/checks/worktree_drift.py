@@ -184,6 +184,9 @@ def main(argv: list[str] | None = None) -> int:
     sys.path.insert(0, str(HEART_HOME))
     from heart import state
 
+    import datetime as observation_time
+    result["ts"] = observation_time.datetime.now(observation_time.timezone.utc).isoformat()
+
     state.atomic_write_json(HEART_STATE_DIR / "worktree_drift.json", result)
 
     from heart.heart_color import c_fail, c_info, c_ok, c_warn, glyph_fail, glyph_ok, glyph_warn

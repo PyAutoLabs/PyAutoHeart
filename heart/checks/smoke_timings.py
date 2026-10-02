@@ -813,6 +813,7 @@ def aggregate(
                 prev_run_id = (prev_row or {}).get("run_id")
                 prev_run_url = str((prev_row or {}).get("run_url") or "")
                 leg_rows.append({
+                    "at": at,
                     "repo": repo,
                     "python": python,
                     "entry": name,

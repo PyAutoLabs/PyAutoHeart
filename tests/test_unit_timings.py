@@ -486,10 +486,10 @@ def test_aggregate_survives_garbage_sidecars():
 # They are the WHOLE point of the ingest: the board's existing sections read
 # these two files, so the shapes have to match key for key.
 
-LEGACY_UNIT_KEYS = {"python", "repos_measured", "repos_unavailable",
+LEGACY_UNIT_KEYS = {"ts", "python", "repos_measured", "repos_unavailable",
                     "new_tests_no_baseline", "red_count", "yellow_count",
                     "green_count", "red", "yellow"}
-LEGACY_IMPORT_KEYS = {"python", "packages_measured", "packages_unavailable",
+LEGACY_IMPORT_KEYS = {"ts", "python", "packages_measured", "packages_unavailable",
                       "new_packages_no_baseline", "red_count", "yellow_count",
                       "green_count", "red", "yellow"}
 

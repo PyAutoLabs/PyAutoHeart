@@ -275,6 +275,7 @@ class Board:
     red_reasons: list[str]
     yellow_reasons: list[str]
     sections: list[Section]
+    monitoring: dict | None = None
     # readiness freshness tier: evidence missing/expired, nothing known-bad
     # (heart/readiness.py) — distinct from the tick-age `stale` bool above.
     stale_reasons: list[str] = field(default_factory=list)
@@ -724,6 +725,16 @@ def build_board(
                            repository_reasons=repository_reasons, ts=ts)
     if ws_sec:
         sections.append(ws_sec)
+    other_entries = []
+    for name, body in sorted(repos.items()):
+        if isinstance(body, dict) and not _is_library(name, body) and _repo_group(body) not in GATED_WORKSPACE_GROUPS:
+            other_entries.extend(_repo_entries(name, body, unobserved=unobserved,
+                                               repository_reasons=repository_reasons, ts=ts))
+    if other_entries:
+        sections.append(Section("other_repositories", "Other monitored repositories",
+                                _worst(e["state"] for e in other_entries),
+                                f"{len({e['subject'] for e in other_entries})} repos",
+                                entries=other_entries))
 
     # Worktree drift ---------------------------------------------------------
     if "worktree_drift" in unobserved:
@@ -1118,6 +1129,8 @@ def build_board(
         devbox_observed=(f"dev box last observed {format_age(_age_seconds(devbox.get('ts'), now))}"
                          if isinstance(devbox, dict) and devbox.get("ts") else None),
     )
+    from heart import monitoring
+    board.monitoring = monitoring.assess(board, snapshot, devbox=devbox, now=now)
     board.fix_plan = build_fix_plan(board, snapshot, devbox=devbox)
     return board
 
@@ -1131,6 +1144,11 @@ def build_fix_plan(board: Board, snapshot: dict | None = None, *,
     """
     lines = [
         "Use the health skill. Work through this Heart dashboard systematically in this chat.",
+        "Scope: every monitored check. Run pyauto-brain health --scope dashboard --json. "
+        "Read monitoring.checks and monitoring.findings in the full board JSON before acting. "
+        "Release GREEN is not completion: finish only when monitoring.complete is true, "
+        "or report every unresolved finding, evidence gap and environment blocker. "
+        "Reconcile the same finding IDs after refresh; do not stop at a green release verdict.",
         f"Snapshot: {board.ts or 'unknown'}; verdict: {board.verdict}; score: {board.score}.",
         "1. Read current authoritative Heart evidence first. Reconcile older dev-box "
         "observations and the published board before acting; this snapshot may be stale.",
@@ -1155,6 +1173,11 @@ def build_fix_plan(board: Board, snapshot: dict | None = None, *,
         for key in ("run_url", "command", "prompt"):
             if item.get(key):
                 lines.append(f"  {key}: {item[key]}")
+    if board.monitoring:
+        lines += ["", "Complete monitoring inventory (full records in monitoring.checks):"]
+        for finding in board.monitoring["findings"][:20]:
+            lines.append(f"- {finding['id']} [{finding['status']}]: {finding['summary']}")
+        lines.append(f"{len(board.monitoring['findings'])} total findings; read monitoring.findings for every ID and remedy.")
     if board.stale_plan:
         lines += ["", "Refresh missing evidence:", board.stale_plan["prompt"]]
     lines += ["", "Section observations (not additional readiness blockers):"]
@@ -1182,7 +1205,7 @@ def build_fix_plan(board: Board, snapshot: dict | None = None, *,
                 "unit_test_timing", "unit_timings", "ci_timing", "smoke_timings",
                 "test_run", "validation_report", "verify_install", "url_check",
                 "version_skew", "profiling_drift", "manifest_drift",
-                "required_workflow_drift", "no_run_census"):
+                "required_workflow_drift", "no_run_census", "workspace_testmode_timing", "version_skew_pypi"):
         if source.get(key):
             evidence[key] = source[key]
     if devbox:
@@ -1199,7 +1222,7 @@ def build_fix_plan(board: Board, snapshot: dict | None = None, *,
 
     evidence_note = (
         "\n\nFull evidence: read the published Heart board.json at "
-        f"{PAGES_URL}board.json, including blockers, sections, performance and "
+        f"{PAGES_URL}board.json, including monitoring.checks, monitoring.findings, blockers, sections, performance and "
         "fix_plan.evidence. For local evidence use pyauto-heart dashboard --json "
         "and the state.json/release_ready.json files in HEART_STATE_DIR "
         "(default ~/.pyauto-heart). Reconcile timestamps before acting. "
@@ -1755,7 +1778,7 @@ def _devbox_enrich(
                 [str(x) for x in (d.get("details") or [])][:8],
                 links=sec.links, action=sec.action,
                 observed_ago=f"observed {ago} on the dev box",
-                entries=[{**e, "source": "published dev-box observation",
+                entries=[{**e, "original_source": e.get("source"), "source": "published dev-box observation",
                           "observed_at": devbox.get("ts")} for e in d.get("entries", [])
                          if isinstance(e, dict)],
             ))
@@ -1810,6 +1833,7 @@ def _render_term(board: Board, verdict: dict, *, quiet: bool) -> str:
     if board.stale:
         out.append("  " + c_warn("! board is stale — run `pyauto-heart tick` for fresh numbers"))
     out.append("")
+    out.append(f"MONITORING {monitoring_score(board)}/100 — {(board.monitoring or {}).get('status', 'unknown').upper()}")
     out.extend(render_readiness_block(verdict, quiet=quiet))
     out.append("")
     for sec in board.sections:
@@ -1834,7 +1858,7 @@ def _render_oneline(board: Board) -> str:
         tail = "all green"
     age = format_age(board.age_seconds, stale=board.stale)
     coloured_word = _colour(state, f"{word} {board.score}")
-    return f"PyAuto {dot} {coloured_word}  {tail}  (tick {age})"
+    return f"PyAuto monitoring {monitoring_score(board)}/100; release {dot} {coloured_word}  {tail}  (tick {age})"
 
 
 def _shown_reasons(board: Board) -> tuple[str, list[dict]]:
@@ -1888,7 +1912,7 @@ def _render_md(board: Board) -> str:
     emoji = _STATE_MD[_VERDICT_STATE.get(board.verdict, OK)]
     age = format_age(board.age_seconds, stale=board.stale)
     lines = [
-        f"## {emoji} PyAutoHeart Dashboard — **{word}** (score {board.score})",
+        f"## {emoji} PyAutoHeart Dashboard — monitoring {monitoring_score(board)}/100; release **{word}**",
         "",
         f"_snapshot `{board.ts}` · {age}_"
         + ("  ⚠️ **stale — run `pyauto-heart tick`**" if board.stale else ""),
@@ -1922,7 +1946,7 @@ def _render_md_brief(board: Board) -> str:
     word = _VERDICT_WORD.get(board.verdict, "GREEN")
     emoji = _STATE_MD[_VERDICT_STATE.get(board.verdict, OK)]
     lines = [
-        f"{emoji} **{word}** · score {board.score} · [dashboard →]({PAGES_URL})"
+        f"{emoji} Monitoring {monitoring_score(board)}/100 · release **{word}** · [dashboard →]({PAGES_URL})"
     ]
     if board.verdict in ("red", "yellow"):
         label, items = _shown_reasons(board)
@@ -2139,6 +2163,26 @@ def _html_entries(entries: list[dict]) -> str:
     return '<ul class="det">' + ''.join(rows) + '</ul>'
 
 
+def monitoring_score(board: Board) -> int:
+    return board.monitoring["score"] if board.monitoring else board.score
+
+
+def _html_monitoring(board: Board) -> str:
+    if not board.monitoring:
+        return ""
+    findings = board.monitoring["findings"]
+    rows = []
+    for item in findings:
+        action = item.get("action") or {}
+        button = _copy_btn(action["payload"], "inspect finding") if action.get("payload") else ""
+        rows.append(f'<li><b>{_html.escape(item["subject"])} [{item["status"]}]</b>: '
+                    f'{_html.escape(item["summary"])} {button}'
+                    f'<br><small>{_html.escape(item["id"])} · {_html.escape(item["source"])} · '
+                    f'{_html.escape(str(item["observed_at"] or "time unknown"))}</small></li>')
+    return (f'<details><summary>All monitoring findings ({len(findings)})</summary>'
+            f'<ul>{"".join(rows) or "<li>Every applicable check has fresh green evidence.</li>"}</ul></details>')
+
+
 def _html_score(board: Board) -> str:
     if board.penalties is None:
         body = "This older verdict did not record a breakdown. Refresh Heart evidence to see it."
@@ -2159,7 +2203,16 @@ def _html_score(board: Board) -> str:
         body = ("Start at 100; subtract these capped penalties, with a floor of 0. "
                 "The verdict is determined by the reasons, not the score.<ul>" +
                 ("".join(rows) or "<li>No penalties recorded.</li>") + "</ul>")
-    return f'<details class="score"><summary>Why this score: {board.score}/100</summary>{body}</details>'
+    release = f'<details class="score"><summary>Release readiness score: {board.score}/100</summary>{body}</details>'
+    if not board.monitoring:
+        return release
+    m = board.monitoring
+    rows = "".join(f"<li>{_html.escape(p['key'])}: −{p['points']} ({p['count']} unresolved observations; family cap 10)</li>" for p in m["penalties"])
+    return (f'<details class="score"><summary>Why this monitoring score: {m["score"]}/100</summary>'
+            'Start at 100. Each family deducts its worst unresolved status: red 10, yellow 5, missing or expired evidence 2; '
+            'summary and individual rows are charged once per family, with a total floor of 0. '
+            '100 requires fresh green evidence for every applicable check. Explicit permanent exclusions are listed separately.'
+            f'<ul>{rows or "<li>No monitoring penalties.</li>"}</ul></details>' + release)
 
 
 def _html_actions(board: Board) -> str:
@@ -2282,7 +2335,8 @@ def _render_html(board: Board) -> str:
 <div class="board">{''.join(rows)}</div>
 <section aria-labelledby="score-heading">
 <h2 id="score-heading">Score</h2>
-<p class="score-value"><strong>{board.score}/100</strong>
+<p class="score-value"><strong>{monitoring_score(board)}/100</strong>
+<span>Monitoring: {(board.monitoring or {}).get("status", "unknown").upper()}</span>
 <span class="muted">Release readiness: {word}</span></p>
 <p class="muted">snapshot {_html.escape(board.ts)} ·
  {age} · <a href="dashboard.md">markdown version</a>{github_link}</p>
@@ -2290,6 +2344,7 @@ def _render_html(board: Board) -> str:
 <p class="vantage">{_html.escape(board.vantage)} ·
 {_html.escape(board.devbox_observed or ('no dev-box observation attached' if board.vantage == 'cloud snapshot' else 'observed on this dev box'))}</p>
 {_html_score(board)}
+{_html_monitoring(board)}
 <p class="reason-counts">{len(board.red_reasons)} release blockers ·
 {len(board.yellow_reasons)} warnings · {len(board.stale_reasons)} evidence gaps</p>
 </section>
@@ -2311,7 +2366,8 @@ def to_dict(board: Board) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "verdict": board.verdict,
-        "score": board.score,
+        "score": board.score,  # legacy release score; monitoring.score is the headline
+        "monitoring": board.monitoring,
         "ts": board.ts,
         "age_seconds": board.age_seconds,
         "stale": board.stale,
@@ -2367,8 +2423,8 @@ def badge_endpoint(board: Board) -> dict[str, Any]:
     return {
         "schemaVersion": 1,
         "label": "health",
-        "message": f"{word} · {board.score}",
-        "color": _BADGE_COLOR.get(board.verdict, "lightgrey"),
+        "message": f"Monitoring {(board.monitoring or {}).get('status', 'unknown').upper()} · {monitoring_score(board)}; release {word}",
+        "color": _BADGE_COLOR.get((board.monitoring or {}).get("status", board.verdict), "lightgrey"),
     }
 
 
@@ -2437,10 +2493,12 @@ def to_state(board: Board) -> dict[str, Any]:
         return grey_state()
     first = next((r for rs in (board.red_reasons, board.yellow_reasons,
                                board.stale_reasons) for r in rs), None)
-    if first is not None:
+    if board.monitoring:
+        headline = f"Release {status.upper()}; monitoring {board.monitoring['status'].upper()} · {monitoring_score(board)}/100 · {len(board.monitoring['findings'])} unresolved"
+    elif first is not None:
         headline = str(first)
     else:
-        headline = f"{_VERDICT_WORD.get(status, 'GREEN')} \u00b7 {board.score} \u2014 all clear"
+        headline = f"Release {status.upper()} · {board.score} — monitoring not assessed"
     items: list[dict[str, Any]] = []
     for b in board.blockers:
         sev = b.get("severity")
@@ -2455,6 +2513,11 @@ def to_state(board: Board) -> dict[str, Any]:
     if not any(b.get("severity") == "stale" for b in board.blockers):
         items += [{"severity": "info", "text": _clip(r), "url": None,
                    "prompt": None} for r in board.stale_reasons]
+    if board.monitoring:
+        for finding in board.monitoring["findings"]:
+            items.append({"severity": finding["status"] if finding["status"] in ("red", "yellow") else "info",
+                          "text": _clip(finding["subject"] + ": " + finding["summary"]), "url": None,
+                          "prompt": (finding.get("action") or {}).get("payload")})
     state = grey_state()
     state.update(status=status, headline=_clip(headline),
                  updated=_iso_z(board.ts), items=items)

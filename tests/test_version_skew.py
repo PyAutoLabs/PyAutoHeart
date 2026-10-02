@@ -209,7 +209,8 @@ def test_main_persists_result_to_state_dir(monkeypatch):
     monkeypatch.setattr(vs, "run", lambda root=vs.PYAUTO_ROOT: {"workspaces": []})
     assert vs.main(["version_skew"]) == 0
     written = json.loads((Path(os.environ["HEART_STATE_DIR"]) / "version_skew.json").read_text())
-    assert written == {"workspaces": []}
+    assert written["workspaces"] == []
+    assert written["ts"]
 
 
 def test_main_pypi_persists_to_sibling_file(monkeypatch):

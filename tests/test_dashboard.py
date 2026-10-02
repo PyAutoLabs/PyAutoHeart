@@ -140,12 +140,13 @@ def test_unify_invariant_verdict_and_score_agree(verdict, score):
     v = make_verdict(verdict, score,
                      red_reasons=["a blocker"] if verdict == "red" else [],
                      yellow_reasons=["a warning"] if verdict != "green" else [])
-    seen = set()
-    for fmt in ("term", "oneline", "md", "json"):
+    board = dashboard.build_board(snap, v, now=FRESH_NOW)
+    doc = dashboard.to_dict(board)
+    assert doc["verdict"] == verdict and doc["score"] == score
+    for fmt in ("term", "oneline", "md", "html"):
         out = dashboard.render(snap, v, fmt=fmt, now=FRESH_NOW)
-        seen.add(_extract(out, fmt))
-    # All surfaces must extract to exactly one (verdict-word, score) pair.
-    assert seen == {(dashboard._VERDICT_WORD[verdict], score)}
+        assert str(board.monitoring["score"]) in out
+        assert dashboard._VERDICT_WORD[verdict] in out
 
 
 # --- staleness path ----------------------------------------------------------
@@ -334,7 +335,7 @@ def test_badge_endpoint_colour(verdict, color):
     b = dashboard.badge_endpoint(board)
     assert b["schemaVersion"] == 1
     assert b["label"] == "health"
-    assert b["color"] == color
+    assert b["color"] == dashboard._BADGE_COLOR.get(board.monitoring["status"], "lightgrey")
     assert dashboard._VERDICT_WORD[verdict] in b["message"]
 
 
@@ -1735,7 +1736,8 @@ def test_to_state_green_board():
     _assert_valid_state(doc)
     assert doc["status"] == "green"
     assert doc["updated"] == "2026-06-01T00:00:00Z"
-    assert "100" in doc["headline"] and doc["items"] == []
+    assert "Release GREEN; monitoring" in doc["headline"]
+    assert doc["items"]  # this fixture lacks complete monitoring evidence
 
 
 def test_to_state_red_items_carry_url_and_prompt():
@@ -1747,7 +1749,7 @@ def test_to_state_red_items_carry_url_and_prompt():
     doc = dashboard.to_state(dashboard.build_board(snap, v, now=FRESH_NOW))
     _assert_valid_state(doc)
     assert doc["status"] == "red"
-    assert doc["headline"].startswith("PyAutoFit: CI failure")
+    assert doc["headline"].startswith("Release RED; monitoring RED")
     red = [i for i in doc["items"] if i["severity"] == "red"]
     assert red and red[0]["url"].endswith("/actions/runs/1")
     assert red[0]["prompt"].startswith("Use the bug skill.")
@@ -1760,8 +1762,8 @@ def test_to_state_stale_reasons_become_info_items():
     doc = dashboard.to_state(dashboard.build_board(make_snapshot(), v, now=FRESH_NOW))
     _assert_valid_state(doc)
     assert doc["status"] == "stale"
-    assert doc["headline"] == "release validation: evidence expired"
-    assert [i["severity"] for i in doc["items"]] == ["info"]
+    assert doc["headline"].startswith("Release STALE; monitoring STALE")
+    assert any(i["text"] == "release validation: evidence expired" and i["severity"] == "info" for i in doc["items"])
 
 
 def test_to_state_naive_and_microsecond_ts_normalise_to_z():

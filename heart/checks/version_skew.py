@@ -255,6 +255,8 @@ def main(argv: list[str]) -> int:
     # clobber live state. The --pypi leg gets its own sidecar so the tick's
     # version_skew.json rewrite never clobbers on-demand PyPI evidence.
     name = "version_skew_pypi.json" if pypi else "version_skew.json"
+    import datetime
+    result["ts"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
     state.atomic_write_json(HEART_STATE_DIR / name, result)
 
     from heart.heart_color import c_ok, c_warn, c_fail, c_info, c_meta, glyph_ok, glyph_warn, glyph_fail

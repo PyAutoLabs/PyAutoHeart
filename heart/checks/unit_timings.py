@@ -628,6 +628,7 @@ def aggregate(
                 prev_run_id = (prev_row or {}).get("run_id")
                 prev_run_url = str((prev_row or {}).get("run_url") or "")
                 tests.append({
+                    "at": at,
                     "repo": repo,
                     "python": python,
                     "nodeid": nodeid,
@@ -652,6 +653,7 @@ def aggregate(
                     import_s, history.get((repo, package, python)), thr
                 )
                 imports.append({
+                    "at": at,
                     "repo": repo,
                     "package": package,
                     "python": python,
@@ -757,7 +759,10 @@ def legacy_summaries(
         else:
             unit["green"].append(entry)
 
+    evidence_times = [str(r.get("at")) for r in repos if r.get("at")]
+    evidence_ts = min(evidence_times) if evidence_times else None
     unit_summary = {
+        "ts": evidence_ts,
         "python": LEGACY_PYTHON,
         "repos_measured": len(measured),
         "repos_unavailable": unavailable,
@@ -800,6 +805,7 @@ def legacy_summaries(
         imports.get(state, imports["green"]).append(entry)
 
     import_summary = {
+        "ts": evidence_ts,
         "python": LEGACY_PYTHON,
         "packages_measured": packages_measured,
         "packages_unavailable": packages_unavailable,
