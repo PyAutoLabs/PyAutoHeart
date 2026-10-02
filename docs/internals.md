@@ -129,3 +129,37 @@ time (the earlier stage start), so a new cloud runner cannot rejuvenate an
 old pass. Installation checks retain their own timestamps and source/index.
 Readiness still checks release fidelity, current library SHAs and evidence age.
 This bounded search is daily-only and does not add work to the fast local tick.
+
+## Monitoring completeness
+
+The dashboard's headline is `monitoring.score`; `verdict`, `score`, and
+`penalties` retain their release-readiness meanings for existing consumers.
+Release gating is unchanged. Badges label both assessments. The cockpit
+`state.status` remains the release verdict (the development entry guard reads
+it); its headline and items also report monitoring findings.
+
+`heart.monitoring` owns the complete inventory: expected active check families,
+all configured repositories (including organs and developer workspaces), raw
+nested observations, and missing evidence. `monitoring.checks` includes passing
+and explicitly inapplicable observations; `findings` includes every unresolved
+one with a stable ID, source, timestamp, and remedy. Repair consumers must read
+this full inventory, not the capped visual summaries or clipboard prompt.
+`pyauto-brain health --scope dashboard` adopts this assessment. Release GREEN
+alone cannot complete that loop.
+
+Monitoring starts at 100. Each family deducts its worst unresolved status:
+red 10, yellow 5, missing/expired evidence 2, with a total floor of zero.
+Multiple projections of a family cannot multiply its penalty. A score of 100
+requires fresh green evidence across all applicable checks. Permanent exclusions
+are explicit N/A records. Missing comparisons, unfinished baselines and zero
+measured tests are gaps; the retired workspace-testmode collector is not an
+expected check (its replacement is smoke timings).
+
+Observation age comes from the collector, never a new aggregation timestamp.
+The monitoring freshness windows are two days for local/coverage checks, seven
+days for timing evidence, and fourteen for installation/rehearsal evidence;
+release-specific source and freshness rules still apply through readiness.
+Old adverse results remain adverse. Undated results require a collector refresh.
+Published local observations carry their full inventory and per-repository
+checkout evidence. Private records retain their status and an opaque ID with a
+local investigation action; private paths never travel to the public board.

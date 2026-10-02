@@ -57,6 +57,21 @@ def _scrub(lines: list[str]) -> list[str]:
     return out
 
 
+def _public_monitoring(item: dict) -> dict:
+    """Retain an honest unresolved record when private evidence cannot travel."""
+    if _scrub([json.dumps(item, ensure_ascii=False)]):
+        return item
+    import hashlib
+    from heart.monitoring import remedy
+    identity = hashlib.sha256(item["id"].encode()).hexdigest()[:16]
+    return {"id": item["family"] + ":private:" + identity, "family": item["family"],
+            "subject": "Local observation (private details)", "status": item["status"],
+            "summary": "Inspect full evidence on the dev box; private paths omitted",
+            "observed_at": item.get("observed_at"), "source": "devbox",
+            "action": remedy(item["family"], "private local finding"),
+            "applicability_reason": item.get("applicability_reason")}
+
+
 def build_devbox_board(snapshot: dict | None, verdict: dict | None) -> dict[str, Any]:
     """Distill the LOCAL board's local-only families. Pure; never raises."""
     board = dashboard.build_board(snapshot, verdict, unobserved=())
@@ -71,6 +86,11 @@ def build_devbox_board(snapshot: dict | None, verdict: dict | None) -> dict[str,
             "summary": sec.summary,
             "details": _scrub(sec.details)[:8],
         }
+        if board.monitoring:
+            sections[sec.key]["monitoring_checks"] = [
+                _public_monitoring(item) for item in board.monitoring["checks"]
+                if item["family"] == sec.key
+            ]
         if sec.entries:
             # Structured observations obey the same public-path boundary as
             # plain detail lines, including paths inside prompts/evidence.
@@ -82,6 +102,13 @@ def build_devbox_board(snapshot: dict | None, verdict: dict | None) -> dict[str,
         "schema_version": DEVBOX_SCHEMA_VERSION,
         "ts": (snapshot or {}).get("ts") or "",
         "sections": sections,
+        "repo_observations": {
+            name: {"repo_state": {k: v for k, v in body.get("repo_state", {}).items()
+                                  if k in {"ts", "branch", "dirty_real", "dirty_files", "ahead", "behind", "error"}
+                                  and _scrub([json.dumps(v)])}}
+            for name, body in (snapshot or {}).get("repos", {}).items()
+            if isinstance(body, dict) and isinstance(body.get("repo_state"), dict)
+        },
     }
 
 

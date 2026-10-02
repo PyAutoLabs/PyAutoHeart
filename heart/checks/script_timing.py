@@ -326,6 +326,7 @@ def scan_latest_results(results_dir: Path) -> list[dict[str, Any]]:
                 "directory": directory,
                 "file": file_path,
                 "duration": float(duration),
+                "observed_at": datetime.datetime.fromtimestamp(json_path.stat().st_mtime, datetime.timezone.utc).isoformat(),
             })
     return entries
 
@@ -350,6 +351,9 @@ def run(results_dir: Path | None = None) -> dict[str, Any]:
     migrations: list[dict[str, str]] = []
 
     scanned = scan_latest_results(results_dir)
+    # Reading yesterday's run again is not a new timing observation.
+    observed_times = [e["observed_at"] for e in scanned if e.get("observed_at")]
+    evidence_ts = min(observed_times) if observed_times else None
     slugs = [slug_for(e["project"], e["directory"], e["file"]) for e in scanned]
     touched = set(slugs)
     # Anything this scan does not write to is a candidate stranded baseline.
@@ -396,6 +400,7 @@ def run(results_dir: Path | None = None) -> dict[str, Any]:
         findings[category].append(record)
 
     summary = {
+        "ts": evidence_ts,
         "results_dir": str(results_dir),
         "run_id": run_id,
         "total_scripts": total,
@@ -404,7 +409,7 @@ def run(results_dir: Path | None = None) -> dict[str, Any]:
         "migrated_count": len(migrations),
         "orphaned_count": len(orphans),
         "migrated": migrations[:MAX_LISTED],
-        "orphaned": orphans[:MAX_LISTED],
+        "orphaned": orphans,
         "red_count": len(findings["red"]),
         "yellow_count": len(findings["yellow"]),
         "green_count": len(findings["green"]),

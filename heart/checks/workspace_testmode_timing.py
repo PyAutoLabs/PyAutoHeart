@@ -170,7 +170,10 @@ def run(runner: Runner | None = None, scripts: list[tuple[str, str]] | None = No
             "samples": len(history) - 1,
         })
 
+    import datetime as observation_time
+
     summary = {
+        "ts": observation_time.datetime.now(observation_time.timezone.utc).isoformat(),
         "python": python,
         "mode": "PYAUTO_TEST_MODE=2 PYAUTO_WORKSPACE_SMALL_DATASETS=1",
         "scripts_measured": measured,

@@ -107,7 +107,7 @@ def test_timing_cards_are_inside_category_and_checks_precede_score_actions_gaps(
     assert list(timing.find(cls='timing-card'))
     assert all('timing-card' not in n.attrs.get('class', '')
                for c in checks for n in next(c.find('summary')).find())
-    assert (html.index('<div class="board">') < html.index('Why this score:') <
+    assert (html.index('<div class="board">') < html.index('Release readiness score:') <
             html.index('Fix Heart systematically') < html.index('Evidence gaps ('))
     assert '[these guys are giving me life]' not in html
 
@@ -136,7 +136,7 @@ def test_score_and_resusitate_sections_keep_breakdown_and_readiness():
     score = next(s for s in root.find('section')
                  if s.attrs.get('aria-labelledby') == 'score-heading')
     assert '65/100' in score.text() and 'Release readiness: STALE' in score.text()
-    assert 'Why this score: 65/100' in score.text()
+    assert 'Release readiness score: 65/100' in score.text()
     assert 'Missing workspace test report: −10 (1 × 10, cap 10)' in score.text()
     assert 'Missing install verification: −10 (1 × 10, cap 10)' in score.text()
     assert 'Missing release validation: −15 (1 × 15, cap 15)' in score.text()

@@ -174,7 +174,10 @@ def run(
             "samples": len(prior),
         })
 
+    import datetime as observation_time
+
     summary = {
+        "ts": observation_time.datetime.now(observation_time.timezone.utc).isoformat(),
         "python": python,
         "packages_measured": measured,
         "packages_unavailable": unavailable,

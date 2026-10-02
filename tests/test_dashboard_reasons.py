@@ -94,7 +94,7 @@ def test_score_breakdown_reproduces_caps_and_floor():
     assert penalties["lib_behind"] == {"key": "lib_behind", "count": 5, "weight": 20, "cap": 40, "points": 40}
     assert v["score"] == max(0, 100-sum(p["points"] for p in v["penalties"])) == 0
     html = dashboard.render({"ts": TS, "repos": repos}, v, fmt="html", now=NOW)
-    assert "Why this score: 0/100" in html and "floor of 0" in html
+    assert "Release readiness score: 0/100" in html and "floor of 0" in html
     assert "Library checkout behind origin" in html
 
 

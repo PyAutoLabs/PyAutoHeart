@@ -108,6 +108,9 @@ def run(results_root: Path | None = None) -> dict[str, Any]:
     sys.path.insert(0, str(HEART_HOME))
     from heart import state
 
+    import datetime as observation_time
+    summary["ts"] = observation_time.datetime.now(observation_time.timezone.utc).isoformat()
+
     state.atomic_write_json(HEART_STATE_DIR / "profiling_drift.json", summary)
     return summary
 
