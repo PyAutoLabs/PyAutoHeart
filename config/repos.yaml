@@ -83,6 +83,8 @@ repos:
       owner: PyAutoLabs
     - name: PyAutoHeart
       owner: PyAutoLabs
+    - name: PyAutoPulse
+      owner: PyAutoLabs
 
 # Required gating workflows per group, keyed by the GitHub Actions workflow
 # *name* (the `name:` field, e.g. "Smoke Tests"), matched against

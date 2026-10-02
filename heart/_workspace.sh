@@ -90,7 +90,8 @@ else
       if [ -d "$PYAUTO_ROOT/PyAutoMind" ] || [ -d "$PYAUTO_ROOT/PyAutoCortex" ] \
          || [ -d "$PYAUTO_ROOT/PyAutoMemory" ] || [ -d "$PYAUTO_ROOT/PyAutoEyes" ] \
          || [ -d "$PYAUTO_ROOT/PyAutoHeart" ] || [ -d "$PYAUTO_ROOT/PyAutoHands" ] \
-         || [ -d "$PYAUTO_ROOT/PyAutoNerves" ] || [ -d "$PYAUTO_ROOT/PyAutoGut" ]; then
+         || [ -d "$PYAUTO_ROOT/PyAutoPulse" ] || [ -d "$PYAUTO_ROOT/PyAutoNerves" ] \
+         || [ -d "$PYAUTO_ROOT/PyAutoGut" ]; then
         PYAUTO_ROOT_REASON="beside this checkout (no PyAutoBrain in reach)"
       else
         PYAUTO_ROOT_REASON="unverified (no sibling organ beside this checkout) (no PyAutoBrain in reach)"
