@@ -91,6 +91,30 @@ def expected_repos():
     return [r["name"] for rows in config["repos"].values() for r in rows]
 
 
+def family_data(snapshot, family):
+    """Whether this vantage actually carries a family's observation."""
+    data = snapshot.get(family)
+    if not data and family in {"import_time", "unit_test_timing"}:
+        data = snapshot.get("unit_timings")
+    return data
+
+
+def published_checks(family, section):
+    """Validate public rows; malformed inventory never establishes coverage."""
+    stored = section.get("monitoring_checks")
+    if not isinstance(stored, list):
+        return [], False
+    rows = [item for item in stored if isinstance(item, dict)
+            and isinstance(item.get("id"), str) and item["id"]
+            and item.get("family", family) == family
+            and item.get("status") in ORDER
+            and isinstance(item.get("summary"), str)
+            and isinstance(item.get("subject"), str)]
+    complete = (len(rows) == len(stored)
+                and any(item["id"] == f"{family}:coverage" for item in rows))
+    return rows, complete
+
+
 def assess(board, snapshot, *, devbox=None, now=None, repos=None, families=None):
     """Return one uncapped inventory used by score, repair and all consumers.
 
@@ -200,9 +224,20 @@ def assess(board, snapshot, *, devbox=None, now=None, repos=None, families=None)
         if family in {"import_time", "unit_test_timing"} and not ts and not (isinstance(data, dict) and "ts" in data):
             ts = (snapshot.get("unit_timings") if isinstance(snapshot.get("unit_timings"), dict) else {}).get("ts")
         ds = (devbox.get("sections") or {}).get(family)
-        published = sec is not None and sec.observed_ago and isinstance(ds, dict)
-        if published:
-            ts = devbox.get("ts")
+        # The publication envelope timestamp is not an observation timestamp.
+        # Consume the uncapped inventory even when no legacy section exists.
+        if not family_data(snapshot, family) and isinstance(ds, dict):
+            rows, complete = published_checks(family, ds)
+            for item in rows:
+                add(family, item["subject"], item["status"], item["summary"],
+                    item.get("evidence"), observed_at=item.get("observed_at"),
+                    action=item.get("action"), identity=item["id"],
+                    source=f"devbox.sections.{family}", na_reason=item.get("applicability_reason"))
+            if not complete:
+                add(family, FAMILIES.get(family, family), "grey",
+                    "Published summary lacks the complete inventory; republish from the dev box",
+                    identity=f"{family}:coverage", source=f"devbox.sections.{family}")
+            continue
         label = FAMILIES.get(family, family)
         state = status(sec.state) if sec else "grey"
         summary = sec.summary if sec else "No observation available"
@@ -223,11 +258,10 @@ def assess(board, snapshot, *, devbox=None, now=None, repos=None, families=None)
             totals = data.get("totals") or {}
             if totals.get("permanent") and not totals.get("slow") and not totals.get("needs_fix"):
                 na_reason = "Only permanent exclusions by design; no repairable skips"
-        if not published and family in {"script_timing", "unit_test_timing", "workspace_testmode_timing"} and isinstance(data, dict):
+        if family in {"script_timing", "unit_test_timing", "workspace_testmode_timing"} and isinstance(data, dict):
             if not any(data.get(k) for k in ("green_count", "red_count", "yellow_count")):
                 state, summary = "grey", "No comparisons measured; collect timings and establish baselines"
-        add(family, label, state, summary, source=f"devbox.sections.{family}" if published else None,
-            observed_at=ts or (devbox.get("ts") if published else None),
+        add(family, label, state, summary, observed_at=ts,
             action=sec.action if sec and state not in {"grey", "stale"} else None,
             identity=f"{family}:coverage", na_reason=na_reason)
         if isinstance(data, dict):
@@ -238,16 +272,6 @@ def assess(board, snapshot, *, devbox=None, now=None, repos=None, families=None)
                 add(family, "orphaned baseline details", "grey", "Collector omitted orphaned baseline details; refresh the complete collector", observed_at=ts)
         if data:
             walk(family, data, family, ts)
-        if published:
-            stored = ds.get("monitoring_checks")
-            if isinstance(stored, list):
-                for item in stored:
-                    if isinstance(item, dict):
-                        add(family, item.get("subject", label), item.get("status"), item.get("summary", ""),
-                            item.get("evidence"), observed_at=item.get("observed_at") or ts,
-                            action=item.get("action"), identity=item.get("id"), source=f"devbox.sections.{family}", na_reason=item.get("applicability_reason"))
-            else:
-                add(family, label + " full detail", "grey", "Published summary lacks the complete inventory; republish from the dev box", observed_at=ts)
     # Raw unit evidence carries individual rows omitted from legacy summaries.
     if isinstance(snapshot.get("unit_timings"), dict) and snapshot["unit_timings"]:
         walk("unit_timings", snapshot["unit_timings"], "unit_timings", snapshot["unit_timings"].get("ts"))

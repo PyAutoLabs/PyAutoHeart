@@ -1099,7 +1099,7 @@ def build_board(
             sections.append(Section("url_check", "URL hygiene", OK,
                                     f"{len(uc['repos'])} repos clean (swept {uc.get('ts', '?')})", []))
 
-    sections = _devbox_enrich(sections, devbox, now)
+    sections = _devbox_enrich(sections, devbox, now, snapshot=snapshot)
     for section in sections:
         if section.key == "release_validation" and section.state in (FAIL, WARN):
             section.action = {"label": "inspect release validation", "kind": "prompt",
@@ -1131,6 +1131,18 @@ def build_board(
     )
     from heart import monitoring
     board.monitoring = monitoring.assess(board, snapshot, devbox=devbox, now=now)
+    if isinstance(devbox, dict):
+        for sec in board.sections:
+            family = monitoring.ALIASES.get(sec.key, sec.key)
+            rows = [c for c in board.monitoring["checks"]
+                    if c["family"] == family and c["source"] == f"devbox.sections.{family}"]
+            public_section = (devbox.get("sections") or {}).get(family)
+            if rows and isinstance(public_section, dict) and isinstance(public_section.get("monitoring_checks"), list):
+                worst = min(rows, key=lambda c: monitoring.ORDER[c["status"]])
+                sec.state = {"green": OK, "yellow": WARN, "red": FAIL}.get(worst["status"], UNOBS)
+                if worst["status"] not in {"green", "na"}:
+                    sec.summary = worst["summary"]
+                sec.action = worst.get("action") or sec.action
     board.fix_plan = build_fix_plan(board, snapshot, devbox=devbox)
     return board
 
@@ -1749,7 +1761,8 @@ def _structure_reasons(red: list, yellow: list, stales: list, repos: dict,
 
 
 def _devbox_enrich(
-    sections: list[Section], devbox: dict | None, now: datetime.datetime | None
+    sections: list[Section], devbox: dict | None, now: datetime.datetime | None,
+    *, snapshot: dict | None = None
 ) -> list[Section]:
     """Fill unobserved rows from a published dev-box observation.
 
@@ -1761,17 +1774,34 @@ def _devbox_enrich(
     if not isinstance(devbox, dict):
         return sections
     dsecs = devbox.get("sections") or {}
+    from heart import monitoring
+    if not isinstance(dsecs, dict):
+        return sections
+    if snapshot is not None:
+        existing = {monitoring.ALIASES.get(sec.key, sec.key) for sec in sections}
+        for family in dsecs:
+            if (family in monitoring.FAMILIES and family not in existing
+                    and isinstance(dsecs[family], dict)
+                    and monitoring.published_checks(family, dsecs[family])[1]):
+                sections.append(Section(family, monitoring.FAMILIES[family], UNOBS, "No observation here", []))
+        for sec in sections:
+            family = monitoring.ALIASES.get(sec.key, sec.key)
+            if family in dsecs and not monitoring.family_data(snapshot, family):
+                sec.state = UNOBS
     age = _age_seconds(devbox.get("ts"), now)
     if age is None or not isinstance(dsecs, dict):
         return sections
     ago = format_age(age)
     out: list[Section] = []
     for sec in sections:
-        d = dsecs.get(sec.key)
+        d = dsecs.get(monitoring.ALIASES.get(sec.key, sec.key))
         if sec.state != UNOBS or not isinstance(d, dict):
             out.append(sec)
             continue
-        if age <= DEVBOX_FRESH_SECONDS and d.get("state") in (OK, WARN, FAIL, INFO):
+        observation = d.get("observed_at", devbox.get("ts"))
+        age = _age_seconds(observation, now)
+        ago = format_age(age)
+        if age is not None and 0 <= age <= DEVBOX_FRESH_SECONDS and d.get("state") in (OK, WARN, FAIL, INFO):
             out.append(Section(
                 sec.key, sec.title, str(d["state"]),
                 str(d.get("summary") or ""),
@@ -1779,7 +1809,7 @@ def _devbox_enrich(
                 links=sec.links, action=sec.action,
                 observed_ago=f"observed {ago} on the dev box",
                 entries=[{**e, "original_source": e.get("source"), "source": "published dev-box observation",
-                          "observed_at": devbox.get("ts")} for e in d.get("entries", [])
+                          "observed_at": e.get("observed_at", observation)} for e in d.get("entries", [])
                          if isinstance(e, dict)],
             ))
         else:
@@ -1787,6 +1817,10 @@ def _devbox_enrich(
                 sec.key, sec.title, UNOBS,
                 f"not observed here — dev box last looked {ago}",
                 sec.details, links=sec.links, action=sec.action,
+                entries=[{**e, "original_source": e.get("source"),
+                          "source": "published dev-box observation",
+                          "observed_at": e.get("observed_at", observation)}
+                         for e in d.get("entries", []) if isinstance(e, dict)],
             ))
     return out
 
