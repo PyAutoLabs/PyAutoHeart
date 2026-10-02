@@ -34,13 +34,11 @@ from heart import dashboard, readiness, state
 HEART_ROOT = Path(__file__).resolve().parents[1]
 DEVBOX_FILE = HEART_ROOT / "state" / "devbox_board.json"
 
-# Only the families the cloud job cannot observe travel; everything else the
-# cloud measures itself, and merging two vantages of the same family would
-# break the unify invariant. repo_state is excluded: it folds into per-repo
-# rows, not a section of its own.
-PUBLISH_FAMILIES = tuple(
-    f for f in dashboard.LOCAL_ONLY_FAMILIES if f != "repo_state"
-)
+# Publish observed families as fallback evidence. Cloud observations take
+# precedence; absent families must still be visible on the published board.
+from heart import monitoring
+
+PUBLISH_FAMILIES = tuple(monitoring.FAMILIES)
 
 DEVBOX_SCHEMA_VERSION = 1
 
@@ -72,32 +70,32 @@ def _public_monitoring(item: dict) -> dict:
             "applicability_reason": item.get("applicability_reason")}
 
 
-def build_devbox_board(snapshot: dict | None, verdict: dict | None) -> dict[str, Any]:
-    """Distill the LOCAL board's local-only families. Pure; never raises."""
-    board = dashboard.build_board(snapshot, verdict, unobserved=())
+def build_devbox_board(snapshot: dict | None, verdict: dict | None, *, now=None) -> dict[str, Any]:
+    """Export complete public inventories, retaining the collector timestamps."""
+    board = dashboard.build_board(snapshot, verdict, unobserved=(), now=now)
     sections: dict[str, Any] = {}
-    for sec in board.sections:
-        if sec.key not in PUBLISH_FAMILIES:
+    rendered = {monitoring.ALIASES.get(s.key, s.key): s for s in board.sections}
+    for family in PUBLISH_FAMILIES:
+        if not monitoring.family_data(snapshot or {}, family):
             continue
-        if sec.state == dashboard.UNOBS:
-            continue  # nothing observed locally either — publish no claim
-        sections[sec.key] = {
-            "state": sec.state,
-            "summary": sec.summary,
-            "details": _scrub(sec.details)[:8],
+        checks = [_public_monitoring(item) for item in board.monitoring["checks"]
+                  if item["family"] == family]
+        if not checks:
+            continue
+        coverage = next((c for c in checks if c["id"] == f"{family}:coverage"), {})
+        worst = min(checks, key=lambda c: monitoring.ORDER[c["status"]])
+        sec = rendered.get(family)
+        sections[family] = {
+            "state": {"green": "ok", "yellow": "warn", "red": "fail"}.get(worst["status"], "unobserved"),
+            "summary": _scrub([coverage.get("summary", "")]) or ["Inspect published monitoring evidence"],
+            "observed_at": coverage.get("observed_at"),
+            "details": _scrub(sec.details)[:8] if sec else [],
+            "monitoring_checks": checks,
         }
-        if board.monitoring:
-            sections[sec.key]["monitoring_checks"] = [
-                _public_monitoring(item) for item in board.monitoring["checks"]
-                if item["family"] == sec.key
-            ]
-        if sec.entries:
-            # Structured observations obey the same public-path boundary as
-            # plain detail lines, including paths inside prompts/evidence.
-            sections[sec.key]["entries"] = [
-                entry for entry in sec.entries
-                if _scrub([json.dumps(entry, ensure_ascii=False)])
-            ]
+        sections[family]["summary"] = sections[family]["summary"][0]
+        if sec and sec.entries:
+            sections[family]["entries"] = [entry for entry in sec.entries
+                if _scrub([json.dumps(entry, ensure_ascii=False)])]
     return {
         "schema_version": DEVBOX_SCHEMA_VERSION,
         "ts": (snapshot or {}).get("ts") or "",

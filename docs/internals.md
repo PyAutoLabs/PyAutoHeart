@@ -163,3 +163,15 @@ Old adverse results remain adverse. Undated results require a collector refresh.
 Published local observations carry their full inventory and per-repository
 checkout evidence. Private records retain their status and an opaque ID with a
 local investigation action; private paths never travel to the public board.
+
+
+### Published monitoring fallback
+
+The dev-box publisher exports every observed monitoring family, including
+manifest/workflow drift, URL checks and PyPI floors, even where the older board
+has no section. Each family carries its complete public monitoring inventory
+and original collector timestamp. Private findings remain unresolved placeholders.
+Cloud observations take precedence for families the cloud actually measured;
+otherwise published findings fill the gap. Missing or malformed inventories
+remain unknown, and neither aggregate time nor publication time refreshes old
+or undated evidence. This transport does not change release readiness.

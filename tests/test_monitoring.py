@@ -173,3 +173,19 @@ def test_source_run_timestamp_survives_reaggregation(tmp_path):
     os.utime(path, (old, old))
     rows = script_timing.scan_latest_results(tmp_path)
     assert rows[0]["observed_at"].startswith("2026-09-01")
+
+
+@pytest.mark.parametrize("stored", [None, [], [None], [{"id": "manifest_drift:coverage", "status": "green"}]])
+def test_malformed_published_inventory_cannot_establish_coverage(stored):
+    m = monitoring.assess(board(), {}, devbox={"ts": TS, "sections": {
+        "manifest_drift": {"state": "ok", "monitoring_checks": stored}}},
+        now=NOW, families=["manifest_drift"], repos=[])
+    assert not m["complete"] and m["score"] < 100
+
+
+def test_published_item_without_timestamp_cannot_inherit_envelope_time():
+    item = {"id": "manifest_drift:coverage", "subject": "manifest", "status": "green", "summary": "clean"}
+    m = monitoring.assess(board(), {}, devbox={"ts": TS, "sections": {
+        "manifest_drift": {"monitoring_checks": [item]}}}, now=NOW, families=["manifest_drift"], repos=[])
+    assert m["findings"][0]["status"] == "grey"
+    assert m["findings"][0]["observed_at"] is None
