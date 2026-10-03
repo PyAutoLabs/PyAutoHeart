@@ -88,7 +88,7 @@ else
     if [ -z "$PYAUTO_ROOT" ]; then
       PYAUTO_ROOT="$(dirname "$_heart_workspace_home")"
       if [ -d "$PYAUTO_ROOT/PyAutoMind" ] || [ -d "$PYAUTO_ROOT/PyAutoCortex" ] \
-         || [ -d "$PYAUTO_ROOT/PyAutoMemory" ] || [ -d "$PYAUTO_ROOT/PyAutoEyes" ] \
+         || [ -d "$PYAUTO_ROOT/PyAutoMemory" ] || [ -d "$PYAUTO_ROOT/PyAutoEars" ] || [ -d "$PYAUTO_ROOT/PyAutoEyes" ] \
          || [ -d "$PYAUTO_ROOT/PyAutoHeart" ] || [ -d "$PYAUTO_ROOT/PyAutoHands" ] \
          || [ -d "$PYAUTO_ROOT/PyAutoPulse" ] || [ -d "$PYAUTO_ROOT/PyAutoNerves" ] \
          || [ -d "$PYAUTO_ROOT/PyAutoGut" ]; then

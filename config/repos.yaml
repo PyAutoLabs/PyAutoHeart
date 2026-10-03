@@ -81,6 +81,8 @@ repos:
       owner: PyAutoLabs
     - name: PyAutoEyes
       owner: PyAutoLabs
+    - name: PyAutoEars
+      owner: PyAutoLabs
     - name: PyAutoHeart
       owner: PyAutoLabs
     - name: PyAutoPulse
