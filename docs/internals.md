@@ -29,6 +29,21 @@ first; read this only when changing Heart's own code.
    the bash equivalent (`heart_write_json` in `_common.sh`). Concurrent
    ticks must not corrupt `state.json`.
 
+## Aggregated repository observations
+
+`heart.state.aggregate()` includes cached per-repository sidecars only for
+names in a valid current `config/repos.yaml` monitoring roster. Removing a
+repository from that roster removes it from the current snapshot while
+preserving every cache file. Global check evidence remains unchanged, and
+configured repositories without sidecars remain without observations rather
+than receiving fabricated passing evidence.
+
+The roster must contain a `repos` mapping of named groups to lists of entries
+with valid repository names. Explicit empty lists describe an empty roster.
+Missing, unreadable or malformed configuration disables exclusion: all cached
+observations remain visible, preserving adverse evidence until configuration
+can be trusted.
+
 ## Dashboard consumer contract
 
 Readiness emits additive `repository_reasons` with gate keys, plus a `penalties`

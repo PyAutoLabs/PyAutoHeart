@@ -18,6 +18,9 @@ def temp_state_dir(tmp_path, monkeypatch):
 
     import heart.state as state_mod
     importlib.reload(state_mod)
+    config = tmp_path / "repos.yaml"
+    config.write_text("repos:\n  test:\n    - name: PyAutoFit\n    - name: PyAutoArray\n    - name: Foo\n")
+    monkeypatch.setattr(state_mod, "CONFIG_PATH", config, raising=False)
     return tmp_path, state_mod
 
 
@@ -70,3 +73,45 @@ def test_load_roundtrips_after_aggregate(temp_state_dir):
 def test_age_seconds_returns_none_for_missing_cache(temp_state_dir):
     _, state = temp_state_dir
     assert state.age_seconds() is None
+
+
+def test_aggregate_filters_retired_repos_without_deleting_evidence(temp_state_dir):
+    tmp_path, state = temp_state_dir
+    state.CONFIG_PATH.write_text("repos:\n  libraries:\n    - name: PyAutoFit\n    - name: MissingRepo\n")
+    retired = tmp_path / "per-repo/PyAutoConf.ci_status.json"
+    current = tmp_path / "per-repo/PyAutoFit.ci_status.json"
+    state.atomic_write_json(retired, {"conclusion": "failure"})
+    state.atomic_write_json(current, {"conclusion": "failure"})
+    state.atomic_write_json(tmp_path / "manifest_drift.json", {"problem_count": 7})
+    contents = retired.read_bytes()
+    snap = state.aggregate()
+    assert set(snap["repos"]) == {"PyAutoFit"}
+    assert snap["repos"]["PyAutoFit"]["ci_status"]["conclusion"] == "failure"
+    assert snap["manifest_drift"] == {"problem_count": 7}
+    assert retired.read_bytes() == contents
+    assert not (tmp_path / "per-repo/MissingRepo.ci_status.json").exists()
+
+
+@pytest.mark.parametrize("config", [None, "[invalid", "", "[]", "{}",
+    "repos: null", "repos: []", "repos: {libraries: null}",
+    "repos: {libraries: [null]}", "repos: {libraries: [{}]}",
+    "repos: {libraries: [{name: 123}]}", "repos: {libraries: [{name: ''}]}",
+    "repos: {libraries: [{name: 'bad name'}]}",
+    "repos: {libraries: [{name: '../bad'}]}",
+    "repos: {libraries: [{name: PyAutoFit}, {name: null}]}" ])
+def test_bad_or_missing_config_retains_observations(temp_state_dir, config):
+    tmp_path, state = temp_state_dir
+    if config is None:
+        state.CONFIG_PATH.unlink()
+    else:
+        state.CONFIG_PATH.write_text(config)
+    state.atomic_write_json(tmp_path / "per-repo/PyAutoConf.ci_status.json",
+                            {"conclusion": "failure"})
+    assert "PyAutoConf" in state.aggregate()["repos"]
+
+
+def test_explicit_empty_config_roster_excludes_cached_repos(temp_state_dir):
+    tmp_path, state = temp_state_dir
+    state.CONFIG_PATH.write_text("repos: {libraries: []}")
+    state.atomic_write_json(tmp_path / "per-repo/PyAutoConf.ci_status.json", {})
+    assert state.aggregate()["repos"] == {}
