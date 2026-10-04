@@ -989,9 +989,16 @@ def main(argv: list[str] | None = None) -> int:
         # change), and a baseline from before it is not a baseline.
         epochs = _timings.read_epochs(record_dir / "epochs.jsonl")
         since = ((_timings.current_epoch(epochs) or {}).get("date") or "")
+        sidecars = read_sidecars(per_repo)
+        current_runs = {
+            (str(side.get("name") or ""), str(leg.get("python") or "")): leg
+            for side in sidecars if isinstance(side, dict)
+            for leg in (side.get("legs") or []) if isinstance(leg, dict)
+        }
         rollup = aggregate(
-            read_sidecars(per_repo), ts, thresholds,
-            record_prev_rows=_timings.previous_unit_rows(unit_dir, since=since),
+            sidecars, ts, thresholds,
+            record_prev_rows=_timings.previous_unit_rows(
+                unit_dir, since=since, current_runs=current_runs),
             record_import_history=_timings.import_history(
                 unit_dir, int(thresholds.get("import_window", 7) or 7),
                 since=since,

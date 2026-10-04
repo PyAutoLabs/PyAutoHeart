@@ -452,6 +452,42 @@ def test_previous_unit_rows_takes_the_latest_line_per_leg_and_drives_drift(tmp_p
         "ok", None, None)
 
 
+def test_previous_unit_rows_selects_distinct_prior_run_by_time(tmp_path):
+    path = timings.unit_file("RepoA", tmp_path)
+    for run_id, at in ((8, "2026-09-04T11:00:00Z"),
+                       (9, "2026-09-04T12:00:00Z"),
+                       (10, "2026-09-04T13:00:00Z"),
+                       (7, "2026-09-04T10:00:00Z")):
+        lines = timings.unit_lines_from_rollup(_unit_rollup(run_id=run_id), TODAY)["RepoA"]
+        lines[0]["at"] = at
+        timings.append_unit(path, lines)
+    current = {("RepoA", "3.12"): {"run_id": 9, "at": "2026-09-04T12:00:00Z"}}
+    rows = timings.previous_unit_rows(tmp_path / "unit", current_runs=current)
+    assert rows[("RepoA", "3.12", NODEID)]["run_id"] == 8
+    assert timings.previous_unit_rows(tmp_path / "unit", since="2026-09-06",
+                                      current_runs=current) == {}
+
+
+def test_previous_unit_rows_legacy_identity_and_missing_current(tmp_path):
+    path = timings.unit_file("RepoA", tmp_path)
+    for run_id in (8, 9, 10, 7):
+        lines = timings.unit_lines_from_rollup(_unit_rollup(run_id=run_id), TODAY)["RepoA"]
+        lines[0]["at"] = ""
+        timings.append_unit(path, lines)
+    current = {("RepoA", "3.12"): {"run_id": 9, "at": ""}}
+    assert timings.previous_unit_rows(tmp_path / "unit", current_runs=current) == {}
+    assert timings.previous_unit_rows(tmp_path / "unit", current_runs={}) == {}
+    # Numeric run IDs cannot establish chronology; even an apparently newer
+    # ID is excluded without an observation time. Date-only prior-day rows
+    # remain useful, but same-day evidence is ambiguous.
+    current[("RepoA", "3.12")]["at"] = "2026-09-06T12:00:00Z"
+    assert timings.previous_unit_rows(tmp_path / "unit", current_runs=current)[
+        ("RepoA", "3.12", NODEID)]["run_id"] == 8
+    current[("RepoA", "3.12")]["at"] = "2026-09-05T12:00:00Z"
+    assert timings.previous_unit_rows(tmp_path / "unit", current_runs=current) == {}
+
+
+
 def test_import_history_is_oldest_first_window_capped_and_skips_nulls(tmp_path):
     unit_dir = tmp_path / "unit"
     path = timings.unit_file("RepoA", tmp_path)

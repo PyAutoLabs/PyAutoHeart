@@ -740,6 +740,7 @@ def append_unit(path: Path | str, lines: list[dict[str, Any]]) -> int:
 
 def previous_unit_rows(
     unit_dir: Path | str = UNIT_DIR, since: str = "",
+    current_runs: dict[tuple[str, str], dict[str, Any]] | None = None,
 ) -> dict[tuple[str, str, str], dict[str, Any]]:
     """``{(repo, python, nodeid): prev_row}`` — the last recorded observation.
 
@@ -751,6 +752,13 @@ def previous_unit_rows(
     combined and naming it after half of what it means would mislead every
     reader of the record.
 
+    With ``current_runs`` keyed by (repo, python), select the newest distinct
+    observation strictly before that leg's observation time, never its own run
+    or future evidence. Date-only legacy rows establish prior days only;
+    unknown chronology yields no comparison. Selection precedes test lookup,
+    so a test absent from the selected run retains an unknown comparison.
+    Without current observations, preserve the legacy behavior below.
+
     The *latest* line per python leg wins, and "latest" is file order: the file
     is append-only, so the last line for a leg is the most recently recorded
     one. Only the recorded (slowest) tests are in there to begin with — a test
@@ -761,6 +769,20 @@ def previous_unit_rows(
     chosen, for the reason ``previous_script_rows`` gives: a pre-boundary line
     measured a different world and must not stand in as the latest.
     """
+    def observed(record: dict[str, Any]) -> tuple[datetime.datetime, datetime.datetime] | None:
+        at = str(record.get("at") or "")
+        try:
+            if at:
+                stamp = datetime.datetime.fromisoformat(at.replace("Z", "+00:00"))
+                if stamp.tzinfo is None:
+                    return None
+                return stamp, stamp
+            day = datetime.date.fromisoformat(str(record.get("date") or ""))
+            start = datetime.datetime.combine(day, datetime.time(), datetime.timezone.utc)
+            return start, start + datetime.timedelta(days=1)
+        except (ValueError, TypeError):
+            return None
+
     out: dict[tuple[str, str, str], dict[str, Any]] = {}
     root = Path(unit_dir)
     if not root.is_dir():
@@ -772,7 +794,20 @@ def previous_unit_rows(
         for record in records:
             if not _within_epoch(record, since):
                 continue
-            latest[str(record.get("python") or "")] = record
+            python = str(record.get("python") or "")
+            if current_runs is not None:
+                current = current_runs.get((repo, python))
+                if not current or not current.get("run_id") or not record.get("run_id"):
+                    continue
+                if str(record["run_id"]) == str(current["run_id"]):
+                    continue
+                before, now = observed(record), observed(current)
+                if before is None or now is None or before[1] >= now[0]:
+                    continue
+                previous = latest.get(python)
+                if previous is not None and observed(previous)[1] >= before[1]:
+                    continue
+            latest[python] = record
         for python, record in latest.items():
             slowest = record.get("slowest")
             if not isinstance(slowest, dict):
