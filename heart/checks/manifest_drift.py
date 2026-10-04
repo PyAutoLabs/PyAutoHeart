@@ -42,7 +42,8 @@ HEART_STATE_DIR = Path(
     or Path.home() / ".pyauto-heart"
 )
 
-_CHECK_LINE = re.compile(r"^check (?P<label>.+?): (?P<status>OK|\d+ mismatch\(es\))$")
+_CHECK_LINE = re.compile(r"^check (?P<label>.+?): (?P<status>.+)$")
+_CHECK_STATUS = re.compile(r"^(?P<status>OK|\d+ mismatch\(es\))(?: \([^\n]*\))?$")
 _PROBLEM_LINE = re.compile(r"^\s+[✗x] (?P<problem>.+)$")
 
 
@@ -53,7 +54,13 @@ def parse_check_output(text: str) -> dict[str, dict[str, Any]]:
     for line in text.splitlines():
         m = _CHECK_LINE.match(line)
         if m:
-            current = {"ok": m.group("status") == "OK", "problems": []}
+            status = _CHECK_STATUS.fullmatch(m.group("status"))
+            current = {
+                "ok": bool(status and status.group("status") == "OK"),
+                "problems": [] if status else [
+                    f"Unrecognized check status: {m.group('status')}"
+                ],
+            }
             checks[m.group("label")] = current
             continue
         m = _PROBLEM_LINE.match(line)
