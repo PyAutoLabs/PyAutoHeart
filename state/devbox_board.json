@@ -7,7 +7,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T13:12:29+01:00"
+        "ts": "2026-10-04T13:38:47+01:00"
       }
     },
     "HowToGalaxy": {
@@ -17,7 +17,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T13:12:29+01:00"
+        "ts": "2026-10-04T13:38:47+01:00"
       }
     },
     "HowToLens": {
@@ -27,7 +27,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T13:12:29+01:00"
+        "ts": "2026-10-04T13:38:47+01:00"
       }
     },
     "PyAutoArray": {
@@ -37,7 +37,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T13:12:29+01:00"
+        "ts": "2026-10-04T13:38:47+01:00"
       }
     },
     "PyAutoBrain": {
@@ -47,7 +47,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T13:12:29+01:00"
+        "ts": "2026-10-04T13:38:47+01:00"
       }
     },
     "PyAutoBuild": {
@@ -67,7 +67,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T13:12:29+01:00"
+        "ts": "2026-10-04T13:38:47+01:00"
       }
     },
     "PyAutoConf": {
@@ -87,17 +87,17 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T13:12:29+01:00"
+        "ts": "2026-10-04T13:38:47+01:00"
       }
     },
     "PyAutoEyes": {
       "repo_state": {
         "ahead": 0,
-        "behind": 6,
+        "behind": 0,
         "branch": "main",
         "dirty_files": 3,
         "dirty_real": 0,
-        "ts": "2026-10-04T13:12:29+01:00"
+        "ts": "2026-10-04T13:38:47+01:00"
       }
     },
     "PyAutoFit": {
@@ -107,7 +107,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T13:12:30+01:00"
+        "ts": "2026-10-04T13:38:47+01:00"
       }
     },
     "PyAutoGalaxy": {
@@ -117,7 +117,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T13:12:29+01:00"
+        "ts": "2026-10-04T13:38:47+01:00"
       }
     },
     "PyAutoHands": {
@@ -127,7 +127,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T13:12:29+01:00"
+        "ts": "2026-10-04T13:38:47+01:00"
       }
     },
     "PyAutoHeart": {
@@ -137,7 +137,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T13:12:29+01:00"
+        "ts": "2026-10-04T13:38:47+01:00"
       }
     },
     "PyAutoInsight": {
@@ -147,7 +147,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T13:12:29+01:00"
+        "ts": "2026-10-04T13:38:47+01:00"
       }
     },
     "PyAutoLens": {
@@ -157,7 +157,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T13:12:29+01:00"
+        "ts": "2026-10-04T13:38:47+01:00"
       }
     },
     "PyAutoMemory": {
@@ -167,7 +167,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T13:12:29+01:00"
+        "ts": "2026-10-04T13:38:47+01:00"
       }
     },
     "PyAutoMind": {
@@ -177,7 +177,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T13:12:29+01:00"
+        "ts": "2026-10-04T13:38:47+01:00"
       }
     },
     "PyAutoNerves": {
@@ -187,7 +187,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T13:12:29+01:00"
+        "ts": "2026-10-04T13:38:47+01:00"
       }
     },
     "PyAutoPulse": {
@@ -197,7 +197,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T13:12:29+01:00"
+        "ts": "2026-10-04T13:38:47+01:00"
       }
     },
     "autocti_workspace": {
@@ -207,7 +207,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T13:12:29+01:00"
+        "ts": "2026-10-04T13:38:47+01:00"
       }
     },
     "autocti_workspace_test": {
@@ -217,7 +217,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T13:12:29+01:00"
+        "ts": "2026-10-04T13:38:47+01:00"
       }
     },
     "autofit_workspace": {
@@ -227,7 +227,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T13:12:29+01:00"
+        "ts": "2026-10-04T13:38:47+01:00"
       }
     },
     "autofit_workspace_developer": {
@@ -237,7 +237,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T13:12:29+01:00"
+        "ts": "2026-10-04T13:38:47+01:00"
       }
     },
     "autofit_workspace_test": {
@@ -247,7 +247,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T13:12:29+01:00"
+        "ts": "2026-10-04T13:38:47+01:00"
       }
     },
     "autogalaxy_workspace": {
@@ -257,7 +257,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T13:12:29+01:00"
+        "ts": "2026-10-04T13:38:47+01:00"
       }
     },
     "autogalaxy_workspace_test": {
@@ -267,7 +267,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T13:12:29+01:00"
+        "ts": "2026-10-04T13:38:47+01:00"
       }
     },
     "autolens_workspace": {
@@ -277,17 +277,17 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T13:12:29+01:00"
+        "ts": "2026-10-04T13:38:47+01:00"
       }
     },
     "autolens_workspace_developer": {
       "repo_state": {
         "ahead": 0,
-        "behind": 5,
+        "behind": 0,
         "branch": "main",
         "dirty_files": 1,
         "dirty_real": 1,
-        "ts": "2026-10-04T13:12:29+01:00"
+        "ts": "2026-10-04T13:38:47+01:00"
       }
     },
     "autolens_workspace_test": {
@@ -297,7 +297,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T13:12:29+01:00"
+        "ts": "2026-10-04T13:38:48+01:00"
       }
     },
     "euclid_strong_lens_modeling_pipeline": {
@@ -307,7 +307,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T13:12:29+01:00"
+        "ts": "2026-10-04T13:38:47+01:00"
       }
     }
   },
@@ -1899,293 +1899,25 @@
       "details": [],
       "monitoring_checks": [
         {
-          "action": {
-            "kind": "prompt",
-            "label": "inspect finding",
-            "payload": "Use the health skill to inspect manifest_drift/checks/generated hooks (session-start + end-at-deliverable) (manifest_drift) and its source collector. Refresh missing evidence in the required environment; route confirmed defects through bug and start-dev. Report the missing capability if observation is unavailable. Re-assess and publish Heart evidence."
-          },
+          "action": null,
           "applicability_reason": null,
           "applicable": true,
           "blocked_reason": null,
-          "evidence": {
-            "ok": false,
-            "problems": [
-              "'PyAutoCortex': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh",
-              "'PyAutoEyes': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh",
-              "'autolens_workspace_developer': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh",
-              "'autofit_assistant': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh",
-              "'autolens_assistant': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh",
-              "'autolens_profiling': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh",
-              "'autolens_inference': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh"
-            ]
-          },
-          "family": "manifest_drift",
-          "fresh": true,
-          "id": "manifest_drift:manifest_drift/checks/generated hooks (session-start + end-at-deliverable):",
-          "observed_at": "2026-10-04T12:12:47.304128+00:00",
-          "owner": "manifest_drift",
-          "source": "snapshot.manifest_drift:manifest_drift/checks/generated hooks (session-start + end-at-deliverable)",
-          "status": "red",
-          "subject": "manifest_drift/checks/generated hooks (session-start + end-at-deliverable)",
-          "summary": "red"
-        },
-        {
-          "action": {
-            "kind": "prompt",
-            "label": "inspect finding",
-            "payload": "Use the health skill to inspect manifest_drift/checks/organism-map blocks (generated) (manifest_drift) and its source collector. Refresh missing evidence in the required environment; route confirmed defects through bug and start-dev. Report the missing capability if observation is unavailable. Re-assess and publish Heart evidence."
-          },
-          "applicability_reason": null,
-          "applicable": true,
-          "blocked_reason": null,
-          "evidence": {
-            "ok": false,
-            "problems": [
-              "'PyAutoCortex': organism-map block is stale \u2014 run `python3 PyAutoMind/scripts/repos_sync.py --write`",
-              "'PyAutoEyes': organism-map block is stale \u2014 run `python3 PyAutoMind/scripts/repos_sync.py --write`"
-            ]
-          },
-          "family": "manifest_drift",
-          "fresh": true,
-          "id": "manifest_drift:manifest_drift/checks/organism-map blocks (generated):",
-          "observed_at": "2026-10-04T12:12:47.304128+00:00",
-          "owner": "manifest_drift",
-          "source": "snapshot.manifest_drift:manifest_drift/checks/organism-map blocks (generated)",
-          "status": "red",
-          "subject": "manifest_drift/checks/organism-map blocks (generated)",
-          "summary": "red"
-        },
-        {
-          "action": {
-            "kind": "prompt",
-            "label": "inspect finding",
-            "payload": "Use the health skill to inspect 'PyAutoCortex': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh (manifest_drift) and its source collector. Refresh missing evidence in the required environment; route confirmed defects through bug and start-dev. Report the missing capability if observation is unavailable. Re-assess and publish Heart evidence."
-          },
-          "applicability_reason": null,
-          "applicable": true,
-          "blocked_reason": null,
-          "evidence": {
-            "reason": "'PyAutoCortex': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh",
-            "state": "yellow"
-          },
-          "family": "manifest_drift",
-          "fresh": true,
-          "id": "manifest_drift:'PyAutoCortex': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh:",
-          "observed_at": "2026-10-04T12:12:47.304128+00:00",
-          "owner": "manifest_drift",
-          "source": "snapshot.manifest_drift:manifest_drift/checks/generated hooks (session-start + end-at-deliverable)/problems/0",
-          "status": "yellow",
-          "subject": "'PyAutoCortex': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh",
-          "summary": "'PyAutoCortex': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh"
-        },
-        {
-          "action": {
-            "kind": "prompt",
-            "label": "inspect finding",
-            "payload": "Use the health skill to inspect 'PyAutoCortex': organism-map block is stale \u2014 run `python3 PyAutoMind/scripts/repos_sync.py --write` (manifest_drift) and its source collector. Refresh missing evidence in the required environment; route confirmed defects through bug and start-dev. Report the missing capability if observation is unavailable. Re-assess and publish Heart evidence."
-          },
-          "applicability_reason": null,
-          "applicable": true,
-          "blocked_reason": null,
-          "evidence": {
-            "reason": "'PyAutoCortex': organism-map block is stale \u2014 run `python3 PyAutoMind/scripts/repos_sync.py --write`",
-            "state": "yellow"
-          },
-          "family": "manifest_drift",
-          "fresh": true,
-          "id": "manifest_drift:'PyAutoCortex': organism-map block is stale \u2014 run `python3 PyAutoMind/scripts/repos_sync.py --write`:",
-          "observed_at": "2026-10-04T12:12:47.304128+00:00",
-          "owner": "manifest_drift",
-          "source": "snapshot.manifest_drift:manifest_drift/checks/organism-map blocks (generated)/problems/0",
-          "status": "yellow",
-          "subject": "'PyAutoCortex': organism-map block is stale \u2014 run `python3 PyAutoMind/scripts/repos_sync.py --write`",
-          "summary": "'PyAutoCortex': organism-map block is stale \u2014 run `python3 PyAutoMind/scripts/repos_sync.py --write`"
-        },
-        {
-          "action": {
-            "kind": "prompt",
-            "label": "inspect finding",
-            "payload": "Use the health skill to inspect 'PyAutoEyes': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh (manifest_drift) and its source collector. Refresh missing evidence in the required environment; route confirmed defects through bug and start-dev. Report the missing capability if observation is unavailable. Re-assess and publish Heart evidence."
-          },
-          "applicability_reason": null,
-          "applicable": true,
-          "blocked_reason": null,
-          "evidence": {
-            "reason": "'PyAutoEyes': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh",
-            "state": "yellow"
-          },
-          "family": "manifest_drift",
-          "fresh": true,
-          "id": "manifest_drift:'PyAutoEyes': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh:",
-          "observed_at": "2026-10-04T12:12:47.304128+00:00",
-          "owner": "manifest_drift",
-          "source": "snapshot.manifest_drift:manifest_drift/checks/generated hooks (session-start + end-at-deliverable)/problems/1",
-          "status": "yellow",
-          "subject": "'PyAutoEyes': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh",
-          "summary": "'PyAutoEyes': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh"
-        },
-        {
-          "action": {
-            "kind": "prompt",
-            "label": "inspect finding",
-            "payload": "Use the health skill to inspect 'PyAutoEyes': organism-map block is stale \u2014 run `python3 PyAutoMind/scripts/repos_sync.py --write` (manifest_drift) and its source collector. Refresh missing evidence in the required environment; route confirmed defects through bug and start-dev. Report the missing capability if observation is unavailable. Re-assess and publish Heart evidence."
-          },
-          "applicability_reason": null,
-          "applicable": true,
-          "blocked_reason": null,
-          "evidence": {
-            "reason": "'PyAutoEyes': organism-map block is stale \u2014 run `python3 PyAutoMind/scripts/repos_sync.py --write`",
-            "state": "yellow"
-          },
-          "family": "manifest_drift",
-          "fresh": true,
-          "id": "manifest_drift:'PyAutoEyes': organism-map block is stale \u2014 run `python3 PyAutoMind/scripts/repos_sync.py --write`:",
-          "observed_at": "2026-10-04T12:12:47.304128+00:00",
-          "owner": "manifest_drift",
-          "source": "snapshot.manifest_drift:manifest_drift/checks/organism-map blocks (generated)/problems/1",
-          "status": "yellow",
-          "subject": "'PyAutoEyes': organism-map block is stale \u2014 run `python3 PyAutoMind/scripts/repos_sync.py --write`",
-          "summary": "'PyAutoEyes': organism-map block is stale \u2014 run `python3 PyAutoMind/scripts/repos_sync.py --write`"
-        },
-        {
-          "action": {
-            "kind": "prompt",
-            "label": "inspect finding",
-            "payload": "Use the health skill to inspect 'autofit_assistant': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh (manifest_drift) and its source collector. Refresh missing evidence in the required environment; route confirmed defects through bug and start-dev. Report the missing capability if observation is unavailable. Re-assess and publish Heart evidence."
-          },
-          "applicability_reason": null,
-          "applicable": true,
-          "blocked_reason": null,
-          "evidence": {
-            "reason": "'autofit_assistant': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh",
-            "state": "yellow"
-          },
-          "family": "manifest_drift",
-          "fresh": true,
-          "id": "manifest_drift:'autofit_assistant': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh:",
-          "observed_at": "2026-10-04T12:12:47.304128+00:00",
-          "owner": "manifest_drift",
-          "source": "snapshot.manifest_drift:manifest_drift/checks/generated hooks (session-start + end-at-deliverable)/problems/3",
-          "status": "yellow",
-          "subject": "'autofit_assistant': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh",
-          "summary": "'autofit_assistant': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh"
-        },
-        {
-          "action": {
-            "kind": "prompt",
-            "label": "inspect finding",
-            "payload": "Use the health skill to inspect 'autolens_assistant': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh (manifest_drift) and its source collector. Refresh missing evidence in the required environment; route confirmed defects through bug and start-dev. Report the missing capability if observation is unavailable. Re-assess and publish Heart evidence."
-          },
-          "applicability_reason": null,
-          "applicable": true,
-          "blocked_reason": null,
-          "evidence": {
-            "reason": "'autolens_assistant': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh",
-            "state": "yellow"
-          },
-          "family": "manifest_drift",
-          "fresh": true,
-          "id": "manifest_drift:'autolens_assistant': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh:",
-          "observed_at": "2026-10-04T12:12:47.304128+00:00",
-          "owner": "manifest_drift",
-          "source": "snapshot.manifest_drift:manifest_drift/checks/generated hooks (session-start + end-at-deliverable)/problems/4",
-          "status": "yellow",
-          "subject": "'autolens_assistant': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh",
-          "summary": "'autolens_assistant': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh"
-        },
-        {
-          "action": {
-            "kind": "prompt",
-            "label": "inspect finding",
-            "payload": "Use the health skill to inspect 'autolens_inference': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh (manifest_drift) and its source collector. Refresh missing evidence in the required environment; route confirmed defects through bug and start-dev. Report the missing capability if observation is unavailable. Re-assess and publish Heart evidence."
-          },
-          "applicability_reason": null,
-          "applicable": true,
-          "blocked_reason": null,
-          "evidence": {
-            "reason": "'autolens_inference': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh",
-            "state": "yellow"
-          },
-          "family": "manifest_drift",
-          "fresh": true,
-          "id": "manifest_drift:'autolens_inference': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh:",
-          "observed_at": "2026-10-04T12:12:47.304128+00:00",
-          "owner": "manifest_drift",
-          "source": "snapshot.manifest_drift:manifest_drift/checks/generated hooks (session-start + end-at-deliverable)/problems/6",
-          "status": "yellow",
-          "subject": "'autolens_inference': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh",
-          "summary": "'autolens_inference': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh"
-        },
-        {
-          "action": {
-            "kind": "prompt",
-            "label": "inspect finding",
-            "payload": "Use the health skill to inspect 'autolens_profiling': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh (manifest_drift) and its source collector. Refresh missing evidence in the required environment; route confirmed defects through bug and start-dev. Report the missing capability if observation is unavailable. Re-assess and publish Heart evidence."
-          },
-          "applicability_reason": null,
-          "applicable": true,
-          "blocked_reason": null,
-          "evidence": {
-            "reason": "'autolens_profiling': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh",
-            "state": "yellow"
-          },
-          "family": "manifest_drift",
-          "fresh": true,
-          "id": "manifest_drift:'autolens_profiling': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh:",
-          "observed_at": "2026-10-04T12:12:47.304128+00:00",
-          "owner": "manifest_drift",
-          "source": "snapshot.manifest_drift:manifest_drift/checks/generated hooks (session-start + end-at-deliverable)/problems/5",
-          "status": "yellow",
-          "subject": "'autolens_profiling': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh",
-          "summary": "'autolens_profiling': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh"
-        },
-        {
-          "action": {
-            "kind": "prompt",
-            "label": "inspect finding",
-            "payload": "Use the health skill to inspect 'autolens_workspace_developer': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh (manifest_drift) and its source collector. Refresh missing evidence in the required environment; route confirmed defects through bug and start-dev. Report the missing capability if observation is unavailable. Re-assess and publish Heart evidence."
-          },
-          "applicability_reason": null,
-          "applicable": true,
-          "blocked_reason": null,
-          "evidence": {
-            "reason": "'autolens_workspace_developer': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh",
-            "state": "yellow"
-          },
-          "family": "manifest_drift",
-          "fresh": true,
-          "id": "manifest_drift:'autolens_workspace_developer': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh:",
-          "observed_at": "2026-10-04T12:12:47.304128+00:00",
-          "owner": "manifest_drift",
-          "source": "snapshot.manifest_drift:manifest_drift/checks/generated hooks (session-start + end-at-deliverable)/problems/2",
-          "status": "yellow",
-          "subject": "'autolens_workspace_developer': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh",
-          "summary": "'autolens_workspace_developer': .claude/hooks/session-start.sh differs from policy/session_start_hook.sh"
-        },
-        {
-          "action": {
-            "kind": "prompt",
-            "label": "refresh evidence",
-            "payload": "Use the health skill to inspect Repository manifest drift (manifest_drift) and its source collector. Refresh missing evidence in the required environment; route confirmed defects through bug and start-dev. Report the missing capability if observation is unavailable. Re-assess and publish Heart evidence."
-          },
-          "applicability_reason": null,
-          "applicable": true,
-          "blocked_reason": "Fresh evidence required from the named collector and environment.",
           "evidence": null,
           "family": "manifest_drift",
           "fresh": true,
           "id": "manifest_drift:coverage",
-          "observed_at": "2026-10-04T12:12:47.304128+00:00",
+          "observed_at": "2026-10-04T12:39:03.835873+00:00",
           "owner": "manifest_drift",
           "source": "snapshot.manifest_drift",
-          "status": "grey",
+          "status": "green",
           "subject": "Repository manifest drift",
-          "summary": "Repository manifest drift: grey"
+          "summary": "Repository manifest drift: green"
         }
       ],
-      "observed_at": "2026-10-04T12:12:47.304128+00:00",
-      "state": "fail",
-      "summary": "Repository manifest drift: grey"
+      "observed_at": "2026-10-04T12:39:03.835873+00:00",
+      "state": "ok",
+      "summary": "Repository manifest drift: green"
     },
     "no_run_census": {
       "details": [
@@ -2926,7 +2658,7 @@
           "family": "profiling_drift",
           "fresh": true,
           "id": "profiling_drift:coverage",
-          "observed_at": "2026-10-04T12:12:38.470013+00:00",
+          "observed_at": "2026-10-04T12:38:55.712612+00:00",
           "owner": "profiling_drift",
           "source": "snapshot.profiling_drift",
           "status": "green",
@@ -2934,7 +2666,7 @@
           "summary": "333 results clean"
         }
       ],
-      "observed_at": "2026-10-04T12:12:38.470013+00:00",
+      "observed_at": "2026-10-04T12:38:55.712612+00:00",
       "state": "ok",
       "summary": "333 results clean"
     },
@@ -2950,7 +2682,7 @@
           "family": "required_workflow_drift",
           "fresh": true,
           "id": "required_workflow_drift:coverage",
-          "observed_at": "2026-10-04T12:12:41.400165+00:00",
+          "observed_at": "2026-10-04T12:38:58.679562+00:00",
           "owner": "required_workflow_drift",
           "source": "snapshot.required_workflow_drift",
           "status": "green",
@@ -2958,7 +2690,7 @@
           "summary": "Required workflow coverage: green"
         }
       ],
-      "observed_at": "2026-10-04T12:12:41.400165+00:00",
+      "observed_at": "2026-10-04T12:38:58.679562+00:00",
       "state": "ok",
       "summary": "Required workflow coverage: green"
     },
@@ -32015,9 +31747,24 @@
     },
     "validation_report": {
       "details": [
-        "stages: integrate:pass"
+        "stages: integrate:fail, rehearse:pass"
       ],
       "monitoring_checks": [
+        {
+          "action": {
+            "kind": "prompt",
+            "label": "inspect finding",
+            "payload": "Use the health and release skills to inspect private local finding. For missing evidence, use the documented validation or install-verification procedure in the required environment, ingest results and re-assess. A rehearsal is not authorization to publish a release."
+          },
+          "applicability_reason": null,
+          "family": "validation_report",
+          "id": "validation_report:private:fc3ac52403afd3df",
+          "observed_at": "2026-10-04T12:38:45.873812+00:00",
+          "source": "devbox",
+          "status": "red",
+          "subject": "Local observation (private details)",
+          "summary": "Inspect full evidence on the dev box; private paths omitted"
+        },
         {
           "action": {
             "kind": "prompt",
@@ -32031,12 +31778,36 @@
           "family": "validation_report",
           "fresh": true,
           "id": "validation_report:coverage",
-          "observed_at": "2026-10-04T10:40:52.350596+00:00",
+          "observed_at": "2026-10-04T12:38:45.873812+00:00",
           "owner": "validation_report",
           "source": "snapshot.validation_report",
-          "status": "yellow",
+          "status": "red",
           "subject": "Release validation",
-          "summary": "incomplete \u2014 no rehearsal evidence \u2014 v2026.10.4.1.dev80001  profile=release  (2026-10-04T10:40:52.350596+00:00)"
+          "summary": "NOT release_ready \u2014 v2026.10.4.1.dev80201  profile=release  (2026-10-04T12:38:45.873812+00:00)"
+        },
+        {
+          "action": {
+            "kind": "prompt",
+            "label": "inspect finding",
+            "payload": "Use the health and release skills to inspect validation_report/stages/integrate. For missing evidence, use the documented validation or install-verification procedure in the required environment, ingest results and re-assess. A rehearsal is not authorization to publish a release."
+          },
+          "applicability_reason": null,
+          "applicable": true,
+          "blocked_reason": null,
+          "evidence": {
+            "profile": "release",
+            "run_url": "https://github.com/PyAutoLabs/PyAutoHeart/actions/runs/37199991757",
+            "status": "fail"
+          },
+          "family": "validation_report",
+          "fresh": true,
+          "id": "validation_report:validation_report/stages/integrate:https://github.com/PyAutoLabs/PyAutoHeart/actions/runs/37199991757",
+          "observed_at": "2026-10-04T12:38:45.873812+00:00",
+          "owner": "validation_report",
+          "source": "snapshot.validation_report:validation_report/stages/integrate",
+          "status": "red",
+          "subject": "validation_report/stages/integrate",
+          "summary": "fail"
         },
         {
           "action": null,
@@ -32044,24 +31815,34 @@
           "applicable": true,
           "blocked_reason": null,
           "evidence": {
-            "profile": "release",
-            "run_url": "https://github.com/PyAutoLabs/PyAutoHeart/actions/runs/37188241648",
-            "status": "pass"
+            "build_sha": "1ebe5cb4254d6905fc79e5e6d5afeb5f77175e28",
+            "index": "testpypi",
+            "packages": [
+              "autonerves",
+              "autoarray",
+              "autofit",
+              "autogalaxy",
+              "autolens"
+            ],
+            "run_attempt": "1",
+            "run_id": "37198725621",
+            "status": "pass",
+            "version": "2026.10.4.1.dev80201"
           },
           "family": "validation_report",
           "fresh": true,
-          "id": "validation_report:validation_report/stages/integrate:https://github.com/PyAutoLabs/PyAutoHeart/actions/runs/37188241648",
-          "observed_at": "2026-10-04T10:40:52.350596+00:00",
+          "id": "validation_report:validation_report/stages/rehearse:37198725621",
+          "observed_at": "2026-10-04T12:38:45.873812+00:00",
           "owner": "validation_report",
-          "source": "snapshot.validation_report:validation_report/stages/integrate",
+          "source": "snapshot.validation_report:validation_report/stages/rehearse",
           "status": "green",
-          "subject": "validation_report/stages/integrate",
+          "subject": "validation_report/stages/rehearse",
           "summary": "pass"
         }
       ],
-      "observed_at": "2026-10-04T10:40:52.350596+00:00",
-      "state": "warn",
-      "summary": "incomplete \u2014 no rehearsal evidence \u2014 v2026.10.4.1.dev80001  profile=release  (2026-10-04T10:40:52.350596+00:00)"
+      "observed_at": "2026-10-04T12:38:45.873812+00:00",
+      "state": "fail",
+      "summary": "NOT release_ready \u2014 v2026.10.4.1.dev80201  profile=release  (2026-10-04T12:38:45.873812+00:00)"
     },
     "verify_install": {
       "details": [],
@@ -32079,7 +31860,7 @@
           "family": "verify_install",
           "fresh": true,
           "id": "verify_install:A:",
-          "observed_at": "2026-10-04T08:22:00.001483+00:00",
+          "observed_at": "2026-10-04T11:56:57.092363+00:00",
           "owner": "verify_install",
           "source": "snapshot.verify_install:verify_install/checks/0",
           "status": "green",
@@ -32093,18 +31874,18 @@
           "blocked_reason": null,
           "evidence": {
             "check": "B",
-            "detail": "python3.12 installed + imported autolens==2026.10.4.1.dev80001",
+            "detail": "python3.12 installed + imported autolens==2026.10.4.1.dev80201",
             "status": "PASS"
           },
           "family": "verify_install",
           "fresh": true,
           "id": "verify_install:B:",
-          "observed_at": "2026-10-04T08:22:00.001483+00:00",
+          "observed_at": "2026-10-04T11:56:57.092363+00:00",
           "owner": "verify_install",
           "source": "snapshot.verify_install:verify_install/checks/1",
           "status": "green",
           "subject": "B",
-          "summary": "python3.12 installed + imported autolens==2026.10.4.1.dev80001"
+          "summary": "python3.12 installed + imported autolens==2026.10.4.1.dev80201"
         },
         {
           "action": null,
@@ -32119,7 +31900,7 @@
           "family": "verify_install",
           "fresh": true,
           "id": "verify_install:C:",
-          "observed_at": "2026-10-04T08:22:00.001483+00:00",
+          "observed_at": "2026-10-04T11:56:57.092363+00:00",
           "owner": "verify_install",
           "source": "snapshot.verify_install:verify_install/checks/5",
           "status": "green",
@@ -32133,18 +31914,18 @@
           "blocked_reason": null,
           "evidence": {
             "check": "D",
-            "detail": "autolens[optional]==2026.10.4.1.dev80001 resolved + imports (python 3.13.15)",
+            "detail": "autolens[optional]==2026.10.4.1.dev80201 resolved + imports (python 3.13.15)",
             "status": "PASS"
           },
           "family": "verify_install",
           "fresh": true,
           "id": "verify_install:D:",
-          "observed_at": "2026-10-04T08:22:00.001483+00:00",
+          "observed_at": "2026-10-04T11:56:57.092363+00:00",
           "owner": "verify_install",
           "source": "snapshot.verify_install:verify_install/checks/6",
           "status": "green",
           "subject": "D",
-          "summary": "autolens[optional]==2026.10.4.1.dev80001 resolved + imports (python 3.13.15)"
+          "summary": "autolens[optional]==2026.10.4.1.dev80201 resolved + imports (python 3.13.15)"
         },
         {
           "action": null,
@@ -32159,7 +31940,7 @@
           "family": "verify_install",
           "fresh": true,
           "id": "verify_install:E:",
-          "observed_at": "2026-10-04T08:22:00.001483+00:00",
+          "observed_at": "2026-10-04T11:56:57.092363+00:00",
           "owner": "verify_install",
           "source": "snapshot.verify_install:verify_install/checks/7",
           "status": "green",
@@ -32179,7 +31960,7 @@
           "family": "verify_install",
           "fresh": true,
           "id": "verify_install:F:",
-          "observed_at": "2026-10-04T08:22:00.001483+00:00",
+          "observed_at": "2026-10-04T11:56:57.092363+00:00",
           "owner": "verify_install",
           "source": "snapshot.verify_install:verify_install/checks/8",
           "status": "green",
@@ -32195,17 +31976,17 @@
           "family": "verify_install",
           "fresh": true,
           "id": "verify_install:coverage",
-          "observed_at": "2026-10-04T08:22:00.001483+00:00",
+          "observed_at": "2026-10-04T11:56:57.092363+00:00",
           "owner": "verify_install",
           "source": "snapshot.verify_install",
           "status": "green",
           "subject": "Install verification",
-          "summary": "passed (testpypi; last run 2026-10-04T08:22:00.001483+00:00)"
+          "summary": "passed (testpypi; last run 2026-10-04T11:56:57.092363+00:00)"
         }
       ],
-      "observed_at": "2026-10-04T08:22:00.001483+00:00",
+      "observed_at": "2026-10-04T11:56:57.092363+00:00",
       "state": "ok",
-      "summary": "passed (testpypi; last run 2026-10-04T08:22:00.001483+00:00)"
+      "summary": "passed (testpypi; last run 2026-10-04T11:56:57.092363+00:00)"
     },
     "version_skew": {
       "details": [],
@@ -32225,7 +32006,7 @@
           "family": "version_skew",
           "fresh": true,
           "id": "version_skew:HowToFit:",
-          "observed_at": "2026-10-04T12:12:40.239620+00:00",
+          "observed_at": "2026-10-04T12:38:57.588194+00:00",
           "owner": "version_skew",
           "source": "snapshot.version_skew:version_skew/workspaces/3",
           "status": "green",
@@ -32247,7 +32028,7 @@
           "family": "version_skew",
           "fresh": true,
           "id": "version_skew:HowToGalaxy:",
-          "observed_at": "2026-10-04T12:12:40.239620+00:00",
+          "observed_at": "2026-10-04T12:38:57.588194+00:00",
           "owner": "version_skew",
           "source": "snapshot.version_skew:version_skew/workspaces/4",
           "status": "green",
@@ -32269,7 +32050,7 @@
           "family": "version_skew",
           "fresh": true,
           "id": "version_skew:HowToLens:",
-          "observed_at": "2026-10-04T12:12:40.239620+00:00",
+          "observed_at": "2026-10-04T12:38:57.588194+00:00",
           "owner": "version_skew",
           "source": "snapshot.version_skew:version_skew/workspaces/5",
           "status": "green",
@@ -32291,7 +32072,7 @@
           "family": "version_skew",
           "fresh": true,
           "id": "version_skew:autofit_workspace:",
-          "observed_at": "2026-10-04T12:12:40.239620+00:00",
+          "observed_at": "2026-10-04T12:38:57.588194+00:00",
           "owner": "version_skew",
           "source": "snapshot.version_skew:version_skew/workspaces/0",
           "status": "green",
@@ -32313,7 +32094,7 @@
           "family": "version_skew",
           "fresh": true,
           "id": "version_skew:autogalaxy_workspace:",
-          "observed_at": "2026-10-04T12:12:40.239620+00:00",
+          "observed_at": "2026-10-04T12:38:57.588194+00:00",
           "owner": "version_skew",
           "source": "snapshot.version_skew:version_skew/workspaces/1",
           "status": "green",
@@ -32335,7 +32116,7 @@
           "family": "version_skew",
           "fresh": true,
           "id": "version_skew:autolens_workspace:",
-          "observed_at": "2026-10-04T12:12:40.239620+00:00",
+          "observed_at": "2026-10-04T12:38:57.588194+00:00",
           "owner": "version_skew",
           "source": "snapshot.version_skew:version_skew/workspaces/2",
           "status": "green",
@@ -32351,7 +32132,7 @@
           "family": "version_skew",
           "fresh": true,
           "id": "version_skew:coverage",
-          "observed_at": "2026-10-04T12:12:40.239620+00:00",
+          "observed_at": "2026-10-04T12:38:57.588194+00:00",
           "owner": "version_skew",
           "source": "snapshot.version_skew",
           "status": "green",
@@ -32373,7 +32154,7 @@
           "family": "version_skew",
           "fresh": true,
           "id": "version_skew:euclid_strong_lens_modeling_pipeline:",
-          "observed_at": "2026-10-04T12:12:40.239620+00:00",
+          "observed_at": "2026-10-04T12:38:57.588194+00:00",
           "owner": "version_skew",
           "source": "snapshot.version_skew:version_skew/workspaces/6",
           "status": "green",
@@ -32381,7 +32162,7 @@
           "summary": "OK"
         }
       ],
-      "observed_at": "2026-10-04T12:12:40.239620+00:00",
+      "observed_at": "2026-10-04T12:38:57.588194+00:00",
       "state": "ok",
       "summary": "all floors satisfiable"
     },
@@ -32568,11 +32349,11 @@
         "mass-field-profiling-live/autolens_profiling: 2 uncommitted file(s) in task worktree",
         "point-source-search-nautilus-leaf/autolens_inference: 1 uncommitted file(s) in task worktree",
         "sparse-operator-oversampling-cache/PyAutoArray: 11 uncommitted file(s) in task worktree",
+        "retired-repo-sidecars/PyAutoHeart: 3 uncommitted file(s) in task worktree",
         "vis-lp-inspection-bundle/euclid_strong_lens_modeling_pipeline: 3 uncommitted file(s) in task worktree",
         "PyAutoCortex: 7 uncommitted file(s) in canonical checkout",
         "PyAutoEyes: 3 uncommitted file(s) in canonical checkout",
-        "autofit_assistant: 1 uncommitted file(s) in canonical checkout",
-        "autolens_assistant: 2 uncommitted file(s) in canonical checkout"
+        "autofit_assistant: 1 uncommitted file(s) in canonical checkout"
       ],
       "entries": [
         {
@@ -32585,7 +32366,7 @@
           "evidence": "mass-field-profiling-live/autolens_profiling",
           "id": "drift:dirty:mass-field-profiling-live/autolens_profiling",
           "key": "dirty",
-          "observed_at": "2026-10-04T12:12:47.370052+00:00",
+          "observed_at": "2026-10-04T12:39:03.898803+00:00",
           "reason": "2 uncommitted file(s) in task worktree",
           "release_severity": null,
           "source": "local worktree inventory",
@@ -32602,7 +32383,7 @@
           "evidence": "point-source-search-nautilus-leaf/autolens_inference",
           "id": "drift:dirty:point-source-search-nautilus-leaf/autolens_inference",
           "key": "dirty",
-          "observed_at": "2026-10-04T12:12:47.370052+00:00",
+          "observed_at": "2026-10-04T12:39:03.898803+00:00",
           "reason": "1 uncommitted file(s) in task worktree",
           "release_severity": null,
           "source": "local worktree inventory",
@@ -32619,12 +32400,29 @@
           "evidence": "sparse-operator-oversampling-cache/PyAutoArray",
           "id": "drift:dirty:sparse-operator-oversampling-cache/PyAutoArray",
           "key": "dirty",
-          "observed_at": "2026-10-04T12:12:47.370052+00:00",
+          "observed_at": "2026-10-04T12:39:03.898803+00:00",
           "reason": "11 uncommitted file(s) in task worktree",
           "release_severity": null,
           "source": "local worktree inventory",
           "state": "warn",
           "subject": "sparse-operator-oversampling-cache/PyAutoArray"
+        },
+        {
+          "action": {
+            "kind": "prompt",
+            "label": "triage drift",
+            "payload": "Use the health skill. Inspect worktree drift: retired-repo-sidecars/PyAutoHeart \u2014 3 uncommitted file(s) in task worktree. Run pyauto-heart fix drift for context; reconcile active claims, preserve user edits and obtain approval before cleanup."
+          },
+          "affects_release": false,
+          "evidence": "retired-repo-sidecars/PyAutoHeart",
+          "id": "drift:dirty:retired-repo-sidecars/PyAutoHeart",
+          "key": "dirty",
+          "observed_at": "2026-10-04T12:39:03.898803+00:00",
+          "reason": "3 uncommitted file(s) in task worktree",
+          "release_severity": null,
+          "source": "local worktree inventory",
+          "state": "warn",
+          "subject": "retired-repo-sidecars/PyAutoHeart"
         },
         {
           "action": {
@@ -32636,7 +32434,7 @@
           "evidence": "vis-lp-inspection-bundle/euclid_strong_lens_modeling_pipeline",
           "id": "drift:dirty:vis-lp-inspection-bundle/euclid_strong_lens_modeling_pipeline",
           "key": "dirty",
-          "observed_at": "2026-10-04T12:12:47.370052+00:00",
+          "observed_at": "2026-10-04T12:39:03.898803+00:00",
           "reason": "3 uncommitted file(s) in task worktree",
           "release_severity": null,
           "source": "local worktree inventory",
@@ -32653,7 +32451,7 @@
           "evidence": "PyAutoCortex",
           "id": "drift:canonical_dirty:PyAutoCortex",
           "key": "canonical_dirty",
-          "observed_at": "2026-10-04T12:12:47.370052+00:00",
+          "observed_at": "2026-10-04T12:39:03.898803+00:00",
           "reason": "7 uncommitted file(s) in canonical checkout",
           "release_severity": null,
           "source": "local worktree inventory",
@@ -32670,7 +32468,7 @@
           "evidence": "PyAutoEyes",
           "id": "drift:canonical_dirty:PyAutoEyes",
           "key": "canonical_dirty",
-          "observed_at": "2026-10-04T12:12:47.370052+00:00",
+          "observed_at": "2026-10-04T12:39:03.898803+00:00",
           "reason": "3 uncommitted file(s) in canonical checkout",
           "release_severity": null,
           "source": "local worktree inventory",
@@ -32687,7 +32485,7 @@
           "evidence": "autofit_assistant",
           "id": "drift:canonical_dirty:autofit_assistant",
           "key": "canonical_dirty",
-          "observed_at": "2026-10-04T12:12:47.370052+00:00",
+          "observed_at": "2026-10-04T12:39:03.898803+00:00",
           "reason": "1 uncommitted file(s) in canonical checkout",
           "release_severity": null,
           "source": "local worktree inventory",
@@ -32704,7 +32502,7 @@
           "evidence": "autolens_assistant",
           "id": "drift:canonical_dirty:autolens_assistant",
           "key": "canonical_dirty",
-          "observed_at": "2026-10-04T12:12:47.370052+00:00",
+          "observed_at": "2026-10-04T12:39:03.898803+00:00",
           "reason": "2 uncommitted file(s) in canonical checkout",
           "release_severity": null,
           "source": "local worktree inventory",
@@ -32721,7 +32519,7 @@
           "evidence": "autolens_inference",
           "id": "drift:canonical_dirty:autolens_inference",
           "key": "canonical_dirty",
-          "observed_at": "2026-10-04T12:12:47.370052+00:00",
+          "observed_at": "2026-10-04T12:39:03.898803+00:00",
           "reason": "1 uncommitted file(s) in canonical checkout",
           "release_severity": null,
           "source": "local worktree inventory",
@@ -32738,7 +32536,7 @@
           "evidence": "autolens_profiling",
           "id": "drift:canonical_dirty:autolens_profiling",
           "key": "canonical_dirty",
-          "observed_at": "2026-10-04T12:12:47.370052+00:00",
+          "observed_at": "2026-10-04T12:39:03.898803+00:00",
           "reason": "1 uncommitted file(s) in canonical checkout",
           "release_severity": null,
           "source": "local worktree inventory",
@@ -32755,7 +32553,7 @@
           "evidence": "autolens_workspace_developer",
           "id": "drift:canonical_dirty:autolens_workspace_developer",
           "key": "canonical_dirty",
-          "observed_at": "2026-10-04T12:12:47.370052+00:00",
+          "observed_at": "2026-10-04T12:39:03.898803+00:00",
           "reason": "1 uncommitted file(s) in canonical checkout",
           "release_severity": null,
           "source": "local worktree inventory",
@@ -32782,11 +32580,36 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "worktree_drift:PyAutoArray:",
-          "observed_at": "2026-10-04T12:12:37.160865+00:00",
+          "observed_at": "2026-10-04T12:38:54.687503+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift:worktree_drift/dirty/2",
           "status": "red",
           "subject": "PyAutoArray",
+          "summary": "red"
+        },
+        {
+          "action": {
+            "kind": "prompt",
+            "label": "inspect finding",
+            "payload": "Use the health and repo-cleanup skills. Inspect PyAutoHeart in the canonical checkout and active task ledger on the dev box. Preserve edits and claims; refresh with pyauto-heart tick and publish with pyauto-heart publish. Do not delete, reset, merge or close work without authorization."
+          },
+          "applicability_reason": null,
+          "applicable": true,
+          "blocked_reason": null,
+          "evidence": {
+            "dirty_files": 3,
+            "repo": "PyAutoHeart",
+            "state": "red",
+            "worktree": "retired-repo-sidecars"
+          },
+          "family": "worktree_drift",
+          "fresh": true,
+          "id": "worktree_drift:PyAutoHeart:",
+          "observed_at": "2026-10-04T12:38:54.687503+00:00",
+          "owner": "worktree_drift",
+          "source": "snapshot.worktree_drift:worktree_drift/dirty/3",
+          "status": "red",
+          "subject": "PyAutoHeart",
           "summary": "red"
         },
         {
@@ -32807,7 +32630,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "worktree_drift:autolens_inference:",
-          "observed_at": "2026-10-04T12:12:37.160865+00:00",
+          "observed_at": "2026-10-04T12:38:54.687503+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift:worktree_drift/dirty/1",
           "status": "red",
@@ -32832,7 +32655,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "worktree_drift:autolens_profiling:",
-          "observed_at": "2026-10-04T12:12:37.160865+00:00",
+          "observed_at": "2026-10-04T12:38:54.687503+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift:worktree_drift/dirty/0",
           "status": "red",
@@ -32851,12 +32674,12 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "worktree_drift:coverage",
-          "observed_at": "2026-10-04T12:12:37.160865+00:00",
+          "observed_at": "2026-10-04T12:38:54.687503+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift",
           "status": "red",
           "subject": "Worktree drift",
-          "summary": "5 orphan / 0 missing / 4 dirty"
+          "summary": "5 orphan / 0 missing / 5 dirty"
         },
         {
           "action": {
@@ -32876,9 +32699,9 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "worktree_drift:euclid_strong_lens_modeling_pipeline:",
-          "observed_at": "2026-10-04T12:12:37.160865+00:00",
+          "observed_at": "2026-10-04T12:38:54.687503+00:00",
           "owner": "worktree_drift",
-          "source": "snapshot.worktree_drift:worktree_drift/dirty/3",
+          "source": "snapshot.worktree_drift:worktree_drift/dirty/4",
           "status": "red",
           "subject": "euclid_strong_lens_modeling_pipeline",
           "summary": "red"
@@ -32896,7 +32719,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "drift:canonical_dirty:PyAutoCortex",
-          "observed_at": "2026-10-04T12:12:47.370052+00:00",
+          "observed_at": "2026-10-04T12:39:03.898803+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift",
           "status": "yellow",
@@ -32916,7 +32739,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "drift:canonical_dirty:PyAutoEyes",
-          "observed_at": "2026-10-04T12:12:47.370052+00:00",
+          "observed_at": "2026-10-04T12:39:03.898803+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift",
           "status": "yellow",
@@ -32936,7 +32759,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "drift:canonical_dirty:autofit_assistant",
-          "observed_at": "2026-10-04T12:12:47.370052+00:00",
+          "observed_at": "2026-10-04T12:39:03.898803+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift",
           "status": "yellow",
@@ -32956,7 +32779,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "drift:canonical_dirty:autolens_assistant",
-          "observed_at": "2026-10-04T12:12:47.370052+00:00",
+          "observed_at": "2026-10-04T12:39:03.898803+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift",
           "status": "yellow",
@@ -32976,7 +32799,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "drift:canonical_dirty:autolens_inference",
-          "observed_at": "2026-10-04T12:12:47.370052+00:00",
+          "observed_at": "2026-10-04T12:39:03.898803+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift",
           "status": "yellow",
@@ -32996,7 +32819,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "drift:canonical_dirty:autolens_profiling",
-          "observed_at": "2026-10-04T12:12:47.370052+00:00",
+          "observed_at": "2026-10-04T12:39:03.898803+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift",
           "status": "yellow",
@@ -33016,7 +32839,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "drift:canonical_dirty:autolens_workspace_developer",
-          "observed_at": "2026-10-04T12:12:47.370052+00:00",
+          "observed_at": "2026-10-04T12:39:03.898803+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift",
           "status": "yellow",
@@ -33036,7 +32859,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "drift:dirty:mass-field-profiling-live/autolens_profiling",
-          "observed_at": "2026-10-04T12:12:47.370052+00:00",
+          "observed_at": "2026-10-04T12:39:03.898803+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift",
           "status": "yellow",
@@ -33056,12 +32879,32 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "drift:dirty:point-source-search-nautilus-leaf/autolens_inference",
-          "observed_at": "2026-10-04T12:12:47.370052+00:00",
+          "observed_at": "2026-10-04T12:39:03.898803+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift",
           "status": "yellow",
           "subject": "point-source-search-nautilus-leaf/autolens_inference",
           "summary": "1 uncommitted file(s) in task worktree"
+        },
+        {
+          "action": {
+            "kind": "prompt",
+            "label": "triage drift",
+            "payload": "Use the health skill. Inspect worktree drift: retired-repo-sidecars/PyAutoHeart \u2014 3 uncommitted file(s) in task worktree. Run pyauto-heart fix drift for context; reconcile active claims, preserve user edits and obtain approval before cleanup."
+          },
+          "applicability_reason": null,
+          "applicable": true,
+          "blocked_reason": null,
+          "evidence": "retired-repo-sidecars/PyAutoHeart",
+          "family": "worktree_drift",
+          "fresh": true,
+          "id": "drift:dirty:retired-repo-sidecars/PyAutoHeart",
+          "observed_at": "2026-10-04T12:39:03.898803+00:00",
+          "owner": "worktree_drift",
+          "source": "snapshot.worktree_drift",
+          "status": "yellow",
+          "subject": "retired-repo-sidecars/PyAutoHeart",
+          "summary": "3 uncommitted file(s) in task worktree"
         },
         {
           "action": {
@@ -33076,7 +32919,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "drift:dirty:sparse-operator-oversampling-cache/PyAutoArray",
-          "observed_at": "2026-10-04T12:12:47.370052+00:00",
+          "observed_at": "2026-10-04T12:39:03.898803+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift",
           "status": "yellow",
@@ -33096,7 +32939,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "drift:dirty:vis-lp-inspection-bundle/euclid_strong_lens_modeling_pipeline",
-          "observed_at": "2026-10-04T12:12:47.370052+00:00",
+          "observed_at": "2026-10-04T12:39:03.898803+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift",
           "status": "yellow",
@@ -33112,7 +32955,7 @@
           "applicability_reason": null,
           "family": "worktree_drift",
           "id": "worktree_drift:private:f81665099a921553",
-          "observed_at": "2026-10-04T12:12:47.370052+00:00",
+          "observed_at": "2026-10-04T12:39:03.898803+00:00",
           "source": "devbox",
           "status": "yellow",
           "subject": "Local observation (private details)",
@@ -33127,7 +32970,7 @@
           "applicability_reason": null,
           "family": "worktree_drift",
           "id": "worktree_drift:private:e4d9c1f001e84a64",
-          "observed_at": "2026-10-04T12:12:47.370052+00:00",
+          "observed_at": "2026-10-04T12:39:03.898803+00:00",
           "source": "devbox",
           "status": "yellow",
           "subject": "Local observation (private details)",
@@ -33142,7 +32985,7 @@
           "applicability_reason": null,
           "family": "worktree_drift",
           "id": "worktree_drift:private:df8459121a39227a",
-          "observed_at": "2026-10-04T12:12:47.370052+00:00",
+          "observed_at": "2026-10-04T12:39:03.898803+00:00",
           "source": "devbox",
           "status": "yellow",
           "subject": "Local observation (private details)",
@@ -33157,7 +33000,7 @@
           "applicability_reason": null,
           "family": "worktree_drift",
           "id": "worktree_drift:private:166bf26a34bfed3b",
-          "observed_at": "2026-10-04T12:12:47.370052+00:00",
+          "observed_at": "2026-10-04T12:39:03.898803+00:00",
           "source": "devbox",
           "status": "yellow",
           "subject": "Local observation (private details)",
@@ -33172,7 +33015,7 @@
           "applicability_reason": null,
           "family": "worktree_drift",
           "id": "worktree_drift:private:dd1d43986e1feb4d",
-          "observed_at": "2026-10-04T12:12:47.370052+00:00",
+          "observed_at": "2026-10-04T12:39:03.898803+00:00",
           "source": "devbox",
           "status": "yellow",
           "subject": "Local observation (private details)",
@@ -33195,7 +33038,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "worktree_drift:PyAutoCortex:",
-          "observed_at": "2026-10-04T12:12:37.160865+00:00",
+          "observed_at": "2026-10-04T12:38:54.687503+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift:worktree_drift/canonical_dirty/0",
           "status": "yellow",
@@ -33219,7 +33062,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "worktree_drift:PyAutoEyes:",
-          "observed_at": "2026-10-04T12:12:37.160865+00:00",
+          "observed_at": "2026-10-04T12:38:54.687503+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift:worktree_drift/canonical_dirty/1",
           "status": "yellow",
@@ -33243,7 +33086,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "worktree_drift:autofit_assistant:",
-          "observed_at": "2026-10-04T12:12:37.160865+00:00",
+          "observed_at": "2026-10-04T12:38:54.687503+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift:worktree_drift/canonical_dirty/2",
           "status": "yellow",
@@ -33267,7 +33110,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "worktree_drift:autolens_assistant:",
-          "observed_at": "2026-10-04T12:12:37.160865+00:00",
+          "observed_at": "2026-10-04T12:38:54.687503+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift:worktree_drift/canonical_dirty/3",
           "status": "yellow",
@@ -33291,7 +33134,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "worktree_drift:autolens_workspace_developer:",
-          "observed_at": "2026-10-04T12:12:37.160865+00:00",
+          "observed_at": "2026-10-04T12:38:54.687503+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift:worktree_drift/canonical_dirty/6",
           "status": "yellow",
@@ -33307,7 +33150,7 @@
           "applicability_reason": null,
           "family": "worktree_drift",
           "id": "worktree_drift:private:fcedc7afa406c789",
-          "observed_at": "2026-10-04T12:12:37.160865+00:00",
+          "observed_at": "2026-10-04T12:38:54.687503+00:00",
           "source": "devbox",
           "status": "yellow",
           "subject": "Local observation (private details)",
@@ -33322,7 +33165,7 @@
           "applicability_reason": null,
           "family": "worktree_drift",
           "id": "worktree_drift:private:9207cb1105f3294d",
-          "observed_at": "2026-10-04T12:12:37.160865+00:00",
+          "observed_at": "2026-10-04T12:38:54.687503+00:00",
           "source": "devbox",
           "status": "yellow",
           "subject": "Local observation (private details)",
@@ -33337,7 +33180,7 @@
           "applicability_reason": null,
           "family": "worktree_drift",
           "id": "worktree_drift:private:08387b97bf20d079",
-          "observed_at": "2026-10-04T12:12:37.160865+00:00",
+          "observed_at": "2026-10-04T12:38:54.687503+00:00",
           "source": "devbox",
           "status": "yellow",
           "subject": "Local observation (private details)",
@@ -33352,7 +33195,7 @@
           "applicability_reason": null,
           "family": "worktree_drift",
           "id": "worktree_drift:private:897f368d0790f81d",
-          "observed_at": "2026-10-04T12:12:37.160865+00:00",
+          "observed_at": "2026-10-04T12:38:54.687503+00:00",
           "source": "devbox",
           "status": "yellow",
           "subject": "Local observation (private details)",
@@ -33367,17 +33210,17 @@
           "applicability_reason": null,
           "family": "worktree_drift",
           "id": "worktree_drift:private:8352f69b089b8009",
-          "observed_at": "2026-10-04T12:12:37.160865+00:00",
+          "observed_at": "2026-10-04T12:38:54.687503+00:00",
           "source": "devbox",
           "status": "yellow",
           "subject": "Local observation (private details)",
           "summary": "Inspect full evidence on the dev box; private paths omitted"
         }
       ],
-      "observed_at": "2026-10-04T12:12:37.160865+00:00",
+      "observed_at": "2026-10-04T12:38:54.687503+00:00",
       "state": "fail",
-      "summary": "5 orphan / 0 missing / 4 dirty"
+      "summary": "5 orphan / 0 missing / 5 dirty"
     }
   },
-  "ts": "2026-10-04T12:12:47.370052+00:00"
+  "ts": "2026-10-04T12:39:03.898803+00:00"
 }
