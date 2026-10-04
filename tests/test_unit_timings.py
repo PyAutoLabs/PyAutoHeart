@@ -637,7 +637,7 @@ def test_main_writes_the_sidecar_then_the_rollup_and_both_legacy_files(
     per_repo = tmp_path / "per-repo"
     per_repo.mkdir()
     listing = tmp_path / "listing.json"
-    listing.write_text(json.dumps({"artifacts": [_artifact()]}))
+    listing.write_text(json.dumps({"artifacts": [_artifact(created="2026-09-06T10:00:00Z")]}))
     downloads = tmp_path / "downloads"
     _extracted(downloads, sub="11", junit=_junit(_case(time="6.0")))
 
@@ -660,6 +660,15 @@ def test_main_writes_the_sidecar_then_the_rollup_and_both_legacy_files(
                   "wall_s": 40.0},
         "slowest": {NODEID: 2.0},
     }) + "\n")
+
+    # The daily append has already recorded the current run; it must not
+    # suppress the comparison to the genuinely prior observation.
+    with (unit_dir / f"{REPO}.jsonl").open("a") as record_file:
+        record_file.write(json.dumps({
+            "date": "2026-09-06", "at": side["legs"][0]["at"],
+            "python": "3.12", "run_id": side["legs"][0]["run_id"],
+            "slowest": {NODEID: 6.0},
+        }) + "\n")
 
     legacy = tmp_path / "legacy"
     roll_path = tmp_path / "unit_timings.json"
@@ -728,6 +737,7 @@ def test_main_aggregate_compares_only_inside_the_current_epoch(tmp_path,
     per_repo.mkdir()
     side = _sidecar(tmp_path, junit=_junit(_case(time="6.0")),
                     imports=_import_json(seconds=6.0))
+    side["legs"][0]["at"] = "2026-09-06T10:00:00Z"
     (per_repo / f"{REPO}.unit_timings.json").write_text(json.dumps(side))
 
     record = tmp_path / "timings"

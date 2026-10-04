@@ -60,7 +60,13 @@ unobserved on the cloud board.
 
 Timing cards are a pure presentation layer in `heart/timing_display.py`.
 They expose seconds, comparison coverage and source separately; missing imports
-and baseline-building observations never imply a passing comparison. Suite
+and baseline-building observations never imply a passing comparison. Unit-test
+comparisons select the latest distinct run strictly before each current
+repo/Python leg's observation time, within the current epoch. The current run,
+future runs and append order never substitute for prior evidence. Legacy
+records with only a date establish prior days; unknown chronology and tests
+absent from the selected prior run retain missing comparisons. Cache-state
+compatibility still guards every comparison. Suite
 legs stay separate (parallel wall-clocks are never summed); the three slowest
 measured tests appear first, with remaining tests and legs under disclosures.
 CI charts use dated daily medians with gaps for missing observations and an
