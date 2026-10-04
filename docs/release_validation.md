@@ -195,3 +195,31 @@ dispatching the `release-integrate.yml` channel), an ingested
 rehearsal-only report still (correctly) gates YELLOW: the source was built and
 TestPyPI-installed, but not yet exercised at release fidelity. `mode: release`
 is what supplies the `integrate` stage that flips this to GREEN-eligible.
+# Bounded investigation of a failed wheel run
+
+`release-diagnostic.yml` investigates the saved `rectangular_rtu.py` timeout
+from run `37199991757`. It runs automatically only on PRs changing that
+diagnostic's workflow, runner or manifest, and can also be dispatched manually
+with `repeats` between 1 and 6. It does not run the integration matrix.
+
+The manifest `diagnostics/release-37199991757.json` preserves the final 115
+package versions from the failed installation log, the exact workspace and
+Hands commits, Python 3.12.14 and the rehearsed library SHAs. In particular,
+the failed release workflow downgraded JAX/JAXlib to 0.10.2, while the earlier
+passing source retimes used 0.11.2. This difference is a confound to test,
+not a demonstrated cause.
+
+The runner resolves the pinned workspace's release profile through pinned
+Hands, verifies package versions and wheel import origins, and executes only
+the affected script in fresh processes. It captures `/proc` thread states,
+`py-spy --native` and GDB stacks at 120 seconds, terminates at 300 seconds,
+and stops on the first failure. Diagnostic artifacts preserve the manifest,
+pip installation URLs/hashes, actual runtime and environment provenance,
+stdout/stderr, native capture failures, results and newly generated FITS data.
+The original runner image, hardware, wheel hashes and generated FITS data
+were not retained; the receipt exposes these reproduction limits.
+
+These are **diagnostic results only**. Neither passing repetitions nor a green
+workflow clears the failed release. This workflow emits no release stage
+report and never calls validation ingest. Do not raise caps, quarantine the
+script, or identify a causal repair without reproducible or native evidence.

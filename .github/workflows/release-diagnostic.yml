@@ -1,0 +1,79 @@
+name: Release Diagnostic (not validation)
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/release-diagnostic.yml
+      - .github/scripts/release_diagnostic.py
+      - diagnostics/release-37199991757.json
+  workflow_dispatch:
+    inputs:
+      repeats:
+        description: "Fresh target processes (1–6); stop on first failure"
+        type: number
+        default: 6
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      PYTHONPATH: ""
+      MANIFEST: diagnostics/release-37199991757.json
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate immutable manifest and write requirements
+        id: manifest
+        run: >-
+          python3 .github/scripts/release_diagnostic.py prepare
+          --manifest "$MANIFEST" --output diagnostic-results
+          --github-output "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.manifest.outputs.workspace_repo }}
+          ref: ${{ steps.manifest.outputs.workspace_sha }}
+          path: diagnostic-workspace
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: PyAutoLabs/PyAutoHands
+          ref: ${{ steps.manifest.outputs.hands_sha }}
+          path: diagnostic-hands
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ steps.manifest.outputs.python }}
+      - name: Install recovered wheel environment and native inspection tools
+        run: |
+          python -m venv diagnostic-env
+          diagnostic-env/bin/python -m pip install \
+            --index-url https://test.pypi.org/simple/ \
+            --extra-index-url https://pypi.org/simple \
+            --report diagnostic-results/pip-install.json \
+            -r diagnostic-results/requirements.txt
+          diagnostic-env/bin/python -m pip install py-spy
+          echo "$PWD/diagnostic-env/bin" >> "$GITHUB_PATH"
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gdb
+          # Ephemeral runner only; allow sibling debuggers to attach to Python.
+          sudo sysctl -w kernel.yama.ptrace_scope=0
+      - name: Bounded release-profile repetitions against installed wheels
+        env:
+          REPEATS: ${{ inputs.repeats || 6 }}
+        run: >-
+          diagnostic-env/bin/python .github/scripts/release_diagnostic.py run
+          --manifest "$MANIFEST" --output diagnostic-results
+          --workspace diagnostic-workspace --hands diagnostic-hands
+          --repeats "$REPEATS"
+      - name: Preserve diagnostic evidence, including failure and native stacks
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-diagnostic-${{ github.run_id }}
+          path: |
+            diagnostic-results/
+            diagnostic-workspace/dataset/multi_dataset/lens_sersic/*.fits
+          if-no-files-found: error
