@@ -1,0 +1,79 @@
+name: JAX compatibility endpoints (not release validation)
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/jax-compatibility.yml
+      - .github/scripts/jax_compatibility.py
+      - .github/scripts/release_diagnostic.py
+      - diagnostics/release-37199991757.json
+permissions:
+  contents: read
+jobs:
+  compatibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        jax: ['0.9.2', '0.11.2']
+    env:
+      PYTHONPATH: ''
+      JAX_PLATFORMS: cpu
+      JAX_PLATFORM_NAME: cpu
+      XLA_FLAGS: --xla_cpu_multi_thread_eigen=false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare endpoint pins from preserved incident manifest
+        id: manifest
+        env:
+          ENDPOINT: ${{ matrix.jax }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          data = json.loads(Path('diagnostics/release-37199991757.json').read_text())
+          data['packages'].update(jax=os.environ['ENDPOINT'], jaxlib=os.environ['ENDPOINT'])
+          Path('endpoint.json').write_text(json.dumps(data))
+          PY
+          python .github/scripts/release_diagnostic.py prepare --manifest endpoint.json --output evidence --github-output "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.manifest.outputs.workspace_repo }}
+          ref: ${{ steps.manifest.outputs.workspace_sha }}
+          path: workspace
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: PyAutoLabs/PyAutoHands
+          ref: ${{ steps.manifest.outputs.hands_sha }}
+          path: hands
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ steps.manifest.outputs.python }}
+      - name: Install isolated endpoint with unchanged non-JAX pins
+        run: |
+          python -m venv endpoint
+          endpoint/bin/python -m pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple --report evidence/install.json -r evidence/requirements.txt
+          endpoint/bin/python -m pip check
+      - name: Original likelihood (three bounded fresh processes)
+        run: >-
+          endpoint/bin/python .github/scripts/release_diagnostic.py run
+          --manifest endpoint.json --output evidence --workspace workspace --hands hands --repeats 3
+      - name: Numerical and sampler dependency witness
+        env:
+          ENDPOINT: ${{ matrix.jax }}
+        run: >-
+          timeout --kill-after=5s 180 endpoint/bin/python .github/scripts/jax_compatibility.py
+          --version "$ENDPOINT" --backend cpu --output evidence/numerics.json
+      - name: Historical FFT witness with retained workaround
+        run: >-
+          timeout --kill-after=5s 120 endpoint/bin/python workspace/.github/scripts/xla_fft_pool_reentrancy_repro.py
+          > evidence/fft.log 2>&1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jax-compatibility-${{ matrix.jax }}
+          path: evidence/
+          if-no-files-found: error

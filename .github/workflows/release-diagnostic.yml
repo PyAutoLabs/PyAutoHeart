@@ -1,11 +1,6 @@
 name: Release Diagnostic (not validation)
 
 on:
-  pull_request:
-    paths:
-      - .github/workflows/release-diagnostic.yml
-      - .github/scripts/release_diagnostic.py
-      - diagnostics/release-37199991757.json
   workflow_dispatch:
     inputs:
       repeats:
