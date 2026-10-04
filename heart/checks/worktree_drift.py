@@ -94,6 +94,16 @@ def _dirty_file_count(repo: Path) -> int:
     return len(res.stdout.strip().splitlines()) if res.stdout.strip() else 0
 
 
+def _repositories(path: Path) -> list[Path]:
+    """A task may be one linked checkout or a bundle of repository children."""
+    if (path / ".git").exists():
+        return [path]
+    return [
+        child for child in path.iterdir()
+        if child.is_dir() and (child / ".git").exists()
+    ]
+
+
 def scan(
     wt_root: Path = PYAUTO_WT_ROOT,
     active_md: Path = ACTIVE_MD,
@@ -114,10 +124,7 @@ def scan(
         if key in seen or not path.is_dir():
             return
         seen.add(key)
-        has_content = any(
-            child.is_symlink() or (child.is_dir() and (child / ".git").exists())
-            for child in path.iterdir()
-        )
+        has_content = any(not repo.is_symlink() for repo in _repositories(path))
         on_disk.append({"name": name, "path": key, "has_real_worktrees": has_content})
 
     if wt_root.is_dir():
@@ -143,15 +150,13 @@ def scan(
     # never of whether it happens to sit under the wt root.
     missing = [c for c in active_claims if not Path(c["path"]).is_dir()]
 
-    # Task-branch dirt: real (non-symlink) worktree children only. Dirty
+    # Task-branch dirt: standalone checkouts or real worktree children. Dirty
     # canonical checkouts reached via symlinks are deduped by resolved path.
     dirty: list[dict[str, Any]] = []
     canonical_seen: set[str] = set()
     canonical_dirty: list[dict[str, Any]] = []
     for entry in on_disk:
-        for child in Path(entry["path"]).iterdir():
-            if not (child.is_dir() and (child / ".git").exists()):
-                continue
+        for child in _repositories(Path(entry["path"])):
             if child.is_symlink():
                 target = str(child.resolve())
                 if target in canonical_seen:

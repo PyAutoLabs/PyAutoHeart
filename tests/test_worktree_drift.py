@@ -72,6 +72,39 @@ def test_real_worktree_dirt_still_attributed(tmp_path):
     assert out["canonical_dirty"] == []
 
 
+def test_standalone_linked_worktree_is_real_and_reports_its_dirt(tmp_path):
+    canonical = _git_repo(tmp_path / "canonical")
+    subprocess.run(
+        ["git", "-C", str(canonical), "-c", "user.name=Test", "-c",
+         "user.email=test@example.org", "commit", "--allow-empty", "-qm", "base"],
+        check=True,
+    )
+    wt_root = tmp_path / "wt-root"
+    standalone = wt_root / "standalone"
+    subprocess.run(
+        ["git", "-C", str(canonical), "worktree", "add", "-qb", "task", str(standalone)],
+        check=True,
+    )
+    (standalone / "uncommitted.txt").write_text("preserve me")
+    assert (standalone / ".git").is_file()
+    out = wd.scan(wt_root, tmp_path / "active.md", tmp_path / "parked.md")
+    assert out["orphans"][0]["has_real_worktrees"] is True
+    assert out["dirty"] == [
+        {"worktree": "standalone", "repo": "standalone", "dirty_files": 1}
+    ]
+
+
+def test_symlink_only_bundle_does_not_claim_real_worktrees(tmp_path):
+    canonical = _git_repo(tmp_path / "canonical", dirty=True)
+    bundle = tmp_path / "wt-root" / "links-only"
+    bundle.mkdir(parents=True)
+    (bundle / "RepoA").symlink_to(canonical)
+    out = wd.scan(bundle.parent, tmp_path / "active.md", tmp_path / "parked.md")
+    assert out["orphans"][0]["has_real_worktrees"] is False
+    assert out["dirty"] == []
+    assert out["canonical_dirty"] == [{"repo": "RepoA", "dirty_files": 1}]
+
+
 def test_parked_worktree_is_not_an_orphan(tmp_path):
     wt_root = tmp_path / "wt-root"
     _git_repo(wt_root / "parked-task" / "RepoA")

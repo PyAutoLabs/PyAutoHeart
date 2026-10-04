@@ -47,6 +47,31 @@ def test_parse_garbage_yields_nothing():
     assert md.parse_check_output("Traceback (most recent call last):\n  boom\n") == {}
 
 
+def test_coverage_suffix_keeps_hook_failures_on_their_own_check():
+    checks = md.parse_check_output(
+        "check CLAUDE.md pointers: OK\n"
+        "check generated hooks: 1 mismatch(es) (45 of 45 checked out, 1 excluded)\n"
+        "  ✗ RepoA: session hook differs\n"
+        "check generated Codex hooks: OK (46 of 46 checked out)\n"
+    )
+    assert checks["CLAUDE.md pointers"] == {"ok": True, "problems": []}
+    assert checks["generated hooks"] == {
+        "ok": False, "problems": ["RepoA: session hook differs"]
+    }
+    assert checks["generated Codex hooks"] == {"ok": True, "problems": []}
+
+
+def test_unknown_check_status_is_not_attributed_to_previous_surface():
+    checks = md.parse_check_output(
+        "check origins: OK\n"
+        "check generated hooks: unavailable\n"
+        "  ✗ could not inspect hooks\n"
+    )
+    assert checks["origins"] == {"ok": True, "problems": []}
+    assert checks["generated hooks"]["ok"] is False
+    assert "could not inspect hooks" in checks["generated hooks"]["problems"]
+
+
 def _run_with_fake_script(tmp_path, monkeypatch, script_body: str | None):
     """Run md.run() against a fake workspace root; None = no script on disk."""
     if script_body is not None:
