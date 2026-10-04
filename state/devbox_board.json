@@ -7,7 +7,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T14:08:37+01:00"
+        "ts": "2026-10-04T14:23:06+01:00"
       }
     },
     "HowToGalaxy": {
@@ -17,7 +17,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T14:08:37+01:00"
+        "ts": "2026-10-04T14:23:06+01:00"
       }
     },
     "HowToLens": {
@@ -27,7 +27,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T14:08:37+01:00"
+        "ts": "2026-10-04T14:23:06+01:00"
       }
     },
     "PyAutoArray": {
@@ -37,7 +37,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T14:08:37+01:00"
+        "ts": "2026-10-04T14:23:06+01:00"
       }
     },
     "PyAutoBrain": {
@@ -47,7 +47,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T14:08:37+01:00"
+        "ts": "2026-10-04T14:23:06+01:00"
       }
     },
     "PyAutoCTI": {
@@ -57,7 +57,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T14:08:37+01:00"
+        "ts": "2026-10-04T14:23:06+01:00"
       }
     },
     "PyAutoEars": {
@@ -67,7 +67,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T14:08:37+01:00"
+        "ts": "2026-10-04T14:23:06+01:00"
       }
     },
     "PyAutoEyes": {
@@ -77,7 +77,7 @@
         "branch": "main",
         "dirty_files": 3,
         "dirty_real": 0,
-        "ts": "2026-10-04T14:08:37+01:00"
+        "ts": "2026-10-04T14:23:06+01:00"
       }
     },
     "PyAutoFit": {
@@ -87,7 +87,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T14:08:37+01:00"
+        "ts": "2026-10-04T14:23:06+01:00"
       }
     },
     "PyAutoGalaxy": {
@@ -97,7 +97,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T14:08:37+01:00"
+        "ts": "2026-10-04T14:23:06+01:00"
       }
     },
     "PyAutoHands": {
@@ -107,7 +107,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T14:08:37+01:00"
+        "ts": "2026-10-04T14:23:06+01:00"
       }
     },
     "PyAutoHeart": {
@@ -117,7 +117,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T14:08:37+01:00"
+        "ts": "2026-10-04T14:23:06+01:00"
       }
     },
     "PyAutoInsight": {
@@ -127,7 +127,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T14:08:37+01:00"
+        "ts": "2026-10-04T14:23:06+01:00"
       }
     },
     "PyAutoLens": {
@@ -137,7 +137,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T14:08:37+01:00"
+        "ts": "2026-10-04T14:23:06+01:00"
       }
     },
     "PyAutoMemory": {
@@ -147,7 +147,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T14:08:37+01:00"
+        "ts": "2026-10-04T14:23:06+01:00"
       }
     },
     "PyAutoMind": {
@@ -157,7 +157,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T14:08:37+01:00"
+        "ts": "2026-10-04T14:23:07+01:00"
       }
     },
     "PyAutoNerves": {
@@ -167,7 +167,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T14:08:37+01:00"
+        "ts": "2026-10-04T14:23:06+01:00"
       }
     },
     "PyAutoPulse": {
@@ -177,7 +177,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T14:08:37+01:00"
+        "ts": "2026-10-04T14:23:06+01:00"
       }
     },
     "autocti_workspace": {
@@ -187,7 +187,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T14:08:37+01:00"
+        "ts": "2026-10-04T14:23:06+01:00"
       }
     },
     "autocti_workspace_test": {
@@ -197,7 +197,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T14:08:37+01:00"
+        "ts": "2026-10-04T14:23:06+01:00"
       }
     },
     "autofit_workspace": {
@@ -207,7 +207,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T14:08:37+01:00"
+        "ts": "2026-10-04T14:23:06+01:00"
       }
     },
     "autofit_workspace_developer": {
@@ -217,7 +217,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T14:08:37+01:00"
+        "ts": "2026-10-04T14:23:06+01:00"
       }
     },
     "autofit_workspace_test": {
@@ -227,7 +227,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T14:08:37+01:00"
+        "ts": "2026-10-04T14:23:06+01:00"
       }
     },
     "autogalaxy_workspace": {
@@ -237,7 +237,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T14:08:37+01:00"
+        "ts": "2026-10-04T14:23:06+01:00"
       }
     },
     "autogalaxy_workspace_test": {
@@ -247,7 +247,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T14:08:37+01:00"
+        "ts": "2026-10-04T14:23:06+01:00"
       }
     },
     "autolens_workspace": {
@@ -257,7 +257,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T14:08:37+01:00"
+        "ts": "2026-10-04T14:23:06+01:00"
       }
     },
     "autolens_workspace_developer": {
@@ -267,7 +267,7 @@
         "branch": "main",
         "dirty_files": 1,
         "dirty_real": 1,
-        "ts": "2026-10-04T14:08:37+01:00"
+        "ts": "2026-10-04T14:23:06+01:00"
       }
     },
     "autolens_workspace_test": {
@@ -277,7 +277,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T14:08:37+01:00"
+        "ts": "2026-10-04T14:23:06+01:00"
       }
     },
     "euclid_strong_lens_modeling_pipeline": {
@@ -287,7 +287,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-10-04T14:08:37+01:00"
+        "ts": "2026-10-04T14:23:06+01:00"
       }
     }
   },
@@ -295,11 +295,11 @@
   "sections": {
     "ci_timing": {
       "details": [
-        "PyAutoBrain \u00b7 Nightly Release: median 6,444.00s \u00b7 max 6,837.00s \u00b7 3 completed runs \u00b7 Window 2026-10-02 \u2192 2026-10-04",
-        "PyAutoHeart \u00b7 Workspace Smoke: median 1,743.00s \u00b7 max 1,743.00s \u00b7 1 completed runs \u00b7 Window 2026-10-01 \u2192 2026-10-04",
+        "PyAutoBrain \u00b7 Nightly Release: median 5,198.50s \u00b7 max 6,837.00s \u00b7 2 completed runs \u00b7 Window 2026-10-03 \u2192 2026-10-04",
+        "PyAutoHeart \u00b7 Workspace Smoke: median 1,846.00s \u00b7 max 1,949.00s \u00b7 2 completed runs \u00b7 Window 2026-10-01 \u2192 2026-10-04",
         "autogalaxy_workspace_test \u00b7 Smoke Tests: median 628.00s \u00b7 max 900.00s \u00b7 39 completed runs \u00b7 Window 2026-08-24 \u2192 2026-10-04",
         "autolens_workspace \u00b7 Smoke Tests: median 488.00s \u00b7 max 822.00s \u00b7 13 completed runs \u00b7 Window 2026-09-27 \u2192 2026-10-04",
-        "autolens_workspace_test \u00b7 Smoke Tests: median 420.00s \u00b7 max 904.00s \u00b7 47 completed runs \u00b7 Window 2026-09-17 \u2192 2026-10-04",
+        "autolens_workspace_test \u00b7 Smoke Tests: median 418.00s \u00b7 max 904.00s \u00b7 45 completed runs \u00b7 Window 2026-09-17 \u2192 2026-10-04",
         "PyAutoLens \u00b7 Tests: median 368.50s \u00b7 max 713.00s \u00b7 30 completed runs \u00b7 Window 2026-09-27 \u2192 2026-10-04",
         "PyAutoFit \u00b7 Tests: median 339.50s \u00b7 max 674.00s \u00b7 26 completed runs \u00b7 Window 2026-09-24 \u2192 2026-10-04",
         "autocti_workspace \u00b7 Smoke Tests: median 321.00s \u00b7 max 614.00s \u00b7 25 completed runs \u00b7 Window 2026-08-24 \u2192 2026-10-04"
@@ -491,12 +491,12 @@
           "family": "ci_timing",
           "fresh": true,
           "id": "ci_timing:coverage",
-          "observed_at": "2026-10-04T12:41:31+01:00",
+          "observed_at": "2026-10-04T14:20:08+01:00",
           "owner": "ci_timing",
           "source": "snapshot.ci_timing",
           "status": "red",
           "subject": "CI wall-clock",
-          "summary": "26 gates \u00b7 slowest PyAutoBrain Nightly Release 107m \u00b7 1 slowed \u00b7 6 hang events"
+          "summary": "26 gates \u00b7 slowest PyAutoBrain Nightly Release 87m \u00b7 1 slowed \u00b7 6 hang events"
         },
         {
           "action": {
@@ -532,7 +532,7 @@
           "family": "ci_timing",
           "fresh": true,
           "id": "ci_timing:PyAutoLens/Tests:",
-          "observed_at": "2026-10-04T12:41:31+01:00",
+          "observed_at": "2026-10-04T14:20:08+01:00",
           "owner": "ci_timing",
           "source": "snapshot.ci_timing:ci_timing/gates/12",
           "status": "yellow",
@@ -570,7 +570,7 @@
           "family": "ci_timing",
           "fresh": true,
           "id": "ci_timing:HowToFit/Navigator Check:",
-          "observed_at": "2026-10-04T12:41:31+01:00",
+          "observed_at": "2026-10-04T14:20:08+01:00",
           "owner": "ci_timing",
           "source": "snapshot.ci_timing:ci_timing/gates/0",
           "status": "green",
@@ -608,7 +608,7 @@
           "family": "ci_timing",
           "fresh": true,
           "id": "ci_timing:HowToFit/Smoke Tests:",
-          "observed_at": "2026-10-04T12:41:31+01:00",
+          "observed_at": "2026-10-04T14:20:08+01:00",
           "owner": "ci_timing",
           "source": "snapshot.ci_timing:ci_timing/gates/1",
           "status": "green",
@@ -646,7 +646,7 @@
           "family": "ci_timing",
           "fresh": true,
           "id": "ci_timing:HowToGalaxy/Navigator Check:",
-          "observed_at": "2026-10-04T12:41:31+01:00",
+          "observed_at": "2026-10-04T14:20:08+01:00",
           "owner": "ci_timing",
           "source": "snapshot.ci_timing:ci_timing/gates/2",
           "status": "green",
@@ -684,7 +684,7 @@
           "family": "ci_timing",
           "fresh": true,
           "id": "ci_timing:HowToGalaxy/Smoke Tests:",
-          "observed_at": "2026-10-04T12:41:31+01:00",
+          "observed_at": "2026-10-04T14:20:08+01:00",
           "owner": "ci_timing",
           "source": "snapshot.ci_timing:ci_timing/gates/3",
           "status": "green",
@@ -722,7 +722,7 @@
           "family": "ci_timing",
           "fresh": true,
           "id": "ci_timing:HowToLens/Navigator Check:",
-          "observed_at": "2026-10-04T12:41:31+01:00",
+          "observed_at": "2026-10-04T14:20:08+01:00",
           "owner": "ci_timing",
           "source": "snapshot.ci_timing:ci_timing/gates/4",
           "status": "green",
@@ -760,7 +760,7 @@
           "family": "ci_timing",
           "fresh": true,
           "id": "ci_timing:HowToLens/Smoke Tests:",
-          "observed_at": "2026-10-04T12:41:31+01:00",
+          "observed_at": "2026-10-04T14:20:08+01:00",
           "owner": "ci_timing",
           "source": "snapshot.ci_timing:ci_timing/gates/5",
           "status": "green",
@@ -798,7 +798,7 @@
           "family": "ci_timing",
           "fresh": true,
           "id": "ci_timing:PyAutoArray/Tests:",
-          "observed_at": "2026-10-04T12:41:31+01:00",
+          "observed_at": "2026-10-04T14:20:08+01:00",
           "owner": "ci_timing",
           "source": "snapshot.ci_timing:ci_timing/gates/6",
           "status": "green",
@@ -816,27 +816,27 @@
             "conclusions": {
               "cancelled": 0,
               "failure": 0,
-              "success": 3,
+              "success": 2,
               "timed_out": 0
             },
-            "delta_s": 1317.5,
+            "delta_s": 72.0,
             "max_s": 6837.0,
-            "median_s": 6444.0,
+            "median_s": 5198.5,
             "pr_median_s": null,
             "prompt": null,
             "queue_median_s": 0.0,
-            "ratio": 1.26,
+            "ratio": 1.01,
             "repo": "PyAutoBrain",
-            "runs_counted": 3,
+            "runs_counted": 2,
             "state": "ok",
             "superseded": 0,
-            "window_from": "2026-10-02T08:01:46Z",
+            "window_from": "2026-10-03T07:42:58Z",
             "workflow": "Nightly Release"
           },
           "family": "ci_timing",
           "fresh": true,
           "id": "ci_timing:PyAutoBrain/Nightly Release:",
-          "observed_at": "2026-10-04T12:41:31+01:00",
+          "observed_at": "2026-10-04T14:20:08+01:00",
           "owner": "ci_timing",
           "source": "snapshot.ci_timing:ci_timing/gates/7",
           "status": "green",
@@ -874,7 +874,7 @@
           "family": "ci_timing",
           "fresh": true,
           "id": "ci_timing:PyAutoCTI/Tests:",
-          "observed_at": "2026-10-04T12:41:31+01:00",
+          "observed_at": "2026-10-04T14:20:08+01:00",
           "owner": "ci_timing",
           "source": "snapshot.ci_timing:ci_timing/gates/8",
           "status": "green",
@@ -912,7 +912,7 @@
           "family": "ci_timing",
           "fresh": true,
           "id": "ci_timing:PyAutoFit/Tests:",
-          "observed_at": "2026-10-04T12:41:31+01:00",
+          "observed_at": "2026-10-04T14:20:08+01:00",
           "owner": "ci_timing",
           "source": "snapshot.ci_timing:ci_timing/gates/9",
           "status": "green",
@@ -950,7 +950,7 @@
           "family": "ci_timing",
           "fresh": true,
           "id": "ci_timing:PyAutoGalaxy/Tests:",
-          "observed_at": "2026-10-04T12:41:31+01:00",
+          "observed_at": "2026-10-04T14:20:08+01:00",
           "owner": "ci_timing",
           "source": "snapshot.ci_timing:ci_timing/gates/10",
           "status": "green",
@@ -968,18 +968,18 @@
             "conclusions": {
               "cancelled": 0,
               "failure": 0,
-              "success": 1,
+              "success": 2,
               "timed_out": 0
             },
-            "delta_s": -104.0,
-            "max_s": 1743.0,
-            "median_s": 1743.0,
+            "delta_s": -1.0,
+            "max_s": 1949.0,
+            "median_s": 1846.0,
             "pr_median_s": null,
             "prompt": null,
             "queue_median_s": 0.0,
-            "ratio": 0.94,
+            "ratio": 1.0,
             "repo": "PyAutoHeart",
-            "runs_counted": 1,
+            "runs_counted": 2,
             "state": "ok",
             "superseded": 0,
             "window_from": "2026-10-01T18:49:50Z",
@@ -988,7 +988,7 @@
           "family": "ci_timing",
           "fresh": true,
           "id": "ci_timing:PyAutoHeart/Workspace Smoke:",
-          "observed_at": "2026-10-04T12:41:31+01:00",
+          "observed_at": "2026-10-04T14:20:08+01:00",
           "owner": "ci_timing",
           "source": "snapshot.ci_timing:ci_timing/gates/11",
           "status": "green",
@@ -1026,7 +1026,7 @@
           "family": "ci_timing",
           "fresh": true,
           "id": "ci_timing:PyAutoNerves/Tests:",
-          "observed_at": "2026-10-04T12:41:31+01:00",
+          "observed_at": "2026-10-04T14:20:08+01:00",
           "owner": "ci_timing",
           "source": "snapshot.ci_timing:ci_timing/gates/13",
           "status": "green",
@@ -1064,7 +1064,7 @@
           "family": "ci_timing",
           "fresh": true,
           "id": "ci_timing:autocti_workspace/Navigator Check:",
-          "observed_at": "2026-10-04T12:41:31+01:00",
+          "observed_at": "2026-10-04T14:20:08+01:00",
           "owner": "ci_timing",
           "source": "snapshot.ci_timing:ci_timing/gates/14",
           "status": "green",
@@ -1102,7 +1102,7 @@
           "family": "ci_timing",
           "fresh": true,
           "id": "ci_timing:autocti_workspace/Smoke Tests:",
-          "observed_at": "2026-10-04T12:41:31+01:00",
+          "observed_at": "2026-10-04T14:20:08+01:00",
           "owner": "ci_timing",
           "source": "snapshot.ci_timing:ci_timing/gates/15",
           "status": "green",
@@ -1140,7 +1140,7 @@
           "family": "ci_timing",
           "fresh": true,
           "id": "ci_timing:autocti_workspace_test/Smoke Tests:",
-          "observed_at": "2026-10-04T12:41:31+01:00",
+          "observed_at": "2026-10-04T14:20:08+01:00",
           "owner": "ci_timing",
           "source": "snapshot.ci_timing:ci_timing/gates/16",
           "status": "green",
@@ -1178,7 +1178,7 @@
           "family": "ci_timing",
           "fresh": true,
           "id": "ci_timing:autofit_workspace/Navigator Check:",
-          "observed_at": "2026-10-04T12:41:31+01:00",
+          "observed_at": "2026-10-04T14:20:08+01:00",
           "owner": "ci_timing",
           "source": "snapshot.ci_timing:ci_timing/gates/17",
           "status": "green",
@@ -1216,7 +1216,7 @@
           "family": "ci_timing",
           "fresh": true,
           "id": "ci_timing:autofit_workspace/Smoke Tests:",
-          "observed_at": "2026-10-04T12:41:31+01:00",
+          "observed_at": "2026-10-04T14:20:08+01:00",
           "owner": "ci_timing",
           "source": "snapshot.ci_timing:ci_timing/gates/18",
           "status": "green",
@@ -1254,7 +1254,7 @@
           "family": "ci_timing",
           "fresh": true,
           "id": "ci_timing:autofit_workspace_test/Smoke Tests:",
-          "observed_at": "2026-10-04T12:41:31+01:00",
+          "observed_at": "2026-10-04T14:20:08+01:00",
           "owner": "ci_timing",
           "source": "snapshot.ci_timing:ci_timing/gates/19",
           "status": "green",
@@ -1292,7 +1292,7 @@
           "family": "ci_timing",
           "fresh": true,
           "id": "ci_timing:autogalaxy_workspace/Navigator Check:",
-          "observed_at": "2026-10-04T12:41:31+01:00",
+          "observed_at": "2026-10-04T14:20:08+01:00",
           "owner": "ci_timing",
           "source": "snapshot.ci_timing:ci_timing/gates/20",
           "status": "green",
@@ -1330,7 +1330,7 @@
           "family": "ci_timing",
           "fresh": true,
           "id": "ci_timing:autogalaxy_workspace/Smoke Tests:",
-          "observed_at": "2026-10-04T12:41:31+01:00",
+          "observed_at": "2026-10-04T14:20:08+01:00",
           "owner": "ci_timing",
           "source": "snapshot.ci_timing:ci_timing/gates/21",
           "status": "green",
@@ -1368,7 +1368,7 @@
           "family": "ci_timing",
           "fresh": true,
           "id": "ci_timing:autogalaxy_workspace_test/Smoke Tests:",
-          "observed_at": "2026-10-04T12:41:31+01:00",
+          "observed_at": "2026-10-04T14:20:08+01:00",
           "owner": "ci_timing",
           "source": "snapshot.ci_timing:ci_timing/gates/22",
           "status": "green",
@@ -1406,7 +1406,7 @@
           "family": "ci_timing",
           "fresh": true,
           "id": "ci_timing:autolens_workspace/Navigator Check:",
-          "observed_at": "2026-10-04T12:41:31+01:00",
+          "observed_at": "2026-10-04T14:20:08+01:00",
           "owner": "ci_timing",
           "source": "snapshot.ci_timing:ci_timing/gates/23",
           "status": "green",
@@ -1444,7 +1444,7 @@
           "family": "ci_timing",
           "fresh": true,
           "id": "ci_timing:autolens_workspace/Smoke Tests:",
-          "observed_at": "2026-10-04T12:41:31+01:00",
+          "observed_at": "2026-10-04T14:20:08+01:00",
           "owner": "ci_timing",
           "source": "snapshot.ci_timing:ci_timing/gates/24",
           "status": "green",
@@ -1462,27 +1462,27 @@
             "conclusions": {
               "cancelled": 1,
               "failure": 1,
-              "success": 47,
+              "success": 45,
               "timed_out": 0
             },
-            "delta_s": -80.0,
+            "delta_s": -82.0,
             "max_s": 904.0,
-            "median_s": 420.0,
-            "pr_median_s": 455.0,
+            "median_s": 418.0,
+            "pr_median_s": 420.0,
             "prompt": null,
             "queue_median_s": 0.0,
             "ratio": 0.84,
             "repo": "autolens_workspace_test",
-            "runs_counted": 47,
+            "runs_counted": 45,
             "state": "ok",
             "superseded": 0,
-            "window_from": "2026-09-17T16:20:13Z",
+            "window_from": "2026-09-17T16:38:20Z",
             "workflow": "Smoke Tests"
           },
           "family": "ci_timing",
           "fresh": true,
           "id": "ci_timing:autolens_workspace_test/Smoke Tests:",
-          "observed_at": "2026-10-04T12:41:31+01:00",
+          "observed_at": "2026-10-04T14:20:08+01:00",
           "owner": "ci_timing",
           "source": "snapshot.ci_timing:ci_timing/gates/25",
           "status": "green",
@@ -1490,9 +1490,9 @@
           "summary": "ok"
         }
       ],
-      "observed_at": "2026-10-04T12:41:31+01:00",
+      "observed_at": "2026-10-04T14:20:08+01:00",
       "state": "fail",
-      "summary": "26 gates \u00b7 slowest PyAutoBrain Nightly Release 107m \u00b7 1 slowed \u00b7 6 hang events"
+      "summary": "26 gates \u00b7 slowest PyAutoBrain Nightly Release 87m \u00b7 1 slowed \u00b7 6 hang events"
     },
     "import_time": {
       "details": [
@@ -1887,7 +1887,7 @@
           "family": "manifest_drift",
           "fresh": true,
           "id": "manifest_drift:coverage",
-          "observed_at": "2026-10-04T13:08:53.264309+00:00",
+          "observed_at": "2026-10-04T13:23:21.142112+00:00",
           "owner": "manifest_drift",
           "source": "snapshot.manifest_drift",
           "status": "green",
@@ -1895,7 +1895,7 @@
           "summary": "Repository manifest drift: green"
         }
       ],
-      "observed_at": "2026-10-04T13:08:53.264309+00:00",
+      "observed_at": "2026-10-04T13:23:21.142112+00:00",
       "state": "ok",
       "summary": "Repository manifest drift: green"
     },
@@ -2638,7 +2638,7 @@
           "family": "profiling_drift",
           "fresh": true,
           "id": "profiling_drift:coverage",
-          "observed_at": "2026-10-04T13:08:45.176709+00:00",
+          "observed_at": "2026-10-04T13:23:13.420459+00:00",
           "owner": "profiling_drift",
           "source": "snapshot.profiling_drift",
           "status": "green",
@@ -2646,7 +2646,7 @@
           "summary": "333 results clean"
         }
       ],
-      "observed_at": "2026-10-04T13:08:45.176709+00:00",
+      "observed_at": "2026-10-04T13:23:13.420459+00:00",
       "state": "ok",
       "summary": "333 results clean"
     },
@@ -2662,7 +2662,7 @@
           "family": "required_workflow_drift",
           "fresh": true,
           "id": "required_workflow_drift:coverage",
-          "observed_at": "2026-10-04T13:08:48.008381+00:00",
+          "observed_at": "2026-10-04T13:23:15.999226+00:00",
           "owner": "required_workflow_drift",
           "source": "snapshot.required_workflow_drift",
           "status": "green",
@@ -2670,7 +2670,7 @@
           "summary": "Required workflow coverage: green"
         }
       ],
-      "observed_at": "2026-10-04T13:08:48.008381+00:00",
+      "observed_at": "2026-10-04T13:23:15.999226+00:00",
       "state": "ok",
       "summary": "Required workflow coverage: green"
     },
@@ -31986,7 +31986,7 @@
           "family": "version_skew",
           "fresh": true,
           "id": "version_skew:HowToFit:",
-          "observed_at": "2026-10-04T13:08:46.866128+00:00",
+          "observed_at": "2026-10-04T13:23:14.913935+00:00",
           "owner": "version_skew",
           "source": "snapshot.version_skew:version_skew/workspaces/3",
           "status": "green",
@@ -32008,7 +32008,7 @@
           "family": "version_skew",
           "fresh": true,
           "id": "version_skew:HowToGalaxy:",
-          "observed_at": "2026-10-04T13:08:46.866128+00:00",
+          "observed_at": "2026-10-04T13:23:14.913935+00:00",
           "owner": "version_skew",
           "source": "snapshot.version_skew:version_skew/workspaces/4",
           "status": "green",
@@ -32030,7 +32030,7 @@
           "family": "version_skew",
           "fresh": true,
           "id": "version_skew:HowToLens:",
-          "observed_at": "2026-10-04T13:08:46.866128+00:00",
+          "observed_at": "2026-10-04T13:23:14.913935+00:00",
           "owner": "version_skew",
           "source": "snapshot.version_skew:version_skew/workspaces/5",
           "status": "green",
@@ -32052,7 +32052,7 @@
           "family": "version_skew",
           "fresh": true,
           "id": "version_skew:autofit_workspace:",
-          "observed_at": "2026-10-04T13:08:46.866128+00:00",
+          "observed_at": "2026-10-04T13:23:14.913935+00:00",
           "owner": "version_skew",
           "source": "snapshot.version_skew:version_skew/workspaces/0",
           "status": "green",
@@ -32074,7 +32074,7 @@
           "family": "version_skew",
           "fresh": true,
           "id": "version_skew:autogalaxy_workspace:",
-          "observed_at": "2026-10-04T13:08:46.866128+00:00",
+          "observed_at": "2026-10-04T13:23:14.913935+00:00",
           "owner": "version_skew",
           "source": "snapshot.version_skew:version_skew/workspaces/1",
           "status": "green",
@@ -32096,7 +32096,7 @@
           "family": "version_skew",
           "fresh": true,
           "id": "version_skew:autolens_workspace:",
-          "observed_at": "2026-10-04T13:08:46.866128+00:00",
+          "observed_at": "2026-10-04T13:23:14.913935+00:00",
           "owner": "version_skew",
           "source": "snapshot.version_skew:version_skew/workspaces/2",
           "status": "green",
@@ -32112,7 +32112,7 @@
           "family": "version_skew",
           "fresh": true,
           "id": "version_skew:coverage",
-          "observed_at": "2026-10-04T13:08:46.866128+00:00",
+          "observed_at": "2026-10-04T13:23:14.913935+00:00",
           "owner": "version_skew",
           "source": "snapshot.version_skew",
           "status": "green",
@@ -32134,7 +32134,7 @@
           "family": "version_skew",
           "fresh": true,
           "id": "version_skew:euclid_strong_lens_modeling_pipeline:",
-          "observed_at": "2026-10-04T13:08:46.866128+00:00",
+          "observed_at": "2026-10-04T13:23:14.913935+00:00",
           "owner": "version_skew",
           "source": "snapshot.version_skew:version_skew/workspaces/6",
           "status": "green",
@@ -32142,7 +32142,7 @@
           "summary": "OK"
         }
       ],
-      "observed_at": "2026-10-04T13:08:46.866128+00:00",
+      "observed_at": "2026-10-04T13:23:14.913935+00:00",
       "state": "ok",
       "summary": "all floors satisfiable"
     },
@@ -32329,11 +32329,11 @@
         "mass-field-profiling-live/autolens_profiling: 2 uncommitted file(s) in task worktree",
         "point-source-search-nautilus-leaf/autolens_inference: 1 uncommitted file(s) in task worktree",
         "sparse-operator-oversampling-cache/PyAutoArray: 11 uncommitted file(s) in task worktree",
+        "restore-dashboard-green/PyAutoHeart: 5 uncommitted file(s) in task worktree",
         "vis-lp-inspection-bundle/euclid_strong_lens_modeling_pipeline: 3 uncommitted file(s) in task worktree",
         "PyAutoCortex: 7 uncommitted file(s) in canonical checkout",
         "PyAutoEyes: 3 uncommitted file(s) in canonical checkout",
-        "autofit_assistant: 1 uncommitted file(s) in canonical checkout",
-        "autolens_assistant: 2 uncommitted file(s) in canonical checkout"
+        "autofit_assistant: 1 uncommitted file(s) in canonical checkout"
       ],
       "entries": [
         {
@@ -32346,7 +32346,7 @@
           "evidence": "mass-field-profiling-live/autolens_profiling",
           "id": "drift:dirty:mass-field-profiling-live/autolens_profiling",
           "key": "dirty",
-          "observed_at": "2026-10-04T13:08:53.350325+00:00",
+          "observed_at": "2026-10-04T13:23:21.216669+00:00",
           "reason": "2 uncommitted file(s) in task worktree",
           "release_severity": null,
           "source": "local worktree inventory",
@@ -32363,7 +32363,7 @@
           "evidence": "point-source-search-nautilus-leaf/autolens_inference",
           "id": "drift:dirty:point-source-search-nautilus-leaf/autolens_inference",
           "key": "dirty",
-          "observed_at": "2026-10-04T13:08:53.350325+00:00",
+          "observed_at": "2026-10-04T13:23:21.216669+00:00",
           "reason": "1 uncommitted file(s) in task worktree",
           "release_severity": null,
           "source": "local worktree inventory",
@@ -32380,12 +32380,29 @@
           "evidence": "sparse-operator-oversampling-cache/PyAutoArray",
           "id": "drift:dirty:sparse-operator-oversampling-cache/PyAutoArray",
           "key": "dirty",
-          "observed_at": "2026-10-04T13:08:53.350325+00:00",
+          "observed_at": "2026-10-04T13:23:21.216669+00:00",
           "reason": "11 uncommitted file(s) in task worktree",
           "release_severity": null,
           "source": "local worktree inventory",
           "state": "warn",
           "subject": "sparse-operator-oversampling-cache/PyAutoArray"
+        },
+        {
+          "action": {
+            "kind": "prompt",
+            "label": "triage drift",
+            "payload": "Use the health skill. Inspect worktree drift: restore-dashboard-green/PyAutoHeart \u2014 5 uncommitted file(s) in task worktree. Run pyauto-heart fix drift for context; reconcile active claims, preserve user edits and obtain approval before cleanup."
+          },
+          "affects_release": false,
+          "evidence": "restore-dashboard-green/PyAutoHeart",
+          "id": "drift:dirty:restore-dashboard-green/PyAutoHeart",
+          "key": "dirty",
+          "observed_at": "2026-10-04T13:23:21.216669+00:00",
+          "reason": "5 uncommitted file(s) in task worktree",
+          "release_severity": null,
+          "source": "local worktree inventory",
+          "state": "warn",
+          "subject": "restore-dashboard-green/PyAutoHeart"
         },
         {
           "action": {
@@ -32397,7 +32414,7 @@
           "evidence": "vis-lp-inspection-bundle/euclid_strong_lens_modeling_pipeline",
           "id": "drift:dirty:vis-lp-inspection-bundle/euclid_strong_lens_modeling_pipeline",
           "key": "dirty",
-          "observed_at": "2026-10-04T13:08:53.350325+00:00",
+          "observed_at": "2026-10-04T13:23:21.216669+00:00",
           "reason": "3 uncommitted file(s) in task worktree",
           "release_severity": null,
           "source": "local worktree inventory",
@@ -32414,7 +32431,7 @@
           "evidence": "PyAutoCortex",
           "id": "drift:canonical_dirty:PyAutoCortex",
           "key": "canonical_dirty",
-          "observed_at": "2026-10-04T13:08:53.350325+00:00",
+          "observed_at": "2026-10-04T13:23:21.216669+00:00",
           "reason": "7 uncommitted file(s) in canonical checkout",
           "release_severity": null,
           "source": "local worktree inventory",
@@ -32431,7 +32448,7 @@
           "evidence": "PyAutoEyes",
           "id": "drift:canonical_dirty:PyAutoEyes",
           "key": "canonical_dirty",
-          "observed_at": "2026-10-04T13:08:53.350325+00:00",
+          "observed_at": "2026-10-04T13:23:21.216669+00:00",
           "reason": "3 uncommitted file(s) in canonical checkout",
           "release_severity": null,
           "source": "local worktree inventory",
@@ -32448,7 +32465,7 @@
           "evidence": "autofit_assistant",
           "id": "drift:canonical_dirty:autofit_assistant",
           "key": "canonical_dirty",
-          "observed_at": "2026-10-04T13:08:53.350325+00:00",
+          "observed_at": "2026-10-04T13:23:21.216669+00:00",
           "reason": "1 uncommitted file(s) in canonical checkout",
           "release_severity": null,
           "source": "local worktree inventory",
@@ -32465,7 +32482,7 @@
           "evidence": "autolens_assistant",
           "id": "drift:canonical_dirty:autolens_assistant",
           "key": "canonical_dirty",
-          "observed_at": "2026-10-04T13:08:53.350325+00:00",
+          "observed_at": "2026-10-04T13:23:21.216669+00:00",
           "reason": "2 uncommitted file(s) in canonical checkout",
           "release_severity": null,
           "source": "local worktree inventory",
@@ -32482,7 +32499,7 @@
           "evidence": "autolens_inference",
           "id": "drift:canonical_dirty:autolens_inference",
           "key": "canonical_dirty",
-          "observed_at": "2026-10-04T13:08:53.350325+00:00",
+          "observed_at": "2026-10-04T13:23:21.216669+00:00",
           "reason": "1 uncommitted file(s) in canonical checkout",
           "release_severity": null,
           "source": "local worktree inventory",
@@ -32499,7 +32516,7 @@
           "evidence": "autolens_profiling",
           "id": "drift:canonical_dirty:autolens_profiling",
           "key": "canonical_dirty",
-          "observed_at": "2026-10-04T13:08:53.350325+00:00",
+          "observed_at": "2026-10-04T13:23:21.216669+00:00",
           "reason": "1 uncommitted file(s) in canonical checkout",
           "release_severity": null,
           "source": "local worktree inventory",
@@ -32516,7 +32533,7 @@
           "evidence": "autolens_workspace_developer",
           "id": "drift:canonical_dirty:autolens_workspace_developer",
           "key": "canonical_dirty",
-          "observed_at": "2026-10-04T13:08:53.350325+00:00",
+          "observed_at": "2026-10-04T13:23:21.216669+00:00",
           "reason": "1 uncommitted file(s) in canonical checkout",
           "release_severity": null,
           "source": "local worktree inventory",
@@ -32543,11 +32560,36 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "worktree_drift:PyAutoArray:",
-          "observed_at": "2026-10-04T13:08:44.127588+00:00",
+          "observed_at": "2026-10-04T13:23:12.410015+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift:worktree_drift/dirty/2",
           "status": "red",
           "subject": "PyAutoArray",
+          "summary": "red"
+        },
+        {
+          "action": {
+            "kind": "prompt",
+            "label": "inspect finding",
+            "payload": "Use the health and repo-cleanup skills. Inspect PyAutoHeart in the canonical checkout and active task ledger on the dev box. Preserve edits and claims; refresh with pyauto-heart tick and publish with pyauto-heart publish. Do not delete, reset, merge or close work without authorization."
+          },
+          "applicability_reason": null,
+          "applicable": true,
+          "blocked_reason": null,
+          "evidence": {
+            "dirty_files": 5,
+            "repo": "PyAutoHeart",
+            "state": "red",
+            "worktree": "restore-dashboard-green"
+          },
+          "family": "worktree_drift",
+          "fresh": true,
+          "id": "worktree_drift:PyAutoHeart:",
+          "observed_at": "2026-10-04T13:23:12.410015+00:00",
+          "owner": "worktree_drift",
+          "source": "snapshot.worktree_drift:worktree_drift/dirty/3",
+          "status": "red",
+          "subject": "PyAutoHeart",
           "summary": "red"
         },
         {
@@ -32568,7 +32610,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "worktree_drift:autolens_inference:",
-          "observed_at": "2026-10-04T13:08:44.127588+00:00",
+          "observed_at": "2026-10-04T13:23:12.410015+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift:worktree_drift/dirty/1",
           "status": "red",
@@ -32593,7 +32635,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "worktree_drift:autolens_profiling:",
-          "observed_at": "2026-10-04T13:08:44.127588+00:00",
+          "observed_at": "2026-10-04T13:23:12.410015+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift:worktree_drift/dirty/0",
           "status": "red",
@@ -32612,12 +32654,12 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "worktree_drift:coverage",
-          "observed_at": "2026-10-04T13:08:44.127588+00:00",
+          "observed_at": "2026-10-04T13:23:12.410015+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift",
           "status": "red",
           "subject": "Worktree drift",
-          "summary": "5 orphan / 0 missing / 4 dirty"
+          "summary": "5 orphan / 0 missing / 5 dirty"
         },
         {
           "action": {
@@ -32637,9 +32679,9 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "worktree_drift:euclid_strong_lens_modeling_pipeline:",
-          "observed_at": "2026-10-04T13:08:44.127588+00:00",
+          "observed_at": "2026-10-04T13:23:12.410015+00:00",
           "owner": "worktree_drift",
-          "source": "snapshot.worktree_drift:worktree_drift/dirty/3",
+          "source": "snapshot.worktree_drift:worktree_drift/dirty/4",
           "status": "red",
           "subject": "euclid_strong_lens_modeling_pipeline",
           "summary": "red"
@@ -32657,7 +32699,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "drift:canonical_dirty:PyAutoCortex",
-          "observed_at": "2026-10-04T13:08:53.350325+00:00",
+          "observed_at": "2026-10-04T13:23:21.216669+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift",
           "status": "yellow",
@@ -32677,7 +32719,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "drift:canonical_dirty:PyAutoEyes",
-          "observed_at": "2026-10-04T13:08:53.350325+00:00",
+          "observed_at": "2026-10-04T13:23:21.216669+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift",
           "status": "yellow",
@@ -32697,7 +32739,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "drift:canonical_dirty:autofit_assistant",
-          "observed_at": "2026-10-04T13:08:53.350325+00:00",
+          "observed_at": "2026-10-04T13:23:21.216669+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift",
           "status": "yellow",
@@ -32717,7 +32759,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "drift:canonical_dirty:autolens_assistant",
-          "observed_at": "2026-10-04T13:08:53.350325+00:00",
+          "observed_at": "2026-10-04T13:23:21.216669+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift",
           "status": "yellow",
@@ -32737,7 +32779,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "drift:canonical_dirty:autolens_inference",
-          "observed_at": "2026-10-04T13:08:53.350325+00:00",
+          "observed_at": "2026-10-04T13:23:21.216669+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift",
           "status": "yellow",
@@ -32757,7 +32799,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "drift:canonical_dirty:autolens_profiling",
-          "observed_at": "2026-10-04T13:08:53.350325+00:00",
+          "observed_at": "2026-10-04T13:23:21.216669+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift",
           "status": "yellow",
@@ -32777,7 +32819,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "drift:canonical_dirty:autolens_workspace_developer",
-          "observed_at": "2026-10-04T13:08:53.350325+00:00",
+          "observed_at": "2026-10-04T13:23:21.216669+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift",
           "status": "yellow",
@@ -32797,7 +32839,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "drift:dirty:mass-field-profiling-live/autolens_profiling",
-          "observed_at": "2026-10-04T13:08:53.350325+00:00",
+          "observed_at": "2026-10-04T13:23:21.216669+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift",
           "status": "yellow",
@@ -32817,12 +32859,32 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "drift:dirty:point-source-search-nautilus-leaf/autolens_inference",
-          "observed_at": "2026-10-04T13:08:53.350325+00:00",
+          "observed_at": "2026-10-04T13:23:21.216669+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift",
           "status": "yellow",
           "subject": "point-source-search-nautilus-leaf/autolens_inference",
           "summary": "1 uncommitted file(s) in task worktree"
+        },
+        {
+          "action": {
+            "kind": "prompt",
+            "label": "triage drift",
+            "payload": "Use the health skill. Inspect worktree drift: restore-dashboard-green/PyAutoHeart \u2014 5 uncommitted file(s) in task worktree. Run pyauto-heart fix drift for context; reconcile active claims, preserve user edits and obtain approval before cleanup."
+          },
+          "applicability_reason": null,
+          "applicable": true,
+          "blocked_reason": null,
+          "evidence": "restore-dashboard-green/PyAutoHeart",
+          "family": "worktree_drift",
+          "fresh": true,
+          "id": "drift:dirty:restore-dashboard-green/PyAutoHeart",
+          "observed_at": "2026-10-04T13:23:21.216669+00:00",
+          "owner": "worktree_drift",
+          "source": "snapshot.worktree_drift",
+          "status": "yellow",
+          "subject": "restore-dashboard-green/PyAutoHeart",
+          "summary": "5 uncommitted file(s) in task worktree"
         },
         {
           "action": {
@@ -32837,7 +32899,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "drift:dirty:sparse-operator-oversampling-cache/PyAutoArray",
-          "observed_at": "2026-10-04T13:08:53.350325+00:00",
+          "observed_at": "2026-10-04T13:23:21.216669+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift",
           "status": "yellow",
@@ -32857,7 +32919,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "drift:dirty:vis-lp-inspection-bundle/euclid_strong_lens_modeling_pipeline",
-          "observed_at": "2026-10-04T13:08:53.350325+00:00",
+          "observed_at": "2026-10-04T13:23:21.216669+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift",
           "status": "yellow",
@@ -32873,7 +32935,7 @@
           "applicability_reason": null,
           "family": "worktree_drift",
           "id": "worktree_drift:private:f81665099a921553",
-          "observed_at": "2026-10-04T13:08:53.350325+00:00",
+          "observed_at": "2026-10-04T13:23:21.216669+00:00",
           "source": "devbox",
           "status": "yellow",
           "subject": "Local observation (private details)",
@@ -32888,7 +32950,7 @@
           "applicability_reason": null,
           "family": "worktree_drift",
           "id": "worktree_drift:private:e4d9c1f001e84a64",
-          "observed_at": "2026-10-04T13:08:53.350325+00:00",
+          "observed_at": "2026-10-04T13:23:21.216669+00:00",
           "source": "devbox",
           "status": "yellow",
           "subject": "Local observation (private details)",
@@ -32903,7 +32965,7 @@
           "applicability_reason": null,
           "family": "worktree_drift",
           "id": "worktree_drift:private:df8459121a39227a",
-          "observed_at": "2026-10-04T13:08:53.350325+00:00",
+          "observed_at": "2026-10-04T13:23:21.216669+00:00",
           "source": "devbox",
           "status": "yellow",
           "subject": "Local observation (private details)",
@@ -32918,7 +32980,7 @@
           "applicability_reason": null,
           "family": "worktree_drift",
           "id": "worktree_drift:private:166bf26a34bfed3b",
-          "observed_at": "2026-10-04T13:08:53.350325+00:00",
+          "observed_at": "2026-10-04T13:23:21.216669+00:00",
           "source": "devbox",
           "status": "yellow",
           "subject": "Local observation (private details)",
@@ -32933,7 +32995,7 @@
           "applicability_reason": null,
           "family": "worktree_drift",
           "id": "worktree_drift:private:dd1d43986e1feb4d",
-          "observed_at": "2026-10-04T13:08:53.350325+00:00",
+          "observed_at": "2026-10-04T13:23:21.216669+00:00",
           "source": "devbox",
           "status": "yellow",
           "subject": "Local observation (private details)",
@@ -32956,7 +33018,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "worktree_drift:PyAutoCortex:",
-          "observed_at": "2026-10-04T13:08:44.127588+00:00",
+          "observed_at": "2026-10-04T13:23:12.410015+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift:worktree_drift/canonical_dirty/0",
           "status": "yellow",
@@ -32980,7 +33042,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "worktree_drift:PyAutoEyes:",
-          "observed_at": "2026-10-04T13:08:44.127588+00:00",
+          "observed_at": "2026-10-04T13:23:12.410015+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift:worktree_drift/canonical_dirty/1",
           "status": "yellow",
@@ -33004,7 +33066,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "worktree_drift:autofit_assistant:",
-          "observed_at": "2026-10-04T13:08:44.127588+00:00",
+          "observed_at": "2026-10-04T13:23:12.410015+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift:worktree_drift/canonical_dirty/2",
           "status": "yellow",
@@ -33028,7 +33090,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "worktree_drift:autolens_assistant:",
-          "observed_at": "2026-10-04T13:08:44.127588+00:00",
+          "observed_at": "2026-10-04T13:23:12.410015+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift:worktree_drift/canonical_dirty/3",
           "status": "yellow",
@@ -33052,7 +33114,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "worktree_drift:autolens_workspace_developer:",
-          "observed_at": "2026-10-04T13:08:44.127588+00:00",
+          "observed_at": "2026-10-04T13:23:12.410015+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift:worktree_drift/canonical_dirty/6",
           "status": "yellow",
@@ -33068,7 +33130,7 @@
           "applicability_reason": null,
           "family": "worktree_drift",
           "id": "worktree_drift:private:fcedc7afa406c789",
-          "observed_at": "2026-10-04T13:08:44.127588+00:00",
+          "observed_at": "2026-10-04T13:23:12.410015+00:00",
           "source": "devbox",
           "status": "yellow",
           "subject": "Local observation (private details)",
@@ -33083,7 +33145,7 @@
           "applicability_reason": null,
           "family": "worktree_drift",
           "id": "worktree_drift:private:9207cb1105f3294d",
-          "observed_at": "2026-10-04T13:08:44.127588+00:00",
+          "observed_at": "2026-10-04T13:23:12.410015+00:00",
           "source": "devbox",
           "status": "yellow",
           "subject": "Local observation (private details)",
@@ -33098,7 +33160,7 @@
           "applicability_reason": null,
           "family": "worktree_drift",
           "id": "worktree_drift:private:08387b97bf20d079",
-          "observed_at": "2026-10-04T13:08:44.127588+00:00",
+          "observed_at": "2026-10-04T13:23:12.410015+00:00",
           "source": "devbox",
           "status": "yellow",
           "subject": "Local observation (private details)",
@@ -33113,7 +33175,7 @@
           "applicability_reason": null,
           "family": "worktree_drift",
           "id": "worktree_drift:private:897f368d0790f81d",
-          "observed_at": "2026-10-04T13:08:44.127588+00:00",
+          "observed_at": "2026-10-04T13:23:12.410015+00:00",
           "source": "devbox",
           "status": "yellow",
           "subject": "Local observation (private details)",
@@ -33128,17 +33190,17 @@
           "applicability_reason": null,
           "family": "worktree_drift",
           "id": "worktree_drift:private:8352f69b089b8009",
-          "observed_at": "2026-10-04T13:08:44.127588+00:00",
+          "observed_at": "2026-10-04T13:23:12.410015+00:00",
           "source": "devbox",
           "status": "yellow",
           "subject": "Local observation (private details)",
           "summary": "Inspect full evidence on the dev box; private paths omitted"
         }
       ],
-      "observed_at": "2026-10-04T13:08:44.127588+00:00",
+      "observed_at": "2026-10-04T13:23:12.410015+00:00",
       "state": "fail",
-      "summary": "5 orphan / 0 missing / 4 dirty"
+      "summary": "5 orphan / 0 missing / 5 dirty"
     }
   },
-  "ts": "2026-10-04T13:08:53.350325+00:00"
+  "ts": "2026-10-04T13:23:21.216669+00:00"
 }
