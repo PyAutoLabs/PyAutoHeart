@@ -195,3 +195,97 @@ dispatching the `release-integrate.yml` channel), an ingested
 rehearsal-only report still (correctly) gates YELLOW: the source was built and
 TestPyPI-installed, but not yet exercised at release fidelity. `mode: release`
 is what supplies the `integrate` stage that flips this to GREEN-eligible.
+# Bounded investigation of a failed wheel run
+
+`release-diagnostic.yml` investigates the saved `rectangular_rtu.py` timeout
+from run `37199991757`. It is dispatched manually
+with `repeats` of 2, 4 or 6 total trials. It does not run the integration matrix.
+
+The manifest `diagnostics/release-37199991757.json` preserves the final 115
+package versions from the failed installation log, the exact workspace and
+Hands commits, Python 3.12.14 and the rehearsed library SHAs. In particular,
+the failed release workflow downgraded JAX/JAXlib to 0.10.2, while the earlier
+passing source retimes used 0.11.2. This difference is a confound to test,
+not a demonstrated cause.
+
+The runner resolves the pinned workspace's release profile through pinned
+Hands, verifies package versions and wheel import origins, and executes only
+the affected script in fresh processes. It captures `/proc` thread states,
+`py-spy --native` and GDB stacks at 120 seconds, terminates at 300 seconds,
+and stops on any candidate failure. The comparison interleaves original 0.10.2
+controls and 0.11.2 candidates on the same runner and dataset, changing only
+JAX/JAXlib in separate virtual environments. Original control timeouts remain
+in the artifacts; a successful comparison requires a native-confirmed Cholesky
+pool stall in at least one control and every candidate passing. Passing controls
+alone are inconclusive, not evidence of a remedy. Diagnostic artifacts preserve the manifest,
+pip installation URLs/hashes, actual runtime and environment provenance,
+stdout/stderr, native capture failures, results and newly generated FITS data.
+The original runner image, hardware, wheel hashes and generated FITS data
+were not retained; the receipt exposes these reproduction limits.
+
+These are **diagnostic results only**. Neither passing repetitions nor a green
+workflow clears the failed release. This workflow emits no release stage
+report and never calls validation ingest. Do not raise caps, quarantine the
+script, or identify a causal repair without reproducible or native evidence.
+
+The first exact hosted replay, [37205459198](https://github.com/PyAutoLabs/PyAutoHeart/actions/runs/37205459198), passed once in 9.905s and then stalled after 2.6s compilation. Both native tools captured all four Eigen workers waiting in `BlockingCounter::Wait` through `ParallelBatchMap`, `CholeskyFactorization` and `lapack_dpotrf_ffi`. The committed [native witness](../diagnostics/release-37199991757-native.txt) includes the raw artifact's SHA256. There are no FFT/ducc0 frames.
+
+[JAX 0.10.2](https://github.com/jax-ml/jax/blob/jax-v0.10.2/jaxlib/cpu/lapack_kernels.cc) schedules LAPACK batch chunks to the thread pool and blocks waiting for them; [JAX 0.11.2](https://github.com/jax-ml/jax/blob/jax-v0.11.2/jaxlib/cpu/lapack_kernels.cc) compiles this parallel path out of open-source builds. This is the source-grounded candidate tested by the comparison, distinct from the historical FFT workaround. No upstream report was filed.
+
+The interleaved comparison [37206724174](https://github.com/PyAutoLabs/PyAutoHeart/actions/runs/37206724174) passed all three controls (15.724/12.671/12.733s) and all three candidates (12.359/12.668/12.167s). It correctly returned **inconclusive** because the control did not stall on that runner. This does not establish a measured failure-rate improvement. The earlier exact replay supplies the native-confirmed failure; the source change removes that captured blocking path, and the candidate executions verify this script with the same release wheels.
+
+The smoke, integration and notebook dependency recipes now require matching JAX/JAXlib `>=0.11.2,<0.12`, preventing the old `<0.11` override from downgrading into the captured LAPACK deadlock. The original 115-package diagnostic control remains pinned to 0.10.2. No timeout, test selection or release-readiness rule changes. Full release integration has not been repeated: the failed validation remains authoritative until a separately authorized post-merge validation succeeds.
+
+### User-facing compatibility policy (2026-10-04)
+
+The package repair preserves `>=0.7,<0.12` while excluding `0.10.*` and `0.11.0`.
+The LAPACK parallel batch path first appears in tagged 0.10.0 source and is disabled
+in open-source builds from 0.11.1; 0.9.2 lacks the path. Only 0.10.2 was observed
+deadlocking here. Exclusions of the other releases are source-based precautions.
+The two diagnostic endpoints are 0.9.2 and 0.11.2, not a new blanket minimum of
+0.11.2 or certification of every permitted older version.
+
+Nerves owns the exclusions and retains its Intel-macOS marker. Each repaired
+Fit/Array/Galaxy/Lens/CTI package directly requires `autonerves>2026.10.4.1` to
+prevent resolver fallback to an older, permissive Nerves. Hands' three explicit
+JAX installs share the exclusions. Heart's integration baseline remains the
+0.11.2 series; `jax-compatibility.yml` exercises both endpoints against the saved
+wheel stack and original likelihood, plus numerical/sampler and historical FFT
+witnesses. The original incident comparison is now manual-only to avoid an
+unnecessary old-runtime replay on every PR update.
+
+**Release ordering:** merge/publish the policy-bearing Nerves before the repaired
+family wheels. The strict bound rejects the old release's `.devN` and `.postN`
+variants too; a same-day rehearsal must use a higher base version chosen by the
+human release process. Source CI builds use the existing `setup.py` development
+version `9999.0.0.dev0` and satisfy the guard. None of this retroactively repairs
+published wheels or prevents an unconstrained installer from selecting an entirely
+older family. Existing lockfiles require an explicit repaired-family upgrade.
+
+[Local receipts](../diagnostics/jax-compatibility-20261004.json) record:
+
+- Original rectangular likelihood, including its existing JIT/vmap assertions:
+  three CPU passes and one actual CUDA pass per version, with the same incident
+  wheels, 113 non-JAX pins and saved dataset. Local Python is 3.12.10, not the
+  incident's 3.12.14; the hosted workflow pins 3.12.14.
+- Imaging light-profile gradient checks pass for both versions against finite
+  differences. Independent regularized-likelihood/Cholesky, gradient, NUFFT/direct
+  DFT, Optax optimizer and short BlackJAX NUTS execution checks pass on CPU and GPU.
+  The older endpoint also passes with NumPy2.0.0/SciPy1.13.0. The short NUTS run
+  tests finite execution, not posterior convergence.
+- The historical FFT reproducer completes 20 iterations on both endpoints with
+  `--xla_cpu_multi_thread_eigen=false`. The separate FFT workaround is retained.
+- All six real built wheels have the intended metadata. 25 live resolver cases
+  across the five consumer packages accept both endpoints and reject 0.10.2,
+  0.11.0 and old Nerves, with older published candidates still available. A fresh `--ignore-installed`
+  resolver run without prereleases also selects the protected family and JAX0.9.2
+  using synthetic stable local wheels (no release or version selection).
+
+**Incomplete broader check:** `point_source/jax_grad/gradient.py` completed its
+solved-source finite-difference checks on both versions, then exceeded the 300s
+local diagnostic cap in the later portion on both. Logs/native-capture attempts
+and hashes are retained. This does not establish a version-specific regression
+or its cause, and is not a passing result. No cap or test selection was changed
+in production. Local timings were collected with other validation running and
+must not be interpreted as a performance comparison. Full release validation
+remains failed and must be assessed separately after human merge/authorization.

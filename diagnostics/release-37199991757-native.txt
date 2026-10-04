@@ -1,0 +1,43 @@
+# Native witness: release diagnostic 37205459198
+
+Source: https://github.com/PyAutoLabs/PyAutoHeart/actions/runs/37205459198
+Artifact: release-diagnostic-37205459198 / diagnostic-results/trial-2.native.txt
+Raw native file SHA256: 1a025a43d895e247d7052ef0c2d84dfc33dafdd8fe92a4f1df726d39c42ced53
+
+Trial1 PASS9.905s; trial2 TIMEOUT300.021s after2.6s compile. Both native tools exited0.
+Python3.12.14, JAX/JAXlib0.10.2, four CPUs, XLA_FLAGS=--xla_cpu_multi_thread_eigen=false.
+Four Eigen workers wait in LAPACK Cholesky batch fan-out; no FftThunk or ducc0 frames.
+
+Below: thread headings and selected frames, signatures and runner paths trimmed.
+
+Thread 28 (Thread 0x7ff0f93536c0 (LWP 3258) "tf_XLAEigen"):
+#6  0x00007ff10e7eb2d1 in absl::lts_20260107::BlockingCounter::Wait()
+#7  0x00007ff10e6f642e in jax::ParallelBatchMap(xla::ffi::ThreadPool, long, long, absl::lts_20260107::FunctionRef<void (long, long)>)
+#8  0x00007ff10e713ce5 in jax::CholeskyFactorization<(xla::ffi::DataType)12, int>::Kernel(xla::ffi::ThreadPool, xla::ffi::Buffer<(xla::ffi::DataType)12, 18446744073709551615ul>, ja [signature trimmed]
+#11 0x00007ff10e7380a9 in lapack_dpotrf_ffi
+#15 0x00007ff11735356e in xla::cpu::CustomCallThunk::Execute(xla::cpu::Thunk::ExecuteParams const&)
+#23 0x00007ff1161afb44 in Eigen::ThreadPoolTempl<tsl::thread::EigenEnvironment>::WorkerLoop(int)
+
+Thread 27 (Thread 0x7ff0f8b526c0 (LWP 3259) "tf_XLAEigen"):
+#6  0x00007ff10e7eb2d1 in absl::lts_20260107::BlockingCounter::Wait()
+#7  0x00007ff10e6f642e in jax::ParallelBatchMap(xla::ffi::ThreadPool, long, long, absl::lts_20260107::FunctionRef<void (long, long)>)
+#8  0x00007ff10e713ce5 in jax::CholeskyFactorization<(xla::ffi::DataType)12, int>::Kernel(xla::ffi::ThreadPool, xla::ffi::Buffer<(xla::ffi::DataType)12, 18446744073709551615ul>, ja [signature trimmed]
+#11 0x00007ff10e7380a9 in lapack_dpotrf_ffi
+#15 0x00007ff11735356e in xla::cpu::CustomCallThunk::Execute(xla::cpu::Thunk::ExecuteParams const&)
+#23 0x00007ff1161afb44 in Eigen::ThreadPoolTempl<tsl::thread::EigenEnvironment>::WorkerLoop(int)
+
+Thread 26 (Thread 0x7ff0f3fff6c0 (LWP 3260) "tf_XLAEigen"):
+#6  0x00007ff10e7eb2d1 in absl::lts_20260107::BlockingCounter::Wait()
+#7  0x00007ff10e6f642e in jax::ParallelBatchMap(xla::ffi::ThreadPool, long, long, absl::lts_20260107::FunctionRef<void (long, long)>)
+#8  0x00007ff10e713ce5 in jax::CholeskyFactorization<(xla::ffi::DataType)12, int>::Kernel(xla::ffi::ThreadPool, xla::ffi::Buffer<(xla::ffi::DataType)12, 18446744073709551615ul>, ja [signature trimmed]
+#11 0x00007ff10e7380a9 in lapack_dpotrf_ffi
+#15 0x00007ff11735356e in xla::cpu::CustomCallThunk::Execute(xla::cpu::Thunk::ExecuteParams const&)
+#24 0x00007ff1161afb44 in Eigen::ThreadPoolTempl<tsl::thread::EigenEnvironment>::WorkerLoop(int)
+
+Thread 25 (Thread 0x7ff0f37fe6c0 (LWP 3261) "tf_XLAEigen"):
+#6  0x00007ff10e7eb2d1 in absl::lts_20260107::BlockingCounter::Wait()
+#7  0x00007ff10e6f642e in jax::ParallelBatchMap(xla::ffi::ThreadPool, long, long, absl::lts_20260107::FunctionRef<void (long, long)>)
+#8  0x00007ff10e713ce5 in jax::CholeskyFactorization<(xla::ffi::DataType)12, int>::Kernel(xla::ffi::ThreadPool, xla::ffi::Buffer<(xla::ffi::DataType)12, 18446744073709551615ul>, ja [signature trimmed]
+#11 0x00007ff10e7380a9 in lapack_dpotrf_ffi
+#15 0x00007ff11735356e in xla::cpu::CustomCallThunk::Execute(xla::cpu::Thunk::ExecuteParams const&)
+#23 0x00007ff1161afb44 in Eigen::ThreadPoolTempl<tsl::thread::EigenEnvironment>::WorkerLoop(int)

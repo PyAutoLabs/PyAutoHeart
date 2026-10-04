@@ -277,7 +277,8 @@ jobs:
           # installing the published autolens[optional]; the source checkouts
           # below shadow the PyAuto packages via PYTHONPATH.
           pip install "autolens[optional]"
-          pip install "jax>=0.7,<0.11" "jaxlib>=0.7,<0.11"
+          # 0.10.2 can deadlock in batched LAPACK; see docs/release_validation.md.
+          pip install "jax>=0.11.2,<0.12" "jaxlib>=0.11.2,<0.12"
           # nufftax backs the interferometer TransformerNUFFT and is NOT pulled
           # transitively by autolens[optional]; without it every interferometer
           # simulator (and its downstream scripts) fails fast. Matches the pin
@@ -349,7 +350,8 @@ jobs:
           pip install numba
           # Belt-and-braces JAX install — the [optional] -> [jax] chain
           # occasionally silently drops jax from test.pypi resolution.
-          pip install "jax>=0.7,<0.11" "jaxlib>=0.7,<0.11"
+          # 0.10.2 can deadlock in batched LAPACK; see docs/release_validation.md.
+          pip install "jax>=0.11.2,<0.12" "jaxlib>=0.11.2,<0.12"
           pip install "nufftax>=0.6.1,<0.7.0"
       - name: "Run Python scripts [mode=smoke, source-shadowed, smoke profile]"
         if: needs.find_scripts.outputs.mode == 'smoke'
@@ -561,7 +563,8 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         run: |
           pip install "autolens[optional]"
-          pip install "jax>=0.7,<0.11" "jaxlib>=0.7,<0.11"
+          # 0.10.2 can deadlock in batched LAPACK; see docs/release_validation.md.
+          pip install "jax>=0.11.2,<0.12" "jaxlib>=0.11.2,<0.12"
           pip install "nufftax>=0.6.1,<0.7.0"
           pip install jupyter ipynb-py-convert
       - name: Run notebooks

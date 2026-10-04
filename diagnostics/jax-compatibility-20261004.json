@@ -1,0 +1,739 @@
+{
+  "diagnostic_only": true,
+  "python": "3.12.10",
+  "gpu": "NVIDIA GeForce RTX 2060 with Max-Q Design; driver 580.97; CUDA12 plugins matched to each JAX version; cuDNN9.10.2.21",
+  "policy": ">=0.7,<0.12,!=0.10.*,!=0.11.0",
+  "note": "Preserved range, not blanket certification. Local timings were collected on a contended workstation and are not performance benchmarks. Initial CUDA discovery and DFT-oracle setup failures corrected; full logs retained in Mind scratch. Disposable CUDA installs removed after completed GPU witnesses.",
+  "numerics": {
+    "kernels-cpu-0.9.2": {
+      "diagnostic_only": true,
+      "python": "3.12.10",
+      "backend": "cpu",
+      "devices": [
+        "TFRT_CPU_0"
+      ],
+      "packages": {
+        "jax": "0.9.2",
+        "jaxlib": "0.9.2",
+        "numpy": "2.5.3",
+        "scipy": "1.17.1",
+        "blackjax": "1.7.1",
+        "optax": "0.2.8",
+        "nufftax": "0.6.1"
+      },
+      "xla_flags": "--xla_cpu_multi_thread_eigen=false",
+      "values": [
+        -30.602441710810105,
+        -31.076385661423217,
+        -32.26494197253405
+      ],
+      "gradients": [
+        -0.24953833472108977,
+        -0.6743439385131532,
+        -1.5812558302477793
+      ],
+      "max_value_error": 0.0,
+      "max_gradient_error": 3.816227334141331e-10,
+      "max_nufft_error": 8.208770510358971e-11,
+      "compile_execute_s": 1.0596958999994968,
+      "steady_s": 0.0008866200001648395,
+      "optimizer_position": [
+        0.9999985821120013,
+        -2.000000279564477
+      ],
+      "nuts_steps": 16,
+      "status": "pass"
+    },
+    "kernels-cpu-0.11.2": {
+      "diagnostic_only": true,
+      "python": "3.12.10",
+      "backend": "cpu",
+      "devices": [
+        "cpu:0"
+      ],
+      "packages": {
+        "jax": "0.11.2",
+        "jaxlib": "0.11.2",
+        "numpy": "2.5.3",
+        "scipy": "1.17.1",
+        "blackjax": "1.7.1",
+        "optax": "0.2.8",
+        "nufftax": "0.6.1"
+      },
+      "xla_flags": "--xla_cpu_multi_thread_eigen=false",
+      "values": [
+        -30.602441710810105,
+        -31.076385661423217,
+        -32.26494197253405
+      ],
+      "gradients": [
+        -0.24953833472108977,
+        -0.6743439385131532,
+        -1.5812558302477793
+      ],
+      "max_value_error": 0.0,
+      "max_gradient_error": 3.816227334141331e-10,
+      "max_nufft_error": 8.208770510358971e-11,
+      "compile_execute_s": 1.3830478000018047,
+      "steady_s": 0.002818260000276496,
+      "optimizer_position": [
+        0.9999985821120013,
+        -2.000000279564477
+      ],
+      "nuts_steps": 16,
+      "status": "pass"
+    },
+    "kernels-cuda-0.9.2": {
+      "diagnostic_only": true,
+      "python": "3.12.10",
+      "backend": "cuda",
+      "devices": [
+        "cuda:0"
+      ],
+      "packages": {
+        "jax": "0.9.2",
+        "jaxlib": "0.9.2",
+        "numpy": "2.5.3",
+        "scipy": "1.17.1",
+        "blackjax": "1.7.1",
+        "optax": "0.2.8",
+        "nufftax": "0.6.1"
+      },
+      "xla_flags": "--xla_cpu_multi_thread_eigen=false",
+      "values": [
+        -30.602441710810105,
+        -31.076385661423217,
+        -32.26494197253405
+      ],
+      "gradients": [
+        -0.2495383347210898,
+        -0.6743439385131532,
+        -1.5812558302477797
+      ],
+      "max_value_error": 0.0,
+      "max_gradient_error": 3.8162228932492326e-10,
+      "max_nufft_error": 8.209055434966626e-11,
+      "compile_execute_s": 1.3817770999994536,
+      "steady_s": 0.003663880000021891,
+      "optimizer_position": [
+        0.9999985821120013,
+        -2.000000279564477
+      ],
+      "nuts_steps": 16,
+      "status": "pass"
+    },
+    "kernels-cuda-0.11.2": {
+      "diagnostic_only": true,
+      "python": "3.12.10",
+      "backend": "cuda",
+      "devices": [
+        "cuda:0"
+      ],
+      "packages": {
+        "jax": "0.11.2",
+        "jaxlib": "0.11.2",
+        "numpy": "2.5.3",
+        "scipy": "1.17.1",
+        "blackjax": "1.7.1",
+        "optax": "0.2.8",
+        "nufftax": "0.6.1"
+      },
+      "xla_flags": "--xla_cpu_multi_thread_eigen=false",
+      "values": [
+        -30.602441710810105,
+        -31.076385661423217,
+        -32.26494197253405
+      ],
+      "gradients": [
+        -0.2495383347210898,
+        -0.6743439385131532,
+        -1.5812558302477797
+      ],
+      "max_value_error": 0.0,
+      "max_gradient_error": 3.8162228932492326e-10,
+      "max_nufft_error": 8.209055434966626e-11,
+      "compile_execute_s": 1.6192122000029485,
+      "steady_s": 0.007460109999738051,
+      "optimizer_position": [
+        0.9999985821120013,
+        -2.000000279564477
+      ],
+      "nuts_steps": 16,
+      "status": "pass"
+    },
+    "kernels-cpu-0.9.2-floors": {
+      "diagnostic_only": true,
+      "python": "3.12.10",
+      "backend": "cpu",
+      "devices": [
+        "TFRT_CPU_0"
+      ],
+      "packages": {
+        "jax": "0.9.2",
+        "jaxlib": "0.9.2",
+        "numpy": "2.0.0",
+        "scipy": "1.13.0",
+        "blackjax": "1.7.1",
+        "optax": "0.2.8",
+        "nufftax": "0.6.1"
+      },
+      "xla_flags": "--xla_cpu_multi_thread_eigen=false",
+      "values": [
+        -30.602441710810105,
+        -31.076385661423217,
+        -32.26494197253405
+      ],
+      "gradients": [
+        -0.24953833472108977,
+        -0.6743439385131532,
+        -1.5812558302477793
+      ],
+      "max_value_error": 0.0,
+      "max_gradient_error": 3.816227334141331e-10,
+      "max_nufft_error": 8.208770510358971e-11,
+      "compile_execute_s": 1.1693172000013874,
+      "steady_s": 0.0003894099998433376,
+      "optimizer_position": [
+        0.9999985821120013,
+        -2.000000279564477
+      ],
+      "nuts_steps": 16,
+      "status": "pass"
+    }
+  },
+  "workspace_cpu": [
+    {
+      "status": "pass",
+      "returncode": 0,
+      "elapsed_s": 55.055,
+      "cap_s": 300,
+      "log": "1.log",
+      "version": "0.9.2",
+      "backend": "cpu",
+      "case": "multi_dataset/jax_likelihood/rectangular_rtu.py",
+      "script_sha256": "5cc4e77ecf2c3bddaeccbba7aeb0094ff942eff086af5d35a6eb9c6cf47d48bc"
+    },
+    {
+      "status": "pass",
+      "returncode": 0,
+      "elapsed_s": 57.419,
+      "cap_s": 300,
+      "log": "2.log",
+      "version": "0.9.2",
+      "backend": "cpu",
+      "case": "multi_dataset/jax_likelihood/rectangular_rtu.py",
+      "script_sha256": "5cc4e77ecf2c3bddaeccbba7aeb0094ff942eff086af5d35a6eb9c6cf47d48bc"
+    },
+    {
+      "status": "pass",
+      "returncode": 0,
+      "elapsed_s": 59.396,
+      "cap_s": 300,
+      "log": "3.log",
+      "version": "0.9.2",
+      "backend": "cpu",
+      "case": "multi_dataset/jax_likelihood/rectangular_rtu.py",
+      "script_sha256": "5cc4e77ecf2c3bddaeccbba7aeb0094ff942eff086af5d35a6eb9c6cf47d48bc"
+    },
+    {
+      "status": "pass",
+      "returncode": 0,
+      "elapsed_s": 184.672,
+      "cap_s": 300,
+      "log": "4.log",
+      "version": "0.9.2",
+      "backend": "cpu",
+      "case": "imaging/jax_grad/lp.py",
+      "script_sha256": "cefb45f3bbf9447a4677ec358aaa37e21ad3a91cd48e15a3adab5973ca6a0678"
+    },
+    {
+      "status": "timeout",
+      "returncode": -9,
+      "elapsed_s": 300.417,
+      "cap_s": 300,
+      "log": "5.log",
+      "version": "0.9.2",
+      "backend": "cpu",
+      "case": "point_source/jax_grad/gradient.py",
+      "script_sha256": "5b56d142083085a198f0b612a9c715e8c9d5c00346934669d2d1c6df195632a3"
+    },
+    {
+      "status": "pass",
+      "returncode": 0,
+      "elapsed_s": 62.969,
+      "cap_s": 300,
+      "log": "1.log",
+      "version": "0.11.2",
+      "backend": "cpu",
+      "case": "multi_dataset/jax_likelihood/rectangular_rtu.py",
+      "script_sha256": "5cc4e77ecf2c3bddaeccbba7aeb0094ff942eff086af5d35a6eb9c6cf47d48bc"
+    },
+    {
+      "status": "pass",
+      "returncode": 0,
+      "elapsed_s": 64.941,
+      "cap_s": 300,
+      "log": "2.log",
+      "version": "0.11.2",
+      "backend": "cpu",
+      "case": "multi_dataset/jax_likelihood/rectangular_rtu.py",
+      "script_sha256": "5cc4e77ecf2c3bddaeccbba7aeb0094ff942eff086af5d35a6eb9c6cf47d48bc"
+    },
+    {
+      "status": "pass",
+      "returncode": 0,
+      "elapsed_s": 70.646,
+      "cap_s": 300,
+      "log": "3.log",
+      "version": "0.11.2",
+      "backend": "cpu",
+      "case": "multi_dataset/jax_likelihood/rectangular_rtu.py",
+      "script_sha256": "5cc4e77ecf2c3bddaeccbba7aeb0094ff942eff086af5d35a6eb9c6cf47d48bc"
+    },
+    {
+      "status": "pass",
+      "returncode": 0,
+      "elapsed_s": 211.715,
+      "cap_s": 300,
+      "log": "4.log",
+      "version": "0.11.2",
+      "backend": "cpu",
+      "case": "imaging/jax_grad/lp.py",
+      "script_sha256": "cefb45f3bbf9447a4677ec358aaa37e21ad3a91cd48e15a3adab5973ca6a0678"
+    },
+    {
+      "status": "timeout",
+      "returncode": -9,
+      "elapsed_s": 300.315,
+      "cap_s": 300,
+      "log": "5.log",
+      "version": "0.11.2",
+      "backend": "cpu",
+      "case": "point_source/jax_grad/gradient.py",
+      "script_sha256": "5b56d142083085a198f0b612a9c715e8c9d5c00346934669d2d1c6df195632a3"
+    }
+  ],
+  "workspace_gpu": [
+    {
+      "status": "pass",
+      "returncode": 0,
+      "elapsed_s": 115.299,
+      "cap_s": 300,
+      "log": "gpu-workspace-0.9.2.log",
+      "version": "0.9.2"
+    },
+    {
+      "status": "pass",
+      "returncode": 0,
+      "elapsed_s": 109.857,
+      "cap_s": 300,
+      "log": "gpu-workspace-0.11.2.log",
+      "version": "0.11.2"
+    }
+  ],
+  "fft": [
+    {
+      "version": "0.9.2",
+      "returncode": 0,
+      "iterations": 20,
+      "workaround": "--xla_cpu_multi_thread_eigen=false"
+    },
+    {
+      "version": "0.11.2",
+      "returncode": 0,
+      "iterations": 20,
+      "workaround": "--xla_cpu_multi_thread_eigen=false"
+    }
+  ],
+  "resolver": [
+    {
+      "package": "autofit",
+      "case": "old",
+      "expected_resolution": true,
+      "returncode": 0,
+      "pass": true,
+      "selected": {
+        "autofit": "9999.0.0.dev0",
+        "autonerves": "9999.0.0.dev0"
+      },
+      "wheel_sha256": "ebe7d0c1a756214258b6c439cf2966293ea7592d9edb33f2caf7dc70e573ca56"
+    },
+    {
+      "package": "autofit",
+      "case": "new",
+      "expected_resolution": true,
+      "returncode": 0,
+      "pass": true,
+      "selected": {
+        "jax": "0.11.2",
+        "jaxlib": "0.11.2",
+        "autofit": "9999.0.0.dev0",
+        "autonerves": "9999.0.0.dev0"
+      },
+      "wheel_sha256": "ebe7d0c1a756214258b6c439cf2966293ea7592d9edb33f2caf7dc70e573ca56"
+    },
+    {
+      "package": "autofit",
+      "case": "blocked-0102",
+      "expected_resolution": false,
+      "returncode": 1,
+      "pass": true,
+      "selected": {},
+      "wheel_sha256": "ebe7d0c1a756214258b6c439cf2966293ea7592d9edb33f2caf7dc70e573ca56"
+    },
+    {
+      "package": "autofit",
+      "case": "blocked-0110",
+      "expected_resolution": false,
+      "returncode": 1,
+      "pass": true,
+      "selected": {},
+      "wheel_sha256": "ebe7d0c1a756214258b6c439cf2966293ea7592d9edb33f2caf7dc70e573ca56"
+    },
+    {
+      "package": "autofit",
+      "case": "old-nerves",
+      "expected_resolution": false,
+      "returncode": 1,
+      "pass": true,
+      "selected": {},
+      "wheel_sha256": "ebe7d0c1a756214258b6c439cf2966293ea7592d9edb33f2caf7dc70e573ca56"
+    },
+    {
+      "package": "autoarray",
+      "case": "old",
+      "expected_resolution": true,
+      "returncode": 0,
+      "pass": true,
+      "selected": {
+        "autoarray": "9999.0.0.dev0",
+        "autonerves": "9999.0.0.dev0"
+      },
+      "wheel_sha256": "2f824bdc82fab9d4d31254e20fee860eef5645dad051fc59894dd341909f9465"
+    },
+    {
+      "package": "autoarray",
+      "case": "new",
+      "expected_resolution": true,
+      "returncode": 0,
+      "pass": true,
+      "selected": {
+        "jax": "0.11.2",
+        "jaxlib": "0.11.2",
+        "autoarray": "9999.0.0.dev0",
+        "autonerves": "9999.0.0.dev0"
+      },
+      "wheel_sha256": "2f824bdc82fab9d4d31254e20fee860eef5645dad051fc59894dd341909f9465"
+    },
+    {
+      "package": "autoarray",
+      "case": "blocked-0102",
+      "expected_resolution": false,
+      "returncode": 1,
+      "pass": true,
+      "selected": {},
+      "wheel_sha256": "2f824bdc82fab9d4d31254e20fee860eef5645dad051fc59894dd341909f9465"
+    },
+    {
+      "package": "autoarray",
+      "case": "blocked-0110",
+      "expected_resolution": false,
+      "returncode": 1,
+      "pass": true,
+      "selected": {},
+      "wheel_sha256": "2f824bdc82fab9d4d31254e20fee860eef5645dad051fc59894dd341909f9465"
+    },
+    {
+      "package": "autoarray",
+      "case": "old-nerves",
+      "expected_resolution": false,
+      "returncode": 1,
+      "pass": true,
+      "selected": {},
+      "wheel_sha256": "2f824bdc82fab9d4d31254e20fee860eef5645dad051fc59894dd341909f9465"
+    },
+    {
+      "package": "autogalaxy",
+      "case": "old",
+      "expected_resolution": true,
+      "returncode": 0,
+      "pass": true,
+      "selected": {
+        "autogalaxy": "9999.0.0.dev0",
+        "autonerves": "9999.0.0.dev0"
+      },
+      "wheel_sha256": "33b3a4e566f25f7597c88fe528cae1a1078460496d0bf575d7c112fdce88d3c2"
+    },
+    {
+      "package": "autogalaxy",
+      "case": "new",
+      "expected_resolution": true,
+      "returncode": 0,
+      "pass": true,
+      "selected": {
+        "jax": "0.11.2",
+        "jaxlib": "0.11.2",
+        "autogalaxy": "9999.0.0.dev0",
+        "autonerves": "9999.0.0.dev0"
+      },
+      "wheel_sha256": "33b3a4e566f25f7597c88fe528cae1a1078460496d0bf575d7c112fdce88d3c2"
+    },
+    {
+      "package": "autogalaxy",
+      "case": "blocked-0102",
+      "expected_resolution": false,
+      "returncode": 1,
+      "pass": true,
+      "selected": {},
+      "wheel_sha256": "33b3a4e566f25f7597c88fe528cae1a1078460496d0bf575d7c112fdce88d3c2"
+    },
+    {
+      "package": "autogalaxy",
+      "case": "blocked-0110",
+      "expected_resolution": false,
+      "returncode": 1,
+      "pass": true,
+      "selected": {},
+      "wheel_sha256": "33b3a4e566f25f7597c88fe528cae1a1078460496d0bf575d7c112fdce88d3c2"
+    },
+    {
+      "package": "autogalaxy",
+      "case": "old-nerves",
+      "expected_resolution": false,
+      "returncode": 1,
+      "pass": true,
+      "selected": {},
+      "wheel_sha256": "33b3a4e566f25f7597c88fe528cae1a1078460496d0bf575d7c112fdce88d3c2"
+    },
+    {
+      "package": "autolens",
+      "case": "old",
+      "expected_resolution": true,
+      "returncode": 0,
+      "pass": true,
+      "selected": {
+        "autolens": "9999.0.0.dev0",
+        "autonerves": "9999.0.0.dev0"
+      },
+      "wheel_sha256": "ef1fbb566e4153db8bd2a54e5185920c84baf73a6b48eeeeda0dc0a908e171bb"
+    },
+    {
+      "package": "autolens",
+      "case": "new",
+      "expected_resolution": true,
+      "returncode": 0,
+      "pass": true,
+      "selected": {
+        "jax": "0.11.2",
+        "jaxlib": "0.11.2",
+        "autolens": "9999.0.0.dev0",
+        "autonerves": "9999.0.0.dev0"
+      },
+      "wheel_sha256": "ef1fbb566e4153db8bd2a54e5185920c84baf73a6b48eeeeda0dc0a908e171bb"
+    },
+    {
+      "package": "autolens",
+      "case": "blocked-0102",
+      "expected_resolution": false,
+      "returncode": 1,
+      "pass": true,
+      "selected": {},
+      "wheel_sha256": "ef1fbb566e4153db8bd2a54e5185920c84baf73a6b48eeeeda0dc0a908e171bb"
+    },
+    {
+      "package": "autolens",
+      "case": "blocked-0110",
+      "expected_resolution": false,
+      "returncode": 1,
+      "pass": true,
+      "selected": {},
+      "wheel_sha256": "ef1fbb566e4153db8bd2a54e5185920c84baf73a6b48eeeeda0dc0a908e171bb"
+    },
+    {
+      "package": "autolens",
+      "case": "old-nerves",
+      "expected_resolution": false,
+      "returncode": 1,
+      "pass": true,
+      "selected": {},
+      "wheel_sha256": "ef1fbb566e4153db8bd2a54e5185920c84baf73a6b48eeeeda0dc0a908e171bb"
+    },
+    {
+      "package": "autocti",
+      "case": "old",
+      "expected_resolution": true,
+      "returncode": 0,
+      "pass": true,
+      "selected": {
+        "autocti": "9999.0.0.dev0",
+        "autonerves": "9999.0.0.dev0"
+      },
+      "wheel_sha256": "50c6ac5796889ed5605bfd9e281d28ad73abe8056df95152e0ae1ce32efb6200"
+    },
+    {
+      "package": "autocti",
+      "case": "new",
+      "expected_resolution": true,
+      "returncode": 0,
+      "pass": true,
+      "selected": {
+        "jax": "0.11.2",
+        "jaxlib": "0.11.2",
+        "autocti": "9999.0.0.dev0",
+        "autonerves": "9999.0.0.dev0"
+      },
+      "wheel_sha256": "50c6ac5796889ed5605bfd9e281d28ad73abe8056df95152e0ae1ce32efb6200"
+    },
+    {
+      "package": "autocti",
+      "case": "blocked-0102",
+      "expected_resolution": false,
+      "returncode": 1,
+      "pass": true,
+      "selected": {},
+      "wheel_sha256": "50c6ac5796889ed5605bfd9e281d28ad73abe8056df95152e0ae1ce32efb6200"
+    },
+    {
+      "package": "autocti",
+      "case": "blocked-0110",
+      "expected_resolution": false,
+      "returncode": 1,
+      "pass": true,
+      "selected": {},
+      "wheel_sha256": "50c6ac5796889ed5605bfd9e281d28ad73abe8056df95152e0ae1ce32efb6200"
+    },
+    {
+      "package": "autocti",
+      "case": "old-nerves",
+      "expected_resolution": false,
+      "returncode": 1,
+      "pass": true,
+      "selected": {},
+      "wheel_sha256": "50c6ac5796889ed5605bfd9e281d28ad73abe8056df95152e0ae1ce32efb6200"
+    }
+  ],
+  "artifacts": {
+    "compat-results-cpu-0.11.2/1.log": "506582e88b4fd9e3c1a209f72356ac43f8bdc7ea79e98e8a08ed70f76ec4c3aa",
+    "compat-results-cpu-0.11.2/2.log": "34a7b25139dcb5a0a5b0f18f3fb7541bab236aa08bccb48d15d09d91aa7de192",
+    "compat-results-cpu-0.11.2/3.log": "f7e3d8f9d126d4fba4092490d83275901460707b8f6b6bea6dbf31ff37d19067",
+    "compat-results-cpu-0.11.2/4.log": "6b18e86079d09553d3f738b05dbd43e8b2fb2bce0c71f61c28dc2c8c23f93547",
+    "compat-results-cpu-0.11.2/4.native.txt": "491f772a829081eb99044315971a83009c0bbca4024a1379ef92f26ca0b4d896",
+    "compat-results-cpu-0.11.2/5.log": "cefb77df603453694f94428c2364aea36f9005b98a9d5fdbab84b4e6edbe454a",
+    "compat-results-cpu-0.11.2/5.native.txt": "224613ce042e01770207348c41ec7af1bf502d6375192c6b2ebfc5e15bdf564a",
+    "compat-results-cpu-0.9.2/1.log": "a0ed543f06276d8e9ff22d7949cd9f81763553dd63f1d8f0ea2b29f876dd0696",
+    "compat-results-cpu-0.9.2/2.log": "377f447838addd6deb60ee68082b8ef3c13d86787d4bff72712668ef40ec3f1a",
+    "compat-results-cpu-0.9.2/3.log": "f7440970185c1bdf94b55ef03ee5870c1fa1ae175cf1f0ea95bd3dbbfccedc1f",
+    "compat-results-cpu-0.9.2/4.log": "7c367bc27a879fe7319bc47bcd1c8ac650372b2eee7e0ac352401a64d0fb7499",
+    "compat-results-cpu-0.9.2/4.native.txt": "3593b7ff238985d5b1b9e3a7e6ad08f17be29a4e7e18e4c8850789405a1a8f40",
+    "compat-results-cpu-0.9.2/5.log": "98786f4a58cc14a0d2fd382b04d77be2fa93408bd9558557a7d35d2f30dd012a",
+    "compat-results-cpu-0.9.2/5.native.txt": "3ff1adeb6056b0b67b3212eeb90c388414ad32831a2e8c53497fa2dd141c366e"
+  },
+  "fresh_resolver": {
+    "status": "pass",
+    "ignore_installed": true,
+    "prereleases_enabled": false,
+    "synthetic_test_version": "2026.10.4.2",
+    "note": "Synthetic local wheels only; no release/version choice or publication. Ordinary PyPI dependency resolution, no incident constraints. Earlier harness/index/disk failures retained in scratch.",
+    "selected": {
+      "jax": "0.9.2",
+      "jaxlib": "0.9.2",
+      "autolens": "2026.10.4.2",
+      "nautilus-sampler": "1.0.5",
+      "autogalaxy": "2026.10.4.2",
+      "autonerves": "2026.10.4.2",
+      "jaxnnls": "1.0.1",
+      "ml_dtypes": "0.6.0",
+      "numpy": "2.5.3",
+      "opt_einsum": "3.4.0",
+      "astropy": "8.0.1",
+      "autoarray": "2026.10.4.2",
+      "scipy": "1.17.1",
+      "autofit": "2026.10.4.2",
+      "astunparse": "1.6.3",
+      "corner": "2.2.2",
+      "dynesty": "2.1.5",
+      "gprof2dot": "2021.2.21",
+      "networkx": "3.1",
+      "psutil": "6.1.0",
+      "pyvis": "0.3.2",
+      "timeout-decorator": "0.5.0",
+      "jax_zero_contour": "2.0.0",
+      "PyYAML": "6.0.3",
+      "scikit-learn": "1.8.0",
+      "threadpoolctl": "3.7.0",
+      "typing-inspect": "0.9.0",
+      "anesthetic": "2.16.0",
+      "astropy-iers-data": "0.2026.9.28.0.59.37",
+      "decorator": "5.3.1",
+      "dill": "0.4.1",
+      "emcee": "3.1.6",
+      "h5py": "3.16.0",
+      "joblib": "1.6.0",
+      "matplotlib": "3.11.2",
+      "mypy_extensions": "1.1.0",
+      "numpydoc": "1.11.0",
+      "optax": "0.2.8",
+      "packaging": "26.3",
+      "pyerfa": "2.0.1.5",
+      "scikit-image": "0.26.0",
+      "SQLAlchemy": "2.0.54",
+      "typing_extensions": "4.16.0",
+      "xxhash": "3.4.1",
+      "array-api-compat": "1.15.0",
+      "tqdm": "4.70.1",
+      "absl-py": "2.5.0",
+      "cloudpickle": "3.1.2",
+      "contourpy": "1.4.0",
+      "cycler": "0.12.1",
+      "fonttools": "4.66.1",
+      "greenlet": "3.5.6",
+      "ImageIO": "2.38.0",
+      "ipython": "9.12.0",
+      "Jinja2": "3.1.6",
+      "jsonpickle": "4.1.3",
+      "kiwisolver": "1.5.1",
+      "lazy-loader": "0.6",
+      "pandas": "3.0.6",
+      "pillow": "12.3.0",
+      "pyparsing": "3.3.3",
+      "python-dateutil": "2.9.0.post0",
+      "six": "1.17.0",
+      "Sphinx": "9.1.0",
+      "tifffile": "2026.9.20",
+      "wheel": "0.48.0",
+      "alabaster": "1.0.0",
+      "babel": "2.18.0",
+      "docutils": "0.22.4",
+      "imagesize": "2.0.1",
+      "ipython_pygments_lexers": "1.1.1",
+      "jedi": "0.20.0",
+      "MarkupSafe": "3.0.4",
+      "matplotlib-inline": "0.2.2",
+      "pexpect": "4.9.0",
+      "prompt_toolkit": "3.0.53",
+      "Pygments": "2.21.0",
+      "requests": "2.34.2",
+      "roman-numerals": "4.1.0",
+      "snowballstemmer": "3.1.1",
+      "sphinxcontrib-applehelp": "2.0.0",
+      "sphinxcontrib-devhelp": "2.0.0",
+      "sphinxcontrib-htmlhelp": "2.1.0",
+      "sphinxcontrib-jsmath": "1.0.1",
+      "sphinxcontrib-qthelp": "2.0.0",
+      "sphinxcontrib-serializinghtml": "2.0.0",
+      "stack-data": "0.6.3",
+      "traitlets": "5.16.1",
+      "asttokens": "3.0.2",
+      "certifi": "2026.7.22",
+      "charset-normalizer": "3.5.2",
+      "executing": "2.2.1",
+      "idna": "3.20",
+      "parso": "0.8.7",
+      "ptyprocess": "0.7.0",
+      "urllib3": "2.8.0",
+      "wcwidth": "0.9.1",
+      "pure_eval": "0.2.4"
+    },
+    "report_sha256": "0a909acaba32ac245d20b1aeeb28bec73ef0637923bfd384e7fc1e5307ecbbbc"
+  }
+}
