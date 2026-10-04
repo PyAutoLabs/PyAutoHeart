@@ -49,14 +49,14 @@ def test_thresholds_have_expected_fields(config):
     assert thresholds["script_timing"]["baseline_window"] >= 3
 
 
-def test_28_repos_polled(config):
+def test_29_repos_polled(config):
     """Sanity check the polled count — bumps need a deliberate update.
     (25 since the CTI resurrection added PyAutoCTI + autocti_workspace +
     autocti_workspace_test to the polled registry; 26 since the Eyes organ
     joined the organism group, PyAutoMind#437; 27 since the Pulse organ
-    joined it, PyAutoMind#463; 28 since Ears, PyAutoBrain#455.)"""
+    joined it, PyAutoMind#463; 28 since Ears, PyAutoBrain#455; 29 since Insight, PyAutoInsight#1.)"""
     total = sum(len(v) for v in config["repos"].values())
-    assert total == 28, f"expected 28 polled repos, got {total}"
+    assert total == 29, f"expected 29 polled repos, got {total}"
 
 
 def test_cti_polled_but_not_release_gating(config):
