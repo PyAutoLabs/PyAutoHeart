@@ -11,9 +11,14 @@ from __future__ import annotations
 import datetime
 import json
 import os
+import re
 import tempfile
 from pathlib import Path
 from typing import Any
+
+import yaml
+
+CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "repos.yaml"
 
 HEART_STATE_DIR = Path(
     os.environ.get("HEART_STATE_DIR")
@@ -54,9 +59,30 @@ def _read_json_or_default(path: Path, default: Any) -> Any:
         return default
 
 
+def _configured_repos() -> set[str] | None:
+    """Return the validated roster, or None when exclusion is not justified."""
+    try:
+        config = yaml.safe_load(CONFIG_PATH.read_text())
+    except (OSError, UnicodeError, yaml.YAMLError):
+        return None
+    if not isinstance(config, dict) or not isinstance(config.get("repos"), dict):
+        return None
+    names: set[str] = set()
+    for group, entries in config["repos"].items():
+        if not isinstance(group, str) or not group.strip() or not isinstance(entries, list):
+            return None
+        for entry in entries:
+            name = entry.get("name") if isinstance(entry, dict) else None
+            if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+", name):
+                return None
+            names.add(name)
+    return names
+
+
 def aggregate() -> dict[str, Any]:
     """Collapse per-repo JSON sidecars into one state.json snapshot."""
     _ensure_dirs()
+    configured = _configured_repos()
     repos: dict[str, dict[str, Any]] = {}
     for entry in sorted(HEART_PER_REPO_DIR.glob("*.json")):
         # Filenames: <name>.<check_kind>.json. Group by repo name.
@@ -65,6 +91,8 @@ def aggregate() -> dict[str, Any]:
         if len(parts) < 3 or parts[-1] != "json":
             continue
         name = parts[0]
+        if configured is not None and name not in configured:
+            continue
         check_kind = ".".join(parts[1:-1])
         data = _read_json_or_default(entry, {})
         repos.setdefault(name, {})[check_kind] = data
