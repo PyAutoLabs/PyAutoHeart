@@ -26,7 +26,9 @@ def load_manifest(path):
     for key in ("workspace_sha", "hands_sha"):
         if not re.fullmatch(r"[0-9a-f]{40}", data.get(key, "")):
             raise ValueError(f"{key} must be an immutable commit")
-    if not re.fullmatch(r"[A-Za-z0-9_-]+/[A-Za-z0-9_-]+", data.get("workspace_repo", "")):
+    if not re.fullmatch(
+        r"[A-Za-z0-9_-]+/[A-Za-z0-9_-]+", data.get("workspace_repo", "")
+    ):
         raise ValueError("invalid workspace repository")
     if not re.fullmatch(r"3\.\d+\.\d+", data.get("python", "")):
         raise ValueError("pin the Python patch version")
@@ -41,6 +43,10 @@ def load_manifest(path):
             r"[0-9][A-Za-z0-9_.+!-]*", version
         ):
             raise ValueError("package pins must be names and exact versions")
+    if "candidate_jax" in data and not re.fullmatch(
+        r"[0-9]+\.[0-9]+\.[0-9]+", data["candidate_jax"]
+    ):
+        raise ValueError("candidate JAX must be an exact release version")
     return data
 
 
@@ -192,25 +198,131 @@ def trial(command, cwd, env, output, *, cap=300, dump_after=120, dump=native_dum
     }
 
 
+def comparison_verdict(rows, expected):
+    if not rows or expected % 2:
+        return "incomplete"
+    order = ["control", "candidate"] * (expected // 2)
+    if len(rows) > expected or [row["arm"] for row in rows] != order[: len(rows)]:
+        return "invalid-order"
+    if any(row["status"] != "pass" for row in rows if row["arm"] == "candidate"):
+        return "candidate-failed"
+    if any(row["status"] not in {"pass", "timeout"} for row in rows):
+        return "control-failed"
+    if len(rows) != expected:
+        return "incomplete"
+    if not any(
+        row.get("cholesky_pool_stall") for row in rows if row["arm"] == "control"
+    ):
+        return "inconclusive"
+    return "captured-stall-avoided"
+
+
+def compare(args, manifest, output):
+    """ABAB on one runner and dataset; keep adverse controls verbatim."""
+    if not args.candidate_python or args.repeats % 2:
+        raise ValueError("comparison needs candidate Python and 2, 4 or 6 trials")
+    rows = []
+    report = {
+        "diagnostic_only": True,
+        "source_run": manifest["source_run"],
+        "trials": rows,
+    }
+    for index in range(args.repeats):
+        arm = "control" if index % 2 == 0 else "candidate"
+        directory = output / f"{index + 1}-{arm}"
+        # Resolving a venv interpreter symlink would escape into base Python.
+        python = (
+            sys.executable
+            if arm == "control"
+            else str(args.candidate_python.absolute())
+        )
+        if directory.exists():
+            raise ValueError(
+                f"preserve previous evidence; choose a fresh output directory: {directory}"
+            )
+        command = [
+            python,
+            str(Path(__file__).resolve()),
+            "run",
+            "--manifest",
+            str(args.manifest.resolve()),
+            "--output",
+            str(directory),
+            "--workspace",
+            str(args.workspace.resolve()),
+            "--hands",
+            str(args.hands.resolve()),
+            "--repeats",
+            "1",
+        ]
+        if arm == "candidate":
+            command.append("--candidate")
+        completed = subprocess.run(command, timeout=360)
+        result_path = directory / "diagnostic-results.json"
+        if not result_path.exists():
+            raise RuntimeError(
+                f"{arm} failed before a measured trial (exit {completed.returncode})"
+            )
+        result = json.loads(result_path.read_text())["trials"][0]
+        expected_exit = 0 if result["status"] == "pass" else 1
+        if completed.returncode != expected_exit:
+            raise RuntimeError(f"{arm} runner exit disagrees with its trial artifact")
+        result["arm"] = arm
+        result["directory"] = directory.name
+        native_path = directory / "trial-1.native.txt"
+        native = native_path.read_text() if native_path.exists() else ""
+        result["cholesky_pool_stall"] = result["status"] == "timeout" and all(
+            native.count(marker) >= 4
+            for marker in (
+                "BlockingCounter::Wait",
+                "ParallelBatchMap",
+                "CholeskyFactorization",
+            )
+        )
+        rows.append(result)
+        report["verdict"] = comparison_verdict(rows, args.repeats)
+        (output / "comparison.json").write_text(json.dumps(report, indent=2) + "\n")
+        print(json.dumps(result), flush=True)
+        if result["status"] not in {"pass", "timeout"} or (
+            arm == "candidate" and result["status"] != "pass"
+        ):
+            return 1
+    print(
+        "Diagnostic comparison: " + report["verdict"] + "; not release clearance",
+        flush=True,
+    )
+    return 0 if report["verdict"] == "captured-stall-avoided" else 2
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("prepare", "run"))
+    parser.add_argument("mode", choices=("prepare", "run", "compare"))
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--github-output")
     parser.add_argument("--workspace", type=Path)
     parser.add_argument("--hands", type=Path)
     parser.add_argument("--repeats", type=int, default=6)
+    parser.add_argument("--candidate", action="store_true")
+    parser.add_argument("--candidate-python", type=Path)
     args = parser.parse_args(argv)
     if not 1 <= args.repeats <= 6:
         parser.error("repeats must be between 1 and 6")
     manifest = load_manifest(args.manifest)
+    if args.candidate:
+        manifest["packages"].update(
+            jax=manifest["candidate_jax"], jaxlib=manifest["candidate_jax"]
+        )
     output = args.output.resolve()
     prepare(manifest, output, args.github_output)
     if args.mode == "prepare":
         return 0
     if not args.workspace or not args.hands:
         parser.error("run needs --workspace and --hands")
+    if args.mode == "compare":
+        if args.candidate:
+            parser.error("comparison must start from the unmodified control manifest")
+        return compare(args, manifest, output)
     workspace, hands = args.workspace.resolve(), args.hands.resolve()
     receipt = provenance(manifest, workspace, hands)
     (output / "provenance.json").write_text(json.dumps(receipt, indent=2) + "\n")

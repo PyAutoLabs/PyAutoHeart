@@ -1,4 +1,5 @@
 {
+  "candidate_jax": "0.11.2",
   "hands_sha": "760affdbcbf0605266e49b33a65f7bef89f9b0b3",
   "library_shas": {
     "PyAutoArray": "1cbabf9a44bfb98925e35954c263d393b7affc9d",

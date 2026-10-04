@@ -143,3 +143,127 @@ def test_repeats_cannot_exceed_bounded_budget(tmp_path):
             ]
         )
     assert exc.value.code == 2
+
+
+@pytest.mark.parametrize(
+    "control,candidate,signature,expected",
+    [
+        ("timeout", "pass", True, "captured-stall-avoided"),
+        ("timeout", "pass", False, "inconclusive"),
+        ("pass", "pass", False, "inconclusive"),
+        ("timeout", "timeout", True, "candidate-failed"),
+        ("fail", "pass", False, "control-failed"),
+    ],
+)
+def test_comparison_requires_native_control_and_passing_candidate(
+    control, candidate, signature, expected
+):
+    rows = [
+        {"arm": "control", "status": control, "cholesky_pool_stall": signature},
+        {"arm": "candidate", "status": candidate},
+    ]
+    assert diag.comparison_verdict(rows, 2) == expected
+    partial = (
+        expected if expected in {"candidate-failed", "control-failed"} else "incomplete"
+    )
+    assert diag.comparison_verdict(rows, 4) == partial
+    assert diag.comparison_verdict(list(reversed(rows)), 2) == "invalid-order"
+
+
+def test_comparison_interleaves_and_preserves_control_failures_and_venv_path(
+    tmp_path, monkeypatch
+):
+    from argparse import Namespace
+
+    python = tmp_path / "candidate-python"
+    python.symlink_to(sys.executable)
+    args = Namespace(
+        candidate_python=python,
+        repeats=6,
+        manifest=ROOT / "diagnostics/release-37199991757.json",
+        workspace=tmp_path,
+        hands=tmp_path,
+    )
+    commands = []
+
+    def run(command, **kwargs):
+        commands.append(command)
+        candidate = "--candidate" in command
+        directory = Path(command[command.index("--output") + 1])
+        directory.mkdir()
+        result = {
+            "status": "pass" if candidate else "timeout",
+            "returncode": 0 if candidate else -9,
+        }
+        (directory / "diagnostic-results.json").write_text(
+            json.dumps({"trials": [result]})
+        )
+        if not candidate:
+            (directory / "trial-1.native.txt").write_text(
+                "BlockingCounter::Wait ParallelBatchMap CholeskyFactorization\n" * 4
+            )
+        return subprocess.CompletedProcess(command, 0 if candidate else 1)
+
+    monkeypatch.setattr(diag.subprocess, "run", run)
+    assert diag.compare(args, manifest(), tmp_path) == 0
+    assert ["--candidate" in command for command in commands] == [False, True] * 3
+    assert all(command[0] == str(python.absolute()) for command in commands[1::2])
+    report = json.loads((tmp_path / "comparison.json").read_text())
+    assert [row["status"] for row in report["trials"]] == ["timeout", "pass"] * 3
+    with pytest.raises(ValueError, match="preserve previous evidence"):
+        diag.compare(args, manifest(), tmp_path)
+
+
+def test_candidate_preparation_changes_only_the_runtime_pair(tmp_path):
+    diag.main(
+        [
+            "prepare",
+            "--candidate",
+            "--manifest",
+            str(ROOT / "diagnostics/release-37199991757.json"),
+            "--output",
+            str(tmp_path),
+        ]
+    )
+    actual = json.loads((tmp_path / "manifest.json").read_text())
+    original = manifest()
+    changed = {
+        key
+        for key in original["packages"]
+        if actual["packages"][key] != original["packages"][key]
+    }
+    assert changed == {"jax", "jaxlib"}
+    assert actual["packages"]["jax"] == actual["packages"]["jaxlib"] == "0.11.2"
+    assert actual["workspace_sha"] == original["workspace_sha"]
+
+
+def test_early_candidate_failure_has_adverse_durable_verdict(tmp_path, monkeypatch):
+    from argparse import Namespace
+
+    args = Namespace(
+        candidate_python=Path(sys.executable),
+        repeats=6,
+        manifest=ROOT / "diagnostics/release-37199991757.json",
+        workspace=tmp_path,
+        hands=tmp_path,
+    )
+
+    def run(command, **kwargs):
+        candidate = "--candidate" in command
+        directory = Path(command[command.index("--output") + 1])
+        directory.mkdir()
+        result = {
+            "status": "fail" if candidate else "pass",
+            "returncode": 7 if candidate else 0,
+        }
+        (directory / "diagnostic-results.json").write_text(
+            json.dumps({"trials": [result]})
+        )
+        return subprocess.CompletedProcess(command, 1 if candidate else 0)
+
+    monkeypatch.setattr(diag.subprocess, "run", run)
+    assert diag.compare(args, manifest(), tmp_path) == 1
+    report = json.loads((tmp_path / "comparison.json").read_text())
+    assert report["verdict"] == "candidate-failed"
+    assert len(report["trials"]) == 2
+    assert report["trials"][1]["returncode"] == 7

@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       repeats:
-        description: "Fresh target processes (1–6); stop on first failure"
+        description: "Alternating control/candidate processes (2, 4 or 6)"
         type: number
         default: 6
 
@@ -55,18 +55,27 @@ jobs:
             --report diagnostic-results/pip-install.json \
             -r diagnostic-results/requirements.txt
           diagnostic-env/bin/python -m pip install py-spy
+          python .github/scripts/release_diagnostic.py prepare --candidate \
+            --manifest "$MANIFEST" --output diagnostic-results/candidate-install
+          python -m venv diagnostic-candidate
+          diagnostic-candidate/bin/python -m pip install \
+            --index-url https://test.pypi.org/simple/ \
+            --extra-index-url https://pypi.org/simple \
+            --report diagnostic-results/candidate-install/pip-install.json \
+            -r diagnostic-results/candidate-install/requirements.txt
           echo "$PWD/diagnostic-env/bin" >> "$GITHUB_PATH"
           sudo apt-get update -qq
           sudo apt-get install -y -qq gdb
           # Ephemeral runner only; allow sibling debuggers to attach to Python.
           sudo sysctl -w kernel.yama.ptrace_scope=0
-      - name: Bounded release-profile repetitions against installed wheels
+      - name: Interleaved runtime comparison against the same release wheels
         env:
           REPEATS: ${{ inputs.repeats || 6 }}
         run: >-
-          diagnostic-env/bin/python .github/scripts/release_diagnostic.py run
+          diagnostic-env/bin/python .github/scripts/release_diagnostic.py compare
           --manifest "$MANIFEST" --output diagnostic-results
           --workspace diagnostic-workspace --hands diagnostic-hands
+          --candidate-python diagnostic-candidate/bin/python
           --repeats "$REPEATS"
       - name: Preserve diagnostic evidence, including failure and native stacks
         if: always()

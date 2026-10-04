@@ -200,7 +200,7 @@ is what supplies the `integrate` stage that flips this to GREEN-eligible.
 `release-diagnostic.yml` investigates the saved `rectangular_rtu.py` timeout
 from run `37199991757`. It runs automatically only on PRs changing that
 diagnostic's workflow, runner or manifest, and can also be dispatched manually
-with `repeats` between 1 and 6. It does not run the integration matrix.
+with `repeats` of 2, 4 or 6 total trials. It does not run the integration matrix.
 
 The manifest `diagnostics/release-37199991757.json` preserves the final 115
 package versions from the failed installation log, the exact workspace and
@@ -213,7 +213,12 @@ The runner resolves the pinned workspace's release profile through pinned
 Hands, verifies package versions and wheel import origins, and executes only
 the affected script in fresh processes. It captures `/proc` thread states,
 `py-spy --native` and GDB stacks at 120 seconds, terminates at 300 seconds,
-and stops on the first failure. Diagnostic artifacts preserve the manifest,
+and stops on any candidate failure. The comparison interleaves original 0.10.2
+controls and 0.11.2 candidates on the same runner and dataset, changing only
+JAX/JAXlib in separate virtual environments. Original control timeouts remain
+in the artifacts; a successful comparison requires a native-confirmed Cholesky
+pool stall in at least one control and every candidate passing. Passing controls
+alone are inconclusive, not evidence of a remedy. Diagnostic artifacts preserve the manifest,
 pip installation URLs/hashes, actual runtime and environment provenance,
 stdout/stderr, native capture failures, results and newly generated FITS data.
 The original runner image, hardware, wheel hashes and generated FITS data
@@ -223,3 +228,7 @@ These are **diagnostic results only**. Neither passing repetitions nor a green
 workflow clears the failed release. This workflow emits no release stage
 report and never calls validation ingest. Do not raise caps, quarantine the
 script, or identify a causal repair without reproducible or native evidence.
+
+The first exact hosted replay, [37205459198](https://github.com/PyAutoLabs/PyAutoHeart/actions/runs/37205459198), passed once in 9.905s and then stalled after 2.6s compilation. Both native tools captured all four Eigen workers waiting in `BlockingCounter::Wait` through `ParallelBatchMap`, `CholeskyFactorization` and `lapack_dpotrf_ffi`. The committed [native witness](../diagnostics/release-37199991757-native.txt) includes the raw artifact's SHA256. There are no FFT/ducc0 frames.
+
+[JAX 0.10.2](https://github.com/jax-ml/jax/blob/jax-v0.10.2/jaxlib/cpu/lapack_kernels.cc) schedules LAPACK batch chunks to the thread pool and blocks waiting for them; [JAX 0.11.2](https://github.com/jax-ml/jax/blob/jax-v0.11.2/jaxlib/cpu/lapack_kernels.cc) compiles this parallel path out of open-source builds. This is the source-grounded candidate tested by the comparison, distinct from the historical FFT workaround. No upstream report was filed.
