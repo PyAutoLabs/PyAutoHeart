@@ -107,8 +107,8 @@ def test_timing_cards_are_inside_category_and_checks_precede_score_actions_gaps(
     assert list(timing.find(cls='timing-card'))
     assert all('timing-card' not in n.attrs.get('class', '')
                for c in checks for n in next(c.find('summary')).find())
-    assert (html.index('<div class="board">') < html.index('Release readiness score:') <
-            html.index('Fix Heart systematically') < html.index('Evidence gaps ('))
+    assert (html.index('Fix Heart systematically') < html.index('<div class="board">') <
+            html.index('Release readiness score:') < html.index('Evidence gaps ('))
     assert '[these guys are giving me life]' not in html
 
 
@@ -132,7 +132,7 @@ def test_score_and_resusitate_sections_keep_breakdown_and_readiness():
                                            ('validation_absent', 15)]]
     root = Page(dashboard._render_html(board)).root
     headings = [h.text() for h in root.find('h2')]
-    assert headings == ['Observed checks', 'Score', 'Resusitate', 'Evidence gaps (3)']
+    assert headings == ['Fix Heart systematically', 'Observed checks', 'Score', 'Evidence gaps (3)']
     score = next(s for s in root.find('section')
                  if s.attrs.get('aria-labelledby') == 'score-heading')
     assert '65/100' in score.text() and 'Release readiness: STALE' in score.text()
@@ -151,10 +151,16 @@ def test_repair_rows_copy_exact_prompts_without_toggling_prompt_disclosures():
                        stale_details=[{'key': 'install_unknown'}] if stale else [])
         board = dashboard.build_board(make_snapshot(), verdict, now=FRESH_NOW)
         root = Page(dashboard._render_html(board)).root
-        section = next(s for s in root.find('section')
-                       if s.attrs.get('aria-labelledby') == 'resusitate-heading')
+        section = (next(s for s in root.find('section')
+                        if s.attrs.get('aria-labelledby') == 'resusitate-heading')
+                   if stale else root)
         rows = list(section.find(cls='repair-row'))
-        plans = [board.fix_plan] + ([board.stale_plan] if stale else [])
+        plans = [board.stale_plan] if stale else []
+        panel = next(root.find(cls="orchestration-panel"))
+        preview = list(panel.find("textarea"))[-1]
+        assert preview.text().startswith(board.fix_plan["prompt"])
+        assert "Work on GitHub:" in preview.text()
+        assert len(list(panel.find("button"))) == 1
         assert len(rows) == len(plans)
         for row, plan in zip(rows, plans):
             details = next(row.find('details'))
@@ -166,4 +172,4 @@ def test_repair_rows_copy_exact_prompts_without_toggling_prompt_disclosures():
             assert button.attrs['data-cmd'] == plan['prompt']
             assert next(details.find('pre')).text() == plan['prompt']
             assert button.text() == '' and list(button.find('svg'))
-        assert next(section.find('p')).attrs['aria-live'] == 'polite'
+        assert any(p.attrs.get('aria-live') == 'polite' for p in section.find('p'))
