@@ -11,8 +11,12 @@ on:
           - "37217670612"
           - "37286150846"
         default: "37199991757"
+      disable_cpu_eigen_threads:
+        description: "Test FFT pool workaround (shapelet incident only)"
+        type: boolean
+        default: false
       repeats:
-        description: "Old incident comparison processes (2, 4 or 6); new incident runs one fresh fit"
+        description: "Old incident comparison processes (2, 4 or 6); new incidents use fixed fresh-fit counts"
         type: number
         default: 6
 
@@ -93,7 +97,12 @@ jobs:
           --repeats 1
       - name: Capture repeated shapelet stalls in isolated fresh fits
         if: inputs.incident == '37286150846'
+        env:
+          DISABLE_CPU_EIGEN_THREADS: ${{ inputs.disable_cpu_eigen_threads }}
         run: |
+          if [ "$DISABLE_CPU_EIGEN_THREADS" = "true" ]; then
+            export XLA_FLAGS="${XLA_FLAGS:+$XLA_FLAGS }--xla_cpu_multi_thread_eigen=false"
+          fi
           # Each process gets a pristine checkout: a prior completed fit must
           # never turn a subsequent repetition into a resume/readback check.
           for attempt in 1 2 3; do

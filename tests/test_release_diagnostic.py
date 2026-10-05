@@ -24,7 +24,8 @@ def manifest():
 
 
 @pytest.mark.parametrize("fail_second", [False, True])
-def test_shapelet_replay_uses_fresh_fits_and_stops_on_failure(tmp_path, fail_second):
+@pytest.mark.parametrize("disable_eigen", [False, True])
+def test_shapelet_replay_uses_fresh_fits_and_stops_on_failure(tmp_path, fail_second, disable_eigen):
     workflow = yaml.safe_load(
         (ROOT / ".github/workflows/release-diagnostic.yml").read_text()
     )
@@ -40,6 +41,7 @@ def test_shapelet_replay_uses_fresh_fits_and_stops_on_failure(tmp_path, fail_sec
     executable.write_text(
         f"#!{sys.executable}\n"
         "import os, sys\nfrom pathlib import Path\n"
+        "assert os.environ['XLA_FLAGS'] == os.environ['EXPECTED_XLA_FLAGS']\n"
         "workspace = Path(sys.argv[sys.argv.index('--workspace') + 1])\n"
         "assert (workspace / 'input.txt').read_text() == 'original dataset'\n"
         "assert not (workspace / 'completed-fit').exists(), 'resumed prior output'\n"
@@ -51,7 +53,16 @@ def test_shapelet_replay_uses_fresh_fits_and_stops_on_failure(tmp_path, fail_sec
     result = subprocess.run(
         ["bash", "-e", "-c", step["run"]],
         cwd=tmp_path,
-        env={**os.environ, "MANIFEST": "incident.json", "FAIL_SECOND": str(int(fail_second))},
+        env={
+            **os.environ,
+            "MANIFEST": "incident.json",
+            "FAIL_SECOND": str(int(fail_second)),
+            "DISABLE_CPU_EIGEN_THREADS": str(disable_eigen).lower(),
+            "XLA_FLAGS": "--existing-flag",
+            "EXPECTED_XLA_FLAGS": "--existing-flag" + (
+                " --xla_cpu_multi_thread_eigen=false" if disable_eigen else ""
+            ),
+        },
         capture_output=True,
         text=True,
     )
