@@ -394,6 +394,9 @@ jobs:
           # so autonerves resolves the workspace's own config/ + dataset/, not
           # the wheel's packaged defaults (closes Gap 4).
           set -e
+          # Avoid FFT/ducc0 re-entering the occupied Eigen pool on CPU runners.
+          # Exact-wheel witness and comparison: docs/release_validation.md.
+          export XLA_FLAGS="${XLA_FLAGS:+$XLA_FLAGS }--xla_cpu_multi_thread_eigen=false"
           pushd workspace
           # Use the canonical profile_release.yaml (PyAutoHands#161/#181 step
           # 6 rename).

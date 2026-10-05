@@ -1,0 +1,42 @@
+# Native witness: release diagnostic 37310709808
+
+Source: https://github.com/PyAutoLabs/PyAutoHeart/actions/runs/37310709808
+Artifact: release-diagnostic-37310709808 / diagnostic-results/fresh-1/trial-1.native.txt
+Raw native file SHA256: 6c8d9837a5fd773384cbda21a4b3a7f3ced1af958768cffc2a21c172c76a804c
+Manifest: diagnostics/release-37286150846.json
+
+Fresh shapelet fit TIMEOUT300.047s; native py-spy and gdb both exited0.
+Python3.12.14, JAX/JAXlib0.11.2, four CPUs; zero provenance errors.
+Four Eigen workers wait in FFT/ducc0 fan-out. No BlockingCounter::Wait,
+ParallelBatchMap or CholeskyFactorization frames occur in the raw capture.
+This is distinct from the older JAX0.10.2 LAPACK witness.
+
+Below: thread headings and selected frames, runner paths and long signatures trimmed.
+
+Thread 20 (Thread 0x7fa6b74e86c0 (LWP 3486) "tf_XLAEigen"):
+#5  0x00007fa6c1bb36b3 in ducc0::detail_threading::latch::wait()
+#6  0x00007fa6c1bb35b6 in ducc0::detail_threading::Distribution::thread_map(std::function<void (ducc0::detail_threading::Scheduler&)>)
+#7  0x00007fa6c1bb3c34 in ducc0::detail_threading::Distribution::execParallel(unsigned long, std::function<void (ducc0::detail_threading::Scheduler&)>)
+#12 0x00007fa6c1ae8165 in xla::cpu::FftThunk::Execute(xla::cpu::Thunk::ExecuteParams const&)
+#16 0x00007fa6bfebe044 in Eigen::ThreadPoolTempl<tsl::thread::EigenEnvironment>::WorkerLoop(int)
+
+Thread 19 (Thread 0x7fa6b6ce76c0 (LWP 3487) "tf_XLAEigen"):
+#5  0x00007fa6c1bb36b3 in ducc0::detail_threading::latch::wait()
+#6  0x00007fa6c1bb35b6 in ducc0::detail_threading::Distribution::thread_map(std::function<void (ducc0::detail_threading::Scheduler&)>)
+#7  0x00007fa6c1bb3c34 in ducc0::detail_threading::Distribution::execParallel(unsigned long, std::function<void (ducc0::detail_threading::Scheduler&)>)
+#12 0x00007fa6c1ae8165 in xla::cpu::FftThunk::Execute(xla::cpu::Thunk::ExecuteParams const&)
+#20 0x00007fa6bfebe044 in Eigen::ThreadPoolTempl<tsl::thread::EigenEnvironment>::WorkerLoop(int)
+
+Thread 18 (Thread 0x7fa6b64e66c0 (LWP 3488) "tf_XLAEigen"):
+#5  0x00007fa6c1bb36b3 in ducc0::detail_threading::latch::wait()
+#6  0x00007fa6c1bb35b6 in ducc0::detail_threading::Distribution::thread_map(std::function<void (ducc0::detail_threading::Scheduler&)>)
+#7  0x00007fa6c1bb3c34 in ducc0::detail_threading::Distribution::execParallel(unsigned long, std::function<void (ducc0::detail_threading::Scheduler&)>)
+#12 0x00007fa6c1ae8165 in xla::cpu::FftThunk::Execute(xla::cpu::Thunk::ExecuteParams const&)
+#16 0x00007fa6bfebe044 in Eigen::ThreadPoolTempl<tsl::thread::EigenEnvironment>::WorkerLoop(int)
+
+Thread 17 (Thread 0x7fa6b5ce56c0 (LWP 3489) "tf_XLAEigen"):
+#5  0x00007fa6c1bb36b3 in ducc0::detail_threading::latch::wait()
+#6  0x00007fa6c1bb35b6 in ducc0::detail_threading::Distribution::thread_map(std::function<void (ducc0::detail_threading::Scheduler&)>)
+#7  0x00007fa6c1bb3c34 in ducc0::detail_threading::Distribution::execParallel(unsigned long, std::function<void (ducc0::detail_threading::Scheduler&)>)
+#12 0x00007fa6c1ae8165 in xla::cpu::FftThunk::Execute(xla::cpu::Thunk::ExecuteParams const&)
+#16 0x00007fa6bfebe044 in Eigen::ThreadPoolTempl<tsl::thread::EigenEnvironment>::WorkerLoop(int)
