@@ -2341,14 +2341,25 @@ def _render_html(board: Board) -> str:
             hint = ("<p>These checks have not run, have expired, or do not cover the "
                     "current source. Refreshing evidence may reveal failures.</p>"
                     if severity == "stale" else "")
-            reasons_html += (f"<div class='reasons'><h2>{label} ({len(items)})</h2>"
+            reasons_html += (f"<div class='reasons' id='reasons-{severity}'><h2>{label} ({len(items)})</h2>"
                              f"{hint}<ul>{lis}</ul></div>")
     stale_html = (
         "<p class='stale'>⚠️ This board is stale — the last tick is older than the "
         "freshness threshold; the numbers may not be current.</p>" if board.stale else ""
     )
     t_ = theme()
-    hero = t_.hero(BOARD_KEY, "Dashboard", _LEDE)
+    navigation = [
+        {"href": "#observed-checks", "label": "Observed checks"},
+        {"href": "#score-heading", "label": "Readiness and score"},
+        {"href": "#resusitate-heading", "label": "Resusitate"},
+    ]
+    navigation.extend(
+        {"href": f"#reasons-{severity}", "label": label,
+         "count": sum(b["severity"] == severity for b in board.blockers)}
+        for severity, label in (("red", "Release blockers"), ("yellow", "Warnings"), ("stale", "Evidence gaps"))
+        if any(b["severity"] == severity for b in board.blockers)
+    )
+    hero = t_.hero(BOARD_KEY, "Dashboard", _LEDE, navigation=navigation)
     # The way back from the Pages board to the repository front door; owner
     # from the declared config surface (REPO_OWNERS), so the segment drops
     # out on a tenant whose config does not list this repo.
@@ -2364,7 +2375,7 @@ def _render_html(board: Board) -> str:
 </head>
 <body>
 {hero}
-<h2>Observed checks</h2>
+<h2 id="observed-checks">Observed checks</h2>
 <p>Expand a check to see its entries. Colours describe observations; the release verdict below determines readiness.</p>
 <div class="board">{''.join(rows)}</div>
 <section aria-labelledby="score-heading">
