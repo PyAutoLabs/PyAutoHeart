@@ -717,6 +717,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install report dependencies
+        run: python3 -m pip install "PyYAML>=6.0"
       - name: Emit the integrate stage report
         env:
           PYTHONPATH: ${{ github.workspace }}
