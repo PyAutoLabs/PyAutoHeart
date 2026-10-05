@@ -3,8 +3,15 @@ name: Release Diagnostic (not validation)
 on:
   workflow_dispatch:
     inputs:
+      incident:
+        description: "Immutable incident to investigate (never release validation)"
+        type: choice
+        options:
+          - "37199991757"
+          - "37217670612"
+        default: "37199991757"
       repeats:
-        description: "Alternating control/candidate processes (2, 4 or 6)"
+        description: "Old incident comparison processes (2, 4 or 6); new incident runs one fresh fit"
         type: number
         default: 6
 
@@ -17,7 +24,7 @@ jobs:
     timeout-minutes: 40
     env:
       PYTHONPATH: ""
-      MANIFEST: diagnostics/release-37199991757.json
+      MANIFEST: diagnostics/release-${{ inputs.incident || '37199991757' }}.json
     steps:
       - uses: actions/checkout@v4
       - name: Validate immutable manifest and write requirements
@@ -50,6 +57,14 @@ jobs:
             --report diagnostic-results/pip-install.json \
             -r diagnostic-results/requirements.txt
           diagnostic-env/bin/python -m pip install py-spy
+          echo "$PWD/diagnostic-env/bin" >> "$GITHUB_PATH"
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gdb
+          # Ephemeral runner only; allow sibling debuggers to attach to Python.
+          sudo sysctl -w kernel.yama.ptrace_scope=0
+      - name: Install candidate for the original runtime comparison
+        if: inputs.incident != '37217670612'
+        run: |
           python .github/scripts/release_diagnostic.py prepare --candidate \
             --manifest "$MANIFEST" --output diagnostic-results/candidate-install
           python -m venv diagnostic-candidate
@@ -58,12 +73,8 @@ jobs:
             --extra-index-url https://pypi.org/simple \
             --report diagnostic-results/candidate-install/pip-install.json \
             -r diagnostic-results/candidate-install/requirements.txt
-          echo "$PWD/diagnostic-env/bin" >> "$GITHUB_PATH"
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq gdb
-          # Ephemeral runner only; allow sibling debuggers to attach to Python.
-          sudo sysctl -w kernel.yama.ptrace_scope=0
       - name: Interleaved runtime comparison against the same release wheels
+        if: inputs.incident != '37217670612'
         env:
           REPEATS: ${{ inputs.repeats || 6 }}
         run: >-
@@ -72,6 +83,13 @@ jobs:
           --workspace diagnostic-workspace --hands diagnostic-hands
           --candidate-python diagnostic-candidate/bin/python
           --repeats "$REPEATS"
+      - name: Capture the current incident in one fresh bounded fit
+        if: inputs.incident == '37217670612'
+        run: >-
+          diagnostic-env/bin/python .github/scripts/release_diagnostic.py run
+          --manifest "$MANIFEST" --output diagnostic-results
+          --workspace diagnostic-workspace --hands diagnostic-hands
+          --repeats 1
       - name: Preserve diagnostic evidence, including failure and native stacks
         if: always()
         uses: actions/upload-artifact@v4
@@ -80,4 +98,5 @@ jobs:
           path: |
             diagnostic-results/
             diagnostic-workspace/dataset/multi_dataset/lens_sersic/*.fits
+            diagnostic-workspace/dataset/imaging/asymmetric/*.fits
           if-no-files-found: error
