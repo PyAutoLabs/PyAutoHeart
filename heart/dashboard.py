@@ -2250,7 +2250,7 @@ def _html_score(board: Board) -> str:
 
 
 def _html_actions(board: Board) -> str:
-    plans = [("Fix Heart systematically", board.fix_plan or build_fix_plan(board))]
+    plans = []
     if board.stale_plan:
         plans.append(("Refresh all missing evidence", board.stale_plan))
     rows = []
@@ -2351,15 +2351,16 @@ def _render_html(board: Board) -> str:
     navigation = [
         {"href": "#observed-checks", "label": "Observed checks"},
         {"href": "#score-heading", "label": "Readiness and score"},
-        {"href": "#resusitate-heading", "label": "Resusitate"},
     ]
+    if board.stale_plan:
+        navigation.append({"href": "#resusitate-heading", "label": "Refresh evidence"})
     navigation.extend(
         {"href": f"#reasons-{severity}", "label": label,
          "count": sum(b["severity"] == severity for b in board.blockers)}
         for severity, label in (("red", "Release blockers"), ("yellow", "Warnings"), ("stale", "Evidence gaps"))
         if any(b["severity"] == severity for b in board.blockers)
     )
-    hero = t_.hero(BOARD_KEY, "Dashboard", _LEDE, navigation=navigation)
+    hero = t_.hero(BOARD_KEY, "Dashboard", navigation=navigation)
     # The way back from the Pages board to the repository front door; owner
     # from the declared config surface (REPO_OWNERS), so the segment drops
     # out on a tenant whose config does not list this repo.
@@ -2367,6 +2368,16 @@ def _render_html(board: Board) -> str:
     gh_owner = REPO_OWNERS.get(repo_name)
     github_link = (f' · <a href="https://github.com/{gh_owner}/{repo_name}'
                    '/blob/main/README.md">GitHub Page</a>' if gh_owner else "")
+    work_links = ([{"label": "Open Heart repository", "href":
+                    f"https://github.com/{gh_owner}/{repo_name}"}] if gh_owner else [])
+    actions = _html_actions(board)
+    if board.stale_plan:
+        actions = ('<section aria-labelledby="resusitate-heading">'
+                   '<h2 id="resusitate-heading">Refresh evidence</h2>' + actions + '</section>')
+    panel = t_.orchestration_panel(
+        "heart", "Fix Heart systematically", "",
+        (board.fix_plan or build_fix_plan(board))["prompt"],
+        work_links=work_links, copy_label="Fix Heart systematically")
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -2375,8 +2386,8 @@ def _render_html(board: Board) -> str:
 </head>
 <body>
 {hero}
+{panel}
 <h2 id="observed-checks">Observed checks</h2>
-<p>Expand a check to see its entries. Colours describe observations; the release verdict below determines readiness.</p>
 <div class="board">{''.join(rows)}</div>
 <section aria-labelledby="score-heading">
 <h2 id="score-heading">Score</h2>
@@ -2393,14 +2404,9 @@ def _render_html(board: Board) -> str:
 <p class="reason-counts">{len(board.red_reasons)} release blockers ·
 {len(board.yellow_reasons)} warnings · {len(board.stale_reasons)} evidence gaps</p>
 </section>
-<section aria-labelledby="resusitate-heading">
-<h2 id="resusitate-heading">Resusitate</h2>
-{_html_actions(board)}
-</section>
+{actions}
 {reasons_html}
 {_boards_nav_html()}
-<footer>Copy a prompt into your coding chat, or a command into your terminal.
-Copying does not run a check or change any files.</footer>
 <script>{t_.JS}</script><script>{_COPY_JS}</script>
 </body></html>
 """
