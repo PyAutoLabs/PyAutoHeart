@@ -236,6 +236,41 @@ The interleaved comparison [37206724174](https://github.com/PyAutoLabs/PyAutoHea
 
 The smoke, integration and notebook dependency recipes now require matching JAX/JAXlib `>=0.11.2,<0.12`, preventing the old `<0.11` override from downgrading into the captured LAPACK deadlock. The original 115-package diagnostic control remains pinned to 0.10.2. No timeout, test selection or release-readiness rule changes. Full release integration has not been repeated: the failed validation remains authoritative until a separately authorized post-merge validation succeeds.
 
+### FFT pool stalls on the 2026-10-05 release wheels
+
+The later integration `37286150846` still timed out after compilation on
+JAX/JAXlib 0.11.2. Diagnostic incident `37286150846` preserves its 115 package
+pins, Python 3.12.14 and workspace/Hands commits. It runs the multi-galaxy
+shapelet fit in three pristine workspace copies, stopping on the first failure.
+Incident `37217670612` separately replays one Galaxy MGE fit; its passing
+replay did not reproduce the full integration failure.
+
+[Control 37310709808](https://github.com/PyAutoLabs/PyAutoHeart/actions/runs/37310709808)
+timed out at 300.047 seconds with zero provenance errors. Its
+[native witness](../diagnostics/release-37286150846-native.txt) records four
+Eigen workers waiting in `ducc0::detail_threading::latch::wait` beneath
+`xla::cpu::FftThunk::Execute`. The older LAPACK signatures are absent. This
+supports FFT pool re-entry as the cause of this reproduced stall; it does not
+establish that every timed-out script has the same cause.
+
+The optional `disable_cpu_eigen_threads: true` input applies only to the
+shapelet diagnostic. It appends `--xla_cpu_multi_thread_eigen=false`, retaining
+existing flags; the default control and older incident routes are unchanged.
+The release script runner applies the same flag before resolving workspace
+profiles. This extends the existing test-workspace workaround to release CI
+without changing user-library defaults, package pins, script selection or
+timeouts. It can reduce CPU parallelism; timing should be assessed separately.
+
+[Workaround replay 37312018327](https://github.com/PyAutoLabs/PyAutoHeart/actions/runs/37312018327)
+passed all three fresh fits in 47.383, 45.188 and 45.237 seconds, with zero
+provenance errors and the flag recorded for each child. The package pins and
+source revisions match the native-confirmed control. These separate hosted
+runs support the mitigation for this reproduced FFT stall; they are not a
+same-run interleaved failure-rate measurement or a full-matrix result.
+
+Diagnostic success is not release clearance. A complete integration run and
+canonical ingestion must still replace the failed validation evidence.
+
 ### User-facing compatibility policy (2026-10-04)
 
 The package repair preserves `>=0.7,<0.12` while excluding `0.10.*` and `0.11.0`.
