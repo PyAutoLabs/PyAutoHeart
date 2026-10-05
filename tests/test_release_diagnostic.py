@@ -8,6 +8,7 @@ import subprocess
 import sys
 
 import pytest
+import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,6 +21,45 @@ spec.loader.exec_module(diag)
 
 def manifest():
     return diag.load_manifest(ROOT / "diagnostics/release-37199991757.json")
+
+
+@pytest.mark.parametrize("fail_second", [False, True])
+def test_shapelet_replay_uses_fresh_fits_and_stops_on_failure(tmp_path, fail_second):
+    workflow = yaml.safe_load(
+        (ROOT / ".github/workflows/release-diagnostic.yml").read_text()
+    )
+    step = next(
+        step for step in workflow["jobs"]["diagnose"]["steps"]
+        if step.get("name") == "Capture repeated shapelet stalls in isolated fresh fits"
+    )
+    workspace = tmp_path / "diagnostic-workspace"
+    workspace.mkdir()
+    (workspace / "input.txt").write_text("original dataset")
+    executable = tmp_path / "diagnostic-env/bin/python"
+    executable.parent.mkdir(parents=True)
+    executable.write_text(
+        f"#!{sys.executable}\n"
+        "import os, sys\nfrom pathlib import Path\n"
+        "workspace = Path(sys.argv[sys.argv.index('--workspace') + 1])\n"
+        "assert (workspace / 'input.txt').read_text() == 'original dataset'\n"
+        "assert not (workspace / 'completed-fit').exists(), 'resumed prior output'\n"
+        "(workspace / 'completed-fit').write_text('preserve evidence')\n"
+        "with Path('attempts.txt').open('a') as log: log.write(str(workspace) + '\\n')\n"
+        "if os.environ['FAIL_SECOND'] == '1' and workspace.name.endswith('-2'): sys.exit(7)\n"
+    )
+    executable.chmod(0o755)
+    result = subprocess.run(
+        ["bash", "-e", "-c", step["run"]],
+        cwd=tmp_path,
+        env={**os.environ, "MANIFEST": "incident.json", "FAIL_SECOND": str(int(fail_second))},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == (7 if fail_second else 0), result.stderr
+    attempts = (tmp_path / "attempts.txt").read_text().splitlines()
+    assert attempts == [f"diagnostic-workspace-{n}" for n in range(1, 3 if fail_second else 4)]
+    assert not (workspace / "completed-fit").exists()
+    assert all((tmp_path / path / "completed-fit").is_file() for path in attempts)
 
 
 @pytest.mark.parametrize(

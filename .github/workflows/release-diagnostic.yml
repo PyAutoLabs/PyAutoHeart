@@ -9,6 +9,7 @@ on:
         options:
           - "37199991757"
           - "37217670612"
+          - "37286150846"
         default: "37199991757"
       repeats:
         description: "Old incident comparison processes (2, 4 or 6); new incident runs one fresh fit"
@@ -63,7 +64,7 @@ jobs:
           # Ephemeral runner only; allow sibling debuggers to attach to Python.
           sudo sysctl -w kernel.yama.ptrace_scope=0
       - name: Install candidate for the original runtime comparison
-        if: inputs.incident != '37217670612'
+        if: (inputs.incident || '37199991757') == '37199991757'
         run: |
           python .github/scripts/release_diagnostic.py prepare --candidate \
             --manifest "$MANIFEST" --output diagnostic-results/candidate-install
@@ -74,7 +75,7 @@ jobs:
             --report diagnostic-results/candidate-install/pip-install.json \
             -r diagnostic-results/candidate-install/requirements.txt
       - name: Interleaved runtime comparison against the same release wheels
-        if: inputs.incident != '37217670612'
+        if: (inputs.incident || '37199991757') == '37199991757'
         env:
           REPEATS: ${{ inputs.repeats || 6 }}
         run: >-
@@ -90,6 +91,18 @@ jobs:
           --manifest "$MANIFEST" --output diagnostic-results
           --workspace diagnostic-workspace --hands diagnostic-hands
           --repeats 1
+      - name: Capture repeated shapelet stalls in isolated fresh fits
+        if: inputs.incident == '37286150846'
+        run: |
+          # Each process gets a pristine checkout: a prior completed fit must
+          # never turn a subsequent repetition into a resume/readback check.
+          for attempt in 1 2 3; do
+            cp -a diagnostic-workspace "diagnostic-workspace-$attempt"
+            diagnostic-env/bin/python .github/scripts/release_diagnostic.py run \
+              --manifest "$MANIFEST" --output "diagnostic-results/fresh-$attempt" \
+              --workspace "diagnostic-workspace-$attempt" --hands diagnostic-hands \
+              --repeats 1
+          done
       - name: Preserve diagnostic evidence, including failure and native stacks
         if: always()
         uses: actions/upload-artifact@v4
@@ -99,4 +112,5 @@ jobs:
             diagnostic-results/
             diagnostic-workspace/dataset/multi_dataset/lens_sersic/*.fits
             diagnostic-workspace/dataset/imaging/asymmetric/*.fits
+            diagnostic-workspace-*/dataset/multi_galaxy/simple/
           if-no-files-found: error
