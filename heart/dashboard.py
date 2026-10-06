@@ -2377,7 +2377,7 @@ def _render_html(board: Board) -> str:
     panel = t_.orchestration_panel(
         "heart", "Fix Heart systematically", "",
         (board.fix_plan or build_fix_plan(board))["prompt"],
-        work_links=work_links, copy_label="Fix Heart systematically")
+        work_links=work_links, copy_label="Fix Heart systematically", organ="heart")
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
