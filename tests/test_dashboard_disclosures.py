@@ -132,7 +132,7 @@ def test_score_and_resusitate_sections_keep_breakdown_and_readiness():
                                            ('validation_absent', 15)]]
     root = Page(dashboard._render_html(board)).root
     headings = [h.text() for h in root.find('h2')]
-    assert headings == ['Fix Heart systematically', 'Observed checks', 'Score', 'Evidence gaps (3)']
+    assert headings == ['Keep your Heart healthy', 'Observed checks', 'Score', 'Evidence gaps (3)']
     score = next(s for s in root.find('section')
                  if s.attrs.get('aria-labelledby') == 'score-heading')
     assert '65/100' in score.text() and 'Release readiness: STALE' in score.text()
