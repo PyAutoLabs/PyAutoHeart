@@ -1836,3 +1836,16 @@ def test_cloud_test_run_renders_failed_counts_and_no_invented_zeros():
     section = next(s for s in board.sections if s.key == "test_run")
     assert "counts not ingested" in section.summary
     assert "0p" not in section.summary
+
+
+def test_panel_refresh_never_substitutes_verdict_evidence_date(monkeypatch):
+    theme = dashboard.theme()
+    calls = []
+    monkeypatch.setattr(theme, "orchestration_panel", lambda *a, **kw: calls.append(kw) or "")
+    snap = make_snapshot()
+    dashboard.render(snap, make_verdict(), fmt="html", now=FRESH_NOW)
+    assert calls[-1]["refreshed_at"] == snap["ts"]
+    assert calls[-1]["refresh_url"].endswith("/actions/workflows/heart-health.yml")
+    snap.pop("ts")
+    dashboard.render(snap, make_verdict(), fmt="html", now=FRESH_NOW)
+    assert calls[-1]["refreshed_at"] is None
