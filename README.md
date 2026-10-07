@@ -26,9 +26,7 @@ copy → paste, on a laptop or a phone.
 <!-- The line below is auto-updated by .github/workflows/heart-health.yml (everything -->
 <!-- between the heart:begin/heart:end markers is replaced with the rendered strip). -->
 <!-- heart:begin -->
-🟡 Monitoring 39/100 · release **YELLOW** · [dashboard →](https://pyautolabs.github.io/PyAutoHeart/)
-
-**Warnings:** [autogalaxy_workspace](https://github.com/PyAutoLabs/autogalaxy_workspace): open PR 7d old; [autolens_workspace](https://github.com/PyAutoLabs/autolens_workspace): open PR 7d old; [euclid_strong_lens_modeling_pipeline](https://github.com/PyAutoLabs/euclid_strong_lens_modeling_pipeline): open PR 7d old
+🔵 Monitoring 34/100 · release **STALE** · [dashboard →](https://pyautolabs.github.io/PyAutoHeart/)
 <!-- heart:end -->
 
 ## How PyAutoHeart works
