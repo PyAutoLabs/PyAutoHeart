@@ -142,28 +142,40 @@ the outcome. So this is where the merged-but-unreleased chain is cleared. Run
 it only for a **live** run whose `release` / `release_workspaces` jobs
 succeeded; never for a rehearsal, an unknown mode, or a failed live run.
 
-For each library the run published:
+One verb does the whole sweep, from the PyAutoMind checkout (or a Mind
+worktree — the shared canonical checkout may hold another session's edits):
 
-1. **GitHub — the source of truth.** Drop the `pending-release` label from
-   every merged PR of that library carrying it:
+```bash
+python3 scripts/lifecycle.py clear-released --version <v>        # dry run: the plan
+python3 scripts/lifecycle.py clear-released --version <v> --apply --remove-labels
+```
 
-   ```bash
-   gh pr list --repo PyAutoLabs/<Library> --state merged --label pending-release \
-     --json number --jq '.[].number'
-   gh pr edit <n> --repo PyAutoLabs/<Library> --remove-label pending-release
-   ```
+`<v>` is the run's published version (the bare tag, e.g. `2026.10.4.1`;
+`latest` resolves the newest GitHub release). It clears **only what the tag
+contains** — a PR whose merge commit is an ancestor of tag `<v>` in its
+library — never "every merged labelled PR", because PRs merged after the
+dispatch are still unreleased:
 
-2. **Mind — the link.** Delete the matching `- pending-release: <lib>@<pr-url>`
-   lines from `PyAutoMind/active.md` rows and from `complete/` records, and any
-   `- release-gate: <lib>` line on a workspace task the release unblocks (tell
-   the user which tasks those are — they are now free to merge). The schema and
-   the division of labour are `PyAutoMind/REFERENCE.md` → "The pending-release
-   chain".
+1. **Mind — the link.** Deletes those `- pending-release: <lib>@<pr-url>`
+   lines from `active.md` rows and `complete/` records, drops a record's
+   `- release-gate: <lib>` once none of that library's links remain, and
+   regenerates the dashboard (`--apply`).
+2. **GitHub — the label.** Drops the `pending-release` label from every
+   released published-set PR, including labelled PRs the ledger never linked
+   (`--remove-labels`; PyAutoHands' release workflow normally already did this
+   half after the publish, so expect mostly no-ops).
+3. **Workspace gates.** A `- release-gate: <lib>` on a live `active.md`
+   workspace row is the human's to lift: tell the user which tasks the release
+   unblocks (they are now free to merge) and delete those lines.
+4. **Confirm and push.** `python3 scripts/lifecycle.py check` (add `--network`
+   to have it ask GitHub) must report no `pending-release` line the release
+   contains, and the regenerated `dashboard.md` must no longer list those PRs
+   under **Pending release**. Commit and push Mind.
 
-3. **Confirm.** `python3 PyAutoMind/scripts/lifecycle.py check` must report no
-   `pending-release` warning for that library, and the regenerated
-   `dashboard.md` must no longer list it under **Pending release**
-   (`pyauto-brain intake --apply dashboard`, then push Mind).
+Only the published set carries the chain (PyAutoNerves, PyAutoFit, PyAutoArray,
+PyAutoGalaxy, PyAutoLens — `PUBLISHED_REPOS` in `scripts/lifecycle.py`). The
+schema and the division of labour are `PyAutoMind/REFERENCE.md` → "The
+pending-release chain".
 
 A release that was dispatched is not a release that published: nothing else may
 clear these keys.
