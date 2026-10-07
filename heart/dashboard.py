@@ -2397,7 +2397,13 @@ def _render_html(board: Board) -> str:
         refreshed_at=board.refreshed_at,
         refresh_url=(f"https://github.com/{gh_owner}/{repo_name}/actions/workflows/heart-health.yml"
                      if gh_owner else None))
-    return f"""<!doctype html>
+    observed_states = {section.state for section in board.sections}
+    observed_status = ("red" if FAIL in observed_states else
+                       "yellow" if WARN in observed_states else
+                       "stale" if board.stale else
+                       "unknown" if UNOBS in observed_states or not observed_states else
+                       "green" if OK in observed_states else "unknown")
+    return t_.section_layout(f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PyAutoHeart Dashboard — {word}</title>
@@ -2428,7 +2434,8 @@ def _render_html(board: Board) -> str:
 {_boards_nav_html()}
 <script>{t_.JS}</script><script>{_COPY_JS}</script>
 </body></html>
-"""
+""", {"observed-checks": {"status": observed_status,
+       "label": "Observed: " + observed_status, "count": len(board.sections)}})
 
 
 def to_dict(board: Board) -> dict[str, Any]:
