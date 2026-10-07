@@ -1157,7 +1157,7 @@ def build_fix_plan(board: Board, snapshot: dict | None = None, *,
     lines = [
         (
             "Use the health skill and treat this chat as an ongoing place to understand and "
-            "improve PyAutoLabs health. Read current authoritative Heart evidence and check "
+            "improve {owner} health. Read current authoritative Heart evidence and check "
             "its freshness before acting. Run `pyauto-brain health --scope dashboard --json` "
             "and inspect the full monitoring inventory and findings; the copied dashboard "
             "snapshot may be stale or incomplete.\n\n"
@@ -1187,7 +1187,8 @@ def build_fix_plan(board: Board, snapshot: dict | None = None, *,
             "issues that remain.\n\n"
             "End with what changed, what was verified and what still needs attention. Stop at "
             "the session deliverable without scheduling background follow-up."
-        ),
+        ).format(owner=REPO_OWNERS.get(PAGES_URL.rstrip("/").rsplit("/", 1)[-1])
+                 or "the organism's"),
         "",
         f"Snapshot: {board.ts or 'unknown'}; verdict: {board.verdict}; score: {board.score}.",
         "", "Readiness findings (all tiers):",

@@ -84,13 +84,16 @@ def test_nested_non_gating_workflow_failure_is_not_hidden_by_rollup():
     assert not any(c["status"] == "grey" and c["family"] == "ci_status" for c in m["findings"])
 
 
-def test_monitoring_does_not_change_release_gate_and_prompt_uses_complete_scope():
+def test_monitoring_does_not_change_release_gate_and_prompt_uses_complete_scope(monkeypatch):
+    monkeypatch.setattr(dashboard, "REPO_OWNERS", {"SomeHeart": "SomeOrg"})
+    monkeypatch.setattr(dashboard, "PAGES_URL", "https://someorg.github.io/SomeHeart/")
     s = {"ts": TS, "ci_timing": {"ts": TS, "events": [{"repo": "Example", "kind": "suspect_cancelled"}]}}
     before = readiness.compute(s)
     b = dashboard.build_board(s, {"verdict": "green", "score": 100}, now=NOW)
     assert b.score == 100 and b.verdict == "green"
     assert b.monitoring["score"] < 100 and b.monitoring["status"] == "red"
     assert readiness.compute(s) == before
+    assert "improve SomeOrg health" in b.fix_plan["prompt"]
     assert "--scope dashboard" in b.fix_plan["prompt"]
     assert "monitoring.complete" in b.fix_plan["prompt"]
     assert len(b.fix_plan["prompt"]) < 45000
