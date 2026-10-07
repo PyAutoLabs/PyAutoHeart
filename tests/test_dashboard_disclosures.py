@@ -173,3 +173,26 @@ def test_repair_rows_copy_exact_prompts_without_toggling_prompt_disclosures():
             assert next(details.find('pre')).text() == plan['prompt']
             assert button.text() == '' and list(button.find('svg'))
         assert any(p.attrs.get('aria-live') == 'polite' for p in section.find('p'))
+
+
+def test_observed_summary_uses_check_states_not_release_verdict():
+    cases = [
+        ([dashboard.OK], False, 'green'),
+        ([dashboard.OK, dashboard.WARN], False, 'yellow'),
+        ([dashboard.WARN, dashboard.FAIL, dashboard.UNOBS], True, 'red'),
+        ([dashboard.OK], True, 'stale'),
+        ([dashboard.OK, dashboard.UNOBS], False, 'unknown'),
+        ([], False, 'unknown'),
+    ]
+    for states, stale, expected in cases:
+        board = dashboard.build_board(make_snapshot(), make_verdict(), now=FRESH_NOW)
+        board.stale = stale
+        board.sections = [dashboard.Section(str(i), 'Check', state, 'Summary')
+                          for i, state in enumerate(states)]
+        root = Page(dashboard._render_html(board)).root
+        section = next(root.find('details', 'board-section'))
+        summary = next(section.find('summary'))
+        assert 'Observed checks' in summary.text()
+        assert 'Observed: ' + expected in summary.text()
+        assert next(summary.find(cls='section-status-' + expected))
+        assert 'open' not in section.attrs
