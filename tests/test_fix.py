@@ -38,10 +38,10 @@ def test_complete_plan_ignores_display_caps_and_keeps_authority_boundaries():
     assert "https://example.org/run/11" in plan
     assert "task24" in plan and "absent-task" in plan and "/orphan" in plan
     assert "pkg9" in plan
-    assert "not approval to merge, delete work or release" in plan
-    assert "Dirty worktrees are not disposable" in plan
-    assert "never schedule background follow-up" in plan
-    assert "diagnose unsupported findings" in plan
+    assert "approval requirements for implementation, destructive cleanup, merges and releases" in plan
+    assert "Preserve user edits and recoverable work" in plan
+    assert "without scheduling background follow-up" in plan
+    assert "If I ask for explanation or diagnosis, provide that before proposing changes" in plan
     assert board.verdict == "red" and board.score == 25
     assert {b["severity"] for b in board.blockers} == {"red", "yellow", "stale"}
 
@@ -101,8 +101,8 @@ def test_summary_overflow_preserves_authority_and_explains_omissions():
     prompt = board.fix_plan["prompt"]
     assert len(prompt) < 50_000
     assert "summary lines omitted" in prompt
-    assert "not approval to merge, delete work or release" in prompt
-    assert "Dirty worktrees are not disposable" in prompt
+    assert "approval requirements for implementation, destructive cleanup, merges and releases" in prompt
+    assert "Preserve user edits and recoverable work" in prompt
     assert "read the full evidence" in prompt
     assert len(board.blockers) == 114
 

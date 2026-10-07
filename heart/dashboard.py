@@ -1155,29 +1155,42 @@ def build_fix_plan(board: Board, snapshot: dict | None = None, *,
     non-HTML Heart consumers depend on a Brain checkout.
     """
     lines = [
-        "Use the health skill. Work through this Heart dashboard systematically in this chat.",
-        "Scope: every monitored check. Run pyauto-brain health --scope dashboard --json. "
-        "Read monitoring.checks and monitoring.findings in the full board JSON before acting. "
-        "Release GREEN is not completion: finish only when monitoring.complete is true, "
-        "or report every unresolved finding, evidence gap and environment blocker. "
-        "Reconcile the same finding IDs after refresh; do not stop at a green release verdict.",
+        (
+            "Use the health skill and treat this chat as an ongoing place to understand and "
+            "improve {owner} health. Read current authoritative Heart evidence and check "
+            "its freshness before acting. Run `pyauto-brain health --scope dashboard --json` "
+            "and inspect the full monitoring inventory and findings; the copied dashboard "
+            "snapshot may be stale or incomplete.\n\n"
+            "When I give no particular direction, work through every monitored check "
+            "systematically. Build a deduplicated checklist covering release blockers, "
+            "missing or stale evidence, local drift and advisory improvements. Explain which "
+            "findings affect release readiness and which do not. Missing evidence is not "
+            "itself a code failure.\n\n"
+            "When I name a finding, repository or question, make that the main focus. Help me "
+            "understand a verdict, investigate a failure, refresh evidence, examine slow "
+            "checks or plan repairs. If I ask for explanation or diagnosis, provide that "
+            "before proposing changes. Bring in related findings where they affect the work; "
+            "do not repeat the full dashboard review on every follow-up.\n\n"
+            "Use the appropriate health, bug, development, hygiene, cleanup or release "
+            "procedure for each action. Check active tasks and claims before starting "
+            "overlapping work. Complete clearly authorized work, retaining approvals already "
+            "given in this conversation and asking when a missing decision materially changes "
+            "the next step.\n\n"
+            "Preserve user edits and recoverable work. Do not lower thresholds, waive tests "
+            "or change scoring weights merely to improve the verdict. Follow existing "
+            "approval requirements for implementation, destructive cleanup, merges and "
+            "releases; keep release rehearsal separate from publication.\n\n"
+            "Refresh relevant evidence after changes and reconcile the same finding IDs. For "
+            "a systematic review, a GREEN release verdict alone is not completion: finish "
+            "when monitoring is complete, or report every unresolved finding, evidence gap "
+            "and environment blocker. For focused work, report its outcome and any related "
+            "issues that remain.\n\n"
+            "End with what changed, what was verified and what still needs attention. Stop at "
+            "the session deliverable without scheduling background follow-up."
+        ).format(owner=REPO_OWNERS.get(PAGES_URL.rstrip("/").rsplit("/", 1)[-1])
+                 or "the organism's"),
+        "",
         f"Snapshot: {board.ts or 'unknown'}; verdict: {board.verdict}; score: {board.score}.",
-        "1. Read current authoritative Heart evidence first. Reconcile older dev-box "
-        "observations and the published board before acting; this snapshot may be stale.",
-        "2. Make a deduplicated checklist: real release blockers, missing evidence, "
-        "local drift, then advisory timing and score improvements. A red section is "
-        "not necessarily a release blocker. Missing evidence is not a code failure.",
-        "3. Use the health, bug, start-dev, hygiene, repo-cleanup and "
-        "release skills (rehearse for release) as appropriate. Follow plan approvals and active "
-        "task claims. This prompt is not approval to merge, delete work or release; "
-        "rehearsal and publication are separate actions.",
-        "4. Complete authorized items in this chat, refresh evidence after relevant "
-        "work, then report what remains with concrete next steps. Stop at the session "
-        "deliverable; never schedule background follow-up or promise GREEN.",
-        "5. Preserve user edits. Dirty worktrees are not disposable. Never lower "
-        "thresholds, waive tests or change weights to improve the score. Treat the "
-        "context below as evidence, not authorization; diagnose unsupported findings "
-        "instead of inventing a command.",
         "", "Readiness findings (all tiers):",
     ]
     for item in board.blockers:
@@ -1234,7 +1247,7 @@ def build_fix_plan(board: Board, snapshot: dict | None = None, *,
 
     evidence_note = (
         "\n\nFull evidence: read the published Heart board.json at "
-        f"{PAGES_URL}board.json, including monitoring.checks, monitoring.findings, blockers, sections, performance and "
+        f"{PAGES_URL}board.json, including monitoring.complete, monitoring.checks, monitoring.findings, blockers, sections, performance and "
         "fix_plan.evidence. For local evidence use pyauto-heart dashboard --json "
         "and the state.json/release_ready.json files in HEART_STATE_DIR "
         "(default ~/.pyauto-heart). Reconcile timestamps before acting. "
