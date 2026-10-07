@@ -298,6 +298,8 @@ class Board:
     penalties: list[dict] | None = None
     vantage: str = "local snapshot"
     devbox_observed: str | None = None
+    # Capture time only; verdict evidence timestamps cannot establish a refresh.
+    refreshed_at: str | None = None
 
 
 # --- verdict/state → glyph & colour maps ------------------------------------
@@ -1114,6 +1116,7 @@ def build_board(
         verdict=v,
         score=score,
         ts=ts,
+        refreshed_at=snapshot.get("ts"),
         age_seconds=age,
         stale=stale,
         red_reasons=red,
@@ -2390,7 +2393,10 @@ def _render_html(board: Board) -> str:
     panel = t_.orchestration_panel(
         "heart", "Fix Heart systematically", "",
         (board.fix_plan or build_fix_plan(board))["prompt"],
-        work_links=work_links, copy_label="Fix Heart systematically", organ="heart")
+        work_links=work_links, copy_label="Fix Heart systematically", organ="heart",
+        refreshed_at=board.refreshed_at,
+        refresh_url=(f"https://github.com/{gh_owner}/{repo_name}/actions/workflows/heart-health.yml"
+                     if gh_owner else None))
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
