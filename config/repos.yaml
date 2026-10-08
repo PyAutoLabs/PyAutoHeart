@@ -200,6 +200,8 @@ excluded:
   - autogalaxy_visualization  # galaxy figure gallery project (PNGs + manifest tracked; re-rendered on release)
   - autofit_visualization  # fit figure gallery project (PNGs + manifest tracked; re-rendered on release)
   - autocti_visualization  # cti figure gallery project (PNGs + manifest tracked; re-rendered on release)
+  - autofit_profiling    # PyAutoFit profiling project
+  - autofit_inference    # PyAutoFit inference benchmark project
   - z_help                # scratch
   - z_projects            # in-progress science
   - z_projects_complete   # archived science
