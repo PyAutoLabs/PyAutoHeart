@@ -98,8 +98,10 @@ def test_html_is_self_contained():
     assert "RED" in out
     # The header links the markdown twin and the repository front door. The
     # expected owner comes from the same declared config surface the renderer
-    # reads (the tenant firewall keeps org literals out of organ code).
-    assert '<a href="dashboard.md">markdown version</a>' in out
+    # reads (the tenant firewall keeps org literals out of organ code). The
+    # shared Brain theme may restyle the markdown link (PyAutoBrain#499 renders
+    # it as an icon), so assert the href survives rather than the label text.
+    assert 'href="dashboard.md"' in out
     gh_owner = dashboard.REPO_OWNERS["PyAutoHeart"]
     assert (f'<a href="https://github.com/{gh_owner}/PyAutoHeart/blob/main/'
             'README.md">GitHub Page</a>') in out
