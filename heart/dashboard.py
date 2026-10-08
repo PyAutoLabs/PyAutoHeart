@@ -2377,13 +2377,8 @@ def _render_html(board: Board) -> str:
         if any(b["severity"] == severity for b in board.blockers)
     )
     hero = t_.hero(BOARD_KEY, "Dashboard", navigation=navigation)
-    # The way back from the Pages board to the repository front door; owner
-    # from the declared config surface (REPO_OWNERS), so the segment drops
-    # out on a tenant whose config does not list this repo.
     repo_name = PAGES_URL.rstrip("/").rsplit("/", 1)[-1]
     gh_owner = REPO_OWNERS.get(repo_name)
-    github_link = (f' · <a href="https://github.com/{gh_owner}/{repo_name}'
-                   '/blob/main/README.md">GitHub Page</a>' if gh_owner else "")
     work_links = ([{"label": "Open Heart repository", "href":
                     f"https://github.com/{gh_owner}/{repo_name}"}] if gh_owner else [])
     actions = _html_actions(board)
@@ -2393,7 +2388,7 @@ def _render_html(board: Board) -> str:
     panel = t_.orchestration_panel(
         "heart", "Fix Heart systematically", "",
         (board.fix_plan or build_fix_plan(board))["prompt"],
-        work_links=work_links, copy_label="Fix Heart systematically", organ="heart",
+        work_links=work_links, organ="heart",
         refreshed_at=board.refreshed_at,
         refresh_url=(f"https://github.com/{gh_owner}/{repo_name}/actions/workflows/heart-health.yml"
                      if gh_owner else None))
@@ -2420,7 +2415,7 @@ def _render_html(board: Board) -> str:
 <span>Monitoring: {(board.monitoring or {}).get("status", "unknown").upper()}</span>
 <span class="muted">Release readiness: {word}</span></p>
 <p class="muted">snapshot {_html.escape(board.ts)} ·
- {age} · <a href="dashboard.md">markdown version</a>{github_link}</p>
+ {age} · <a href="dashboard.md">markdown version</a></p>
 {stale_html}
 <p class="vantage">{_html.escape(board.vantage)} ·
 {_html.escape(board.devbox_observed or ('no dev-box observation attached' if board.vantage == 'cloud snapshot' else 'observed on this dev box'))}</p>

@@ -103,8 +103,8 @@ def test_html_is_self_contained():
     # it as an icon), so assert the href survives rather than the label text.
     assert 'href="dashboard.md"' in out
     gh_owner = dashboard.REPO_OWNERS["PyAutoHeart"]
-    assert (f'<a href="https://github.com/{gh_owner}/PyAutoHeart/blob/main/'
-            'README.md">GitHub Page</a>') in out
+    assert f'<a href="https://github.com/{gh_owner}/PyAutoHeart">PyAutoHeart</a>' in out
+    assert 'GitHub Page</a>' not in out
     # No external ASSETS (renders anywhere, loads nothing remote): no src=, no
     # <link>, no fetches. Inline <script> is allowed — the one-tap 📋 copy
     # buttons need the clipboard API — and outbound <a href> links are

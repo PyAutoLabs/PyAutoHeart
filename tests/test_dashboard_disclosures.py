@@ -107,7 +107,7 @@ def test_timing_cards_are_inside_category_and_checks_precede_score_actions_gaps(
     assert list(timing.find(cls='timing-card'))
     assert all('timing-card' not in n.attrs.get('class', '')
                for c in checks for n in next(c.find('summary')).find())
-    assert (html.index('Fix Heart systematically') < html.index('<div class="board">') <
+    assert (html.index('Copy check-in prompt') < html.index('<div class="board">') <
             html.index('Release readiness score:') < html.index('Evidence gaps ('))
     assert '[these guys are giving me life]' not in html
 
