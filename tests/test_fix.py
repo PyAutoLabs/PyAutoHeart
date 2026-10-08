@@ -118,7 +118,7 @@ def test_html_all_tiers_complete_disclosure_and_safe_fallback():
     assert 'role="status" aria-live="polite"' in html
     assert 'class="prompt-fallback repair"' in html
     assert "[these guys are giving me life]" not in html
-    assert html.index("Fix Heart systematically") < html.index("Release blockers (12)")
+    assert html.index("Copy check-in prompt") < html.index("Release blockers (12)")
 
 
 def test_numeric_emphasis_is_built_from_fields_and_escapes_subjects():
