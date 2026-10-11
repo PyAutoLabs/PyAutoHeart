@@ -11,7 +11,7 @@ def test_unknown_is_not_pass():
     page = render(CATALOGUE, {})
     assert 'CI: unavailable' in page and 'Age unknown' in page
     assert 'resource-example-tests' in page
-    assert 'Test-level counts' in page
+    assert 'Count not reported' in page
 
 
 def test_old_failure_stays_failure_and_links_run():
@@ -20,7 +20,7 @@ def test_old_failure_stays_failure_and_links_run():
           'workflows': {'Smoke': {'conclusion': 'failure'}}}
     page = render(CATALOGUE, {'checks': {'ci_status': ci}}, now=datetime(2026, 1, 1, tzinfo=timezone.utc))
     assert 'CI: failure' in page and 'Evidence outdated' in page
-    assert 'abcdef' in page and '/actions/runs/1' in page
+    assert '/actions/runs/1' in page and 'Failing workflows' in page
     assert 'Smoke' in page
 
 

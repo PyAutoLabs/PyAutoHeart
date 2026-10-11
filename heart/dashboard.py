@@ -2067,6 +2067,10 @@ _LEDE = ('Is it safe to release? See what needs attention, then copy a prompt '
 # variables, so this board follows the family accent rather than setting a
 # second palette.
 _EXTRA_CSS = """
+.test-workspace-detail{margin-inline-start:.75rem;padding-inline-start:.75rem;border-inline-start:2px solid var(--line,#888)}
+.test-workspace-detail dl{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:.35rem .8rem}
+.test-workspace-detail dd{margin:0;overflow-wrap:anywhere}
+
 /* All check categories share one compact disclosure grid. */
 .board{border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .check-row{position:relative;border-bottom:1px solid var(--line)}
