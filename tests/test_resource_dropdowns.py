@@ -26,7 +26,7 @@ def test_old_failure_stays_failure_and_links_run():
 
 def test_fresh_success_and_dashboard_integration():
     now = datetime(2026, 1, 1, tzinfo=timezone.utc)
-    snapshot = {'ts': now.isoformat(), 'repos': {'checks': {'ci_status': {'conclusion': 'success', 'ts': now.isoformat()}}}}
+    snapshot = {'ts': now.isoformat(), 'repos': {'checks': {'ci_status': {'conclusion': 'success', 'ts': now.isoformat(), 'url': 'https://github.com/Example/Checks/actions/runs/1'}}}}
     page = dashboard(snapshot, {'verdict': 'green', 'score': 100}, fmt='html', now=now, resource_catalogue=CATALOGUE)
     assert 'CI: success' in page and 'Observed within 24 hours' in page
     assert 'id="resource-example-tests"' in page
@@ -36,3 +36,16 @@ def test_fresh_success_and_dashboard_integration():
 def test_unsafe_evidence_url_is_not_linked():
     page = render(CATALOGUE, {'checks': {'ci_status': {'url': 'javascript:alert(1)'}}})
     assert 'javascript:' not in page
+
+
+def test_foreign_or_unattributed_ci_is_unavailable():
+    for url in ['', 'https://github.com/Other/Checks/actions/runs/1']:
+        page = render(CATALOGUE, {'checks': {'ci_status': {'conclusion': 'success', 'url': url}}})
+        assert 'CI: unavailable' in page
+        assert 'CI: success' not in page and 'Other/Checks' not in page
+
+
+def test_foreign_workflow_invalidates_aggregate():
+    ci = {'conclusion': 'success', 'url': 'https://github.com/Example/Checks/actions/runs/1',
+          'workflows': {'Smoke': {'conclusion': 'success', 'url': 'https://github.com/Other/Checks/actions/runs/2'}}}
+    assert 'CI: unavailable' in render(CATALOGUE, {'checks': {'ci_status': ci}})

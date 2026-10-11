@@ -213,3 +213,5 @@ successful validation. The same export feeds Broca. Relationships and identities
 remain owned by Scientist and Mind; this file is a derived public snapshot, not a
 hand-maintained registry. Missing catalogues do not affect readiness. Rendering
 collects no new evidence, and opening a disclosure triggers no execution.
+
+Resource CI is displayed only when available run URLs match the catalogue canonical GitHub repository. A reused local key, absent run provenance or foreign workflow URL cannot establish resource health; those rows show unavailable.

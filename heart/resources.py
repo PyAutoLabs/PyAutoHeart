@@ -20,6 +20,22 @@ def link(url, label):
     return f'<a href="{html.escape(str(url), quote=True)}">{html.escape(str(label))}</a>'
 
 
+def verified_ci(ci, github):
+    """A reused local key cannot establish which remote produced cached runs."""
+    urls = [ci.get('url')] + [entry.get('url') for entry in (ci.get('workflows') or {}).values()]
+    urls = [url for url in urls if url]
+    if not github or not urls:
+        return {}
+    for url in urls:
+        parsed = urlsplit(str(url))
+        parts = parsed.path.strip('/').split('/')
+        if (parsed.scheme != 'https' or parsed.netloc.lower() != 'github.com'
+                or len(parts) < 5 or '/'.join(parts[:2]).lower() != github.lower()
+                or parts[2:4] != ['actions', 'runs'] or not parts[4].isdigit()):
+            return {}
+    return ci
+
+
 def render(catalogue, repos, *, now=None):
     esc = lambda value: html.escape(str(value), quote=True)
     cards = []
@@ -28,7 +44,7 @@ def render(catalogue, repos, *, now=None):
         if 'tests' not in resource.get('relations', []):
             continue
         name = resource.get('repo', '')
-        ci = (repos.get(name) or {}).get('ci_status') or {}
+        ci = verified_ci((repos.get(name) or {}).get('ci_status') or {}, resource.get('github'))
         state = ci.get('conclusion') or ci.get('status') or 'unavailable'
         observed = ci.get('ts') or 'Unknown'
         freshness = 'Age unknown'
@@ -50,5 +66,5 @@ def render(catalogue, repos, *, now=None):
 <dl><dt>Observed</dt><dd>{esc(observed)} · {esc(freshness)}</dd><dt>Source revision</dt><dd>{esc(ci.get('head_sha') or ci.get('sha') or 'Unknown')}</dd></dl>
 {detail}<p>Test-level counts and coverage are not supplied by this CI snapshot. CI is separate from full release validation; these rows do not change readiness.</p>
 <p>Next: use Heart's check-in to inspect this workspace's latest run, missing evidence and failures before scheduling any check.</p></details>''')
-    return ('<section id="test-workspaces"><h2>Test workspaces</h2><p>Project-owned test suites and their recorded CI evidence. Inventory is not a passing result. Evidence older than 24 hours is labelled outdated here; release gates retain their own policy.</p>'
+    return ('<section id="test-workspaces"><h2>Test workspaces</h2><p>Project-owned test suites and their recorded CI evidence. Inventory is not a passing result. CI without matching repository run provenance is unavailable. Evidence older than 24 hours is labelled outdated here; release gates retain their own policy.</p>'
             + ''.join(cards) + ('' if cards else '<p>No public test-workspace resources available.</p>') + '</section>')
