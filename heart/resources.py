@@ -55,16 +55,24 @@ def render(catalogue, repos, *, now=None):
             pass
         projects = ', '.join(p['name'] for p in resource['projects'])
         sources = ' · '.join(link(l['url'], l['label']) for l in resource['links'])
-        workflows = []
-        for workflow, evidence in (ci.get('workflows') or {}).items():
+        workflows = ci.get('workflows') or {}
+        rows = []
+        failures = []
+        for workflow, evidence in workflows.items():
             status = evidence.get('conclusion') or evidence.get('status') or 'unknown'
-            workflows.append(f'<li>{link(evidence.get("url", ""), workflow)}: {esc(status)}</li>')
-        detail = ('<ul>' + ''.join(workflows) + '</ul>') if workflows else '<p>No workflow-level evidence available.</p>'
-        cards.append(f'''<details id="resource-{esc(resource['id'])}"><summary>{esc(resource['name'])} · {esc(projects)} · CI: {esc(state)} · {esc(freshness)}</summary>
-<p>Regression, smoke and parity checks for {esc(projects)}. Source remains in the test workspace.</p>
-<p>{sources} · {link(ci.get('url', ''), 'Latest recorded CI run')}</p>
-<dl><dt>Observed</dt><dd>{esc(observed)} · {esc(freshness)}</dd><dt>Source revision</dt><dd>{esc(ci.get('head_sha') or ci.get('sha') or 'Unknown')}</dd></dl>
-{detail}<p>Test-level counts and coverage are not supplied by this CI snapshot. CI is separate from full release validation; these rows do not change readiness.</p>
-<p>Next: use Heart's check-in to inspect this workspace's latest run, missing evidence and failures before scheduling any check.</p></details>''')
-    return ('<section id="test-workspaces"><h2>Test workspaces</h2><p>Project-owned test suites and their recorded CI evidence. Inventory is not a passing result. CI without matching repository run provenance is unavailable. Evidence older than 24 hours is labelled outdated here; release gates retain their own policy.</p>'
-            + ''.join(cards) + ('' if cards else '<p>No public test-workspace resources available.</p>') + '</section>')
+            rows.append(f'<li>{link(evidence.get("url", ""), workflow)}: {esc(status)}</li>')
+            if status in {'failure', 'timed_out', 'cancelled', 'action_required'}:
+                failures.append(workflow)
+        workflow_count = str(len(workflows)) if workflows else 'Not reported'
+        failure_summary = ', '.join(failures) if failures else ('None' if state == 'success' else 'See run' if ci else 'Unknown')
+        detail = '<ul>' + ''.join(rows) + '</ul>' if rows else ''
+        cards.append(f'''<details id="resource-{esc(resource['id'])}"><summary>{esc(resource['name'])} · CI: {esc(state)} · {esc(freshness)}</summary>
+<div class="test-workspace-detail"><dl>
+<dt>Suite</dt><dd>{esc(projects)} — regression, smoke and parity</dd>
+<dt>Tests</dt><dd>Count not reported</dd>
+<dt>Workflows</dt><dd>{workflow_count}</dd>
+<dt>Failing workflows</dt><dd>{esc(failure_summary)}</dd>
+<dt>Updated</dt><dd>{esc(observed)}</dd>
+</dl>{detail}<p>{sources} · {link(ci.get('url', ''), 'CI run')}</p></div></details>''')
+    return ('<section id="test-workspaces"><h2>Test workspaces</h2>'
+            + ''.join(cards) + ('' if cards else '<p>No test workspaces configured.</p>') + '</section>')
