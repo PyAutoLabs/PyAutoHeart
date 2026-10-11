@@ -1,0 +1,845 @@
+{
+  "schema_version": 1,
+  "resources": [
+    {
+      "id": "fit",
+      "name": "PyAutoFit",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/PyAutoFit"
+        }
+      ],
+      "repo": "PyAutoFit",
+      "github": "PyAutoLabs/PyAutoFit",
+      "projects": [
+        {
+          "id": "fit",
+          "name": "PyAutoFit"
+        },
+        {
+          "id": "galaxy",
+          "name": "PyAutoGalaxy"
+        },
+        {
+          "id": "lens",
+          "name": "PyAutoLens"
+        },
+        {
+          "id": "cti",
+          "name": "PyAutoCTI"
+        }
+      ],
+      "relations": [
+        "software",
+        "dependencies"
+      ]
+    },
+    {
+      "id": "nerves",
+      "name": "PyAutoNerves",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/PyAutoNerves"
+        }
+      ],
+      "repo": "PyAutoNerves",
+      "github": "PyAutoLabs/PyAutoNerves",
+      "projects": [
+        {
+          "id": "fit",
+          "name": "PyAutoFit"
+        },
+        {
+          "id": "array",
+          "name": "PyAutoArray"
+        },
+        {
+          "id": "galaxy",
+          "name": "PyAutoGalaxy"
+        },
+        {
+          "id": "lens",
+          "name": "PyAutoLens"
+        },
+        {
+          "id": "cti",
+          "name": "PyAutoCTI"
+        }
+      ],
+      "relations": [
+        "dependencies"
+      ]
+    },
+    {
+      "id": "fit-workspace",
+      "name": "autofit_workspace",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/autofit_workspace"
+        }
+      ],
+      "repo": "autofit_workspace",
+      "github": "PyAutoLabs/autofit_workspace",
+      "projects": [
+        {
+          "id": "fit",
+          "name": "PyAutoFit"
+        }
+      ],
+      "relations": [
+        "workspaces"
+      ]
+    },
+    {
+      "id": "fit-tutorials",
+      "name": "HowToFit",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/HowToFit"
+        }
+      ],
+      "repo": "HowToFit",
+      "github": "PyAutoLabs/HowToFit",
+      "projects": [
+        {
+          "id": "fit",
+          "name": "PyAutoFit"
+        }
+      ],
+      "relations": [
+        "tutorials"
+      ]
+    },
+    {
+      "id": "fit-docs",
+      "name": "PyAutoFit documentation",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/PyAutoFit/tree/main/docs"
+        },
+        {
+          "label": "Published",
+          "url": "https://pyautofit.readthedocs.io/en/latest/"
+        }
+      ],
+      "repo": "PyAutoFit",
+      "github": "PyAutoLabs/PyAutoFit",
+      "projects": [
+        {
+          "id": "fit",
+          "name": "PyAutoFit"
+        }
+      ],
+      "relations": [
+        "documentation"
+      ]
+    },
+    {
+      "id": "fit-assistant",
+      "name": "autofit_assistant",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/autofit_assistant"
+        }
+      ],
+      "repo": "autofit_assistant",
+      "github": "PyAutoLabs/autofit_assistant",
+      "projects": [
+        {
+          "id": "fit",
+          "name": "PyAutoFit"
+        }
+      ],
+      "relations": [
+        "assistants"
+      ]
+    },
+    {
+      "id": "fit-profiling",
+      "name": "autofit_profiling",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/autofit_profiling"
+        }
+      ],
+      "repo": "autofit_profiling",
+      "github": "PyAutoLabs/autofit_profiling",
+      "projects": [
+        {
+          "id": "fit",
+          "name": "PyAutoFit"
+        }
+      ],
+      "relations": [
+        "profiling"
+      ]
+    },
+    {
+      "id": "fit-inference",
+      "name": "autofit_inference",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/autofit_inference"
+        }
+      ],
+      "repo": "autofit_inference",
+      "github": "PyAutoLabs/autofit_inference",
+      "projects": [
+        {
+          "id": "fit",
+          "name": "PyAutoFit"
+        }
+      ],
+      "relations": [
+        "inference"
+      ]
+    },
+    {
+      "id": "fit-visualization",
+      "name": "autofit_visualization",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/autofit_visualization"
+        }
+      ],
+      "repo": "autofit_visualization",
+      "github": "PyAutoLabs/autofit_visualization",
+      "projects": [
+        {
+          "id": "fit",
+          "name": "PyAutoFit"
+        }
+      ],
+      "relations": [
+        "visualization"
+      ]
+    },
+    {
+      "id": "fit-tests",
+      "name": "autofit_workspace_test",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/autofit_workspace_test"
+        }
+      ],
+      "repo": "autofit_workspace_test",
+      "github": "PyAutoLabs/autofit_workspace_test",
+      "projects": [
+        {
+          "id": "fit",
+          "name": "PyAutoFit"
+        }
+      ],
+      "relations": [
+        "tests"
+      ]
+    },
+    {
+      "id": "array",
+      "name": "PyAutoArray",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/PyAutoArray"
+        }
+      ],
+      "repo": "PyAutoArray",
+      "github": "PyAutoLabs/PyAutoArray",
+      "projects": [
+        {
+          "id": "array",
+          "name": "PyAutoArray"
+        },
+        {
+          "id": "galaxy",
+          "name": "PyAutoGalaxy"
+        },
+        {
+          "id": "lens",
+          "name": "PyAutoLens"
+        },
+        {
+          "id": "cti",
+          "name": "PyAutoCTI"
+        }
+      ],
+      "relations": [
+        "software",
+        "dependencies"
+      ]
+    },
+    {
+      "id": "array-docs",
+      "name": "PyAutoArray documentation source",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/PyAutoArray/tree/main/docs"
+        }
+      ],
+      "repo": "PyAutoArray",
+      "github": "PyAutoLabs/PyAutoArray",
+      "projects": [
+        {
+          "id": "array",
+          "name": "PyAutoArray"
+        }
+      ],
+      "relations": [
+        "documentation"
+      ]
+    },
+    {
+      "id": "galaxy",
+      "name": "PyAutoGalaxy",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/PyAutoGalaxy"
+        }
+      ],
+      "repo": "PyAutoGalaxy",
+      "github": "PyAutoLabs/PyAutoGalaxy",
+      "projects": [
+        {
+          "id": "galaxy",
+          "name": "PyAutoGalaxy"
+        },
+        {
+          "id": "lens",
+          "name": "PyAutoLens"
+        }
+      ],
+      "relations": [
+        "software",
+        "dependencies"
+      ]
+    },
+    {
+      "id": "galaxy-workspace",
+      "name": "autogalaxy_workspace",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/autogalaxy_workspace"
+        }
+      ],
+      "repo": "autogalaxy_workspace",
+      "github": "PyAutoLabs/autogalaxy_workspace",
+      "projects": [
+        {
+          "id": "galaxy",
+          "name": "PyAutoGalaxy"
+        }
+      ],
+      "relations": [
+        "workspaces"
+      ]
+    },
+    {
+      "id": "galaxy-tutorials",
+      "name": "HowToGalaxy",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/HowToGalaxy"
+        }
+      ],
+      "repo": "HowToGalaxy",
+      "github": "PyAutoLabs/HowToGalaxy",
+      "projects": [
+        {
+          "id": "galaxy",
+          "name": "PyAutoGalaxy"
+        }
+      ],
+      "relations": [
+        "tutorials"
+      ]
+    },
+    {
+      "id": "galaxy-docs",
+      "name": "PyAutoGalaxy documentation",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/PyAutoGalaxy/tree/main/docs"
+        },
+        {
+          "label": "Published",
+          "url": "https://pyautogalaxy.readthedocs.io/en/latest/"
+        }
+      ],
+      "repo": "PyAutoGalaxy",
+      "github": "PyAutoLabs/PyAutoGalaxy",
+      "projects": [
+        {
+          "id": "galaxy",
+          "name": "PyAutoGalaxy"
+        }
+      ],
+      "relations": [
+        "documentation"
+      ]
+    },
+    {
+      "id": "galaxy-assistant",
+      "name": "autogalaxy_assistant",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/autogalaxy_assistant"
+        }
+      ],
+      "repo": "autogalaxy_assistant",
+      "github": "PyAutoLabs/autogalaxy_assistant",
+      "projects": [
+        {
+          "id": "galaxy",
+          "name": "PyAutoGalaxy"
+        }
+      ],
+      "relations": [
+        "assistants"
+      ]
+    },
+    {
+      "id": "galaxy-visualization",
+      "name": "autogalaxy_visualization",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/autogalaxy_visualization"
+        }
+      ],
+      "repo": "autogalaxy_visualization",
+      "github": "PyAutoLabs/autogalaxy_visualization",
+      "projects": [
+        {
+          "id": "galaxy",
+          "name": "PyAutoGalaxy"
+        }
+      ],
+      "relations": [
+        "visualization"
+      ]
+    },
+    {
+      "id": "galaxy-tests",
+      "name": "autogalaxy_workspace_test",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/autogalaxy_workspace_test"
+        }
+      ],
+      "repo": "autogalaxy_workspace_test",
+      "github": "PyAutoLabs/autogalaxy_workspace_test",
+      "projects": [
+        {
+          "id": "galaxy",
+          "name": "PyAutoGalaxy"
+        }
+      ],
+      "relations": [
+        "tests"
+      ]
+    },
+    {
+      "id": "lens",
+      "name": "PyAutoLens",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/PyAutoLens"
+        }
+      ],
+      "repo": "PyAutoLens",
+      "github": "PyAutoLabs/PyAutoLens",
+      "projects": [
+        {
+          "id": "lens",
+          "name": "PyAutoLens"
+        }
+      ],
+      "relations": [
+        "software"
+      ]
+    },
+    {
+      "id": "lens-workspace",
+      "name": "autolens_workspace",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/autolens_workspace"
+        }
+      ],
+      "repo": "autolens_workspace",
+      "github": "PyAutoLabs/autolens_workspace",
+      "projects": [
+        {
+          "id": "lens",
+          "name": "PyAutoLens"
+        }
+      ],
+      "relations": [
+        "workspaces"
+      ]
+    },
+    {
+      "id": "lens-tutorials",
+      "name": "HowToLens",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/HowToLens"
+        }
+      ],
+      "repo": "HowToLens",
+      "github": "PyAutoLabs/HowToLens",
+      "projects": [
+        {
+          "id": "lens",
+          "name": "PyAutoLens"
+        }
+      ],
+      "relations": [
+        "tutorials"
+      ]
+    },
+    {
+      "id": "lens-docs",
+      "name": "PyAutoLens documentation",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/PyAutoLens/tree/main/docs"
+        },
+        {
+          "label": "Published",
+          "url": "https://pyautolens.readthedocs.io/en/latest/"
+        }
+      ],
+      "repo": "PyAutoLens",
+      "github": "PyAutoLabs/PyAutoLens",
+      "projects": [
+        {
+          "id": "lens",
+          "name": "PyAutoLens"
+        }
+      ],
+      "relations": [
+        "documentation"
+      ]
+    },
+    {
+      "id": "lens-assistant",
+      "name": "autolens_assistant",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/autolens_assistant"
+        }
+      ],
+      "repo": "autolens_assistant",
+      "github": "PyAutoLabs/autolens_assistant",
+      "projects": [
+        {
+          "id": "lens",
+          "name": "PyAutoLens"
+        }
+      ],
+      "relations": [
+        "assistants"
+      ]
+    },
+    {
+      "id": "lens-profiling",
+      "name": "autolens_profiling",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/autolens_profiling"
+        }
+      ],
+      "repo": "autolens_profiling",
+      "github": "PyAutoLabs/autolens_profiling",
+      "projects": [
+        {
+          "id": "lens",
+          "name": "PyAutoLens"
+        }
+      ],
+      "relations": [
+        "profiling"
+      ]
+    },
+    {
+      "id": "lens-inference",
+      "name": "autolens_inference",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/autolens_inference"
+        }
+      ],
+      "repo": "autolens_inference",
+      "github": "PyAutoLabs/autolens_inference",
+      "projects": [
+        {
+          "id": "lens",
+          "name": "PyAutoLens"
+        }
+      ],
+      "relations": [
+        "inference"
+      ]
+    },
+    {
+      "id": "lens-visualization",
+      "name": "autolens_visualization",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/autolens_visualization"
+        }
+      ],
+      "repo": "autolens_visualization",
+      "github": "PyAutoLabs/autolens_visualization",
+      "projects": [
+        {
+          "id": "lens",
+          "name": "PyAutoLens"
+        }
+      ],
+      "relations": [
+        "visualization"
+      ]
+    },
+    {
+      "id": "lens-tests",
+      "name": "autolens_workspace_test",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/autolens_workspace_test"
+        }
+      ],
+      "repo": "autolens_workspace_test",
+      "github": "PyAutoLabs/autolens_workspace_test",
+      "projects": [
+        {
+          "id": "lens",
+          "name": "PyAutoLens"
+        }
+      ],
+      "relations": [
+        "tests"
+      ]
+    },
+    {
+      "id": "reduce",
+      "name": "PyAutoReduce",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/PyAutoReduce"
+        }
+      ],
+      "repo": "PyAutoReduce",
+      "github": "PyAutoLabs/PyAutoReduce",
+      "projects": [
+        {
+          "id": "reduce",
+          "name": "PyAutoReduce"
+        }
+      ],
+      "relations": [
+        "software"
+      ]
+    },
+    {
+      "id": "reduce-workspace",
+      "name": "autoreduce_workspace",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/autoreduce_workspace"
+        }
+      ],
+      "repo": "autoreduce_workspace",
+      "github": "PyAutoLabs/autoreduce_workspace",
+      "projects": [
+        {
+          "id": "reduce",
+          "name": "PyAutoReduce"
+        }
+      ],
+      "relations": [
+        "workspaces"
+      ]
+    },
+    {
+      "id": "reduce-guide",
+      "name": "PyAutoReduce project guide",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/PyAutoReduce/tree/main/README.md"
+        }
+      ],
+      "repo": "PyAutoReduce",
+      "github": "PyAutoLabs/PyAutoReduce",
+      "projects": [
+        {
+          "id": "reduce",
+          "name": "PyAutoReduce"
+        }
+      ],
+      "relations": [
+        "documentation"
+      ]
+    },
+    {
+      "id": "cti",
+      "name": "PyAutoCTI",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/PyAutoCTI"
+        }
+      ],
+      "repo": "PyAutoCTI",
+      "github": "PyAutoLabs/PyAutoCTI",
+      "projects": [
+        {
+          "id": "cti",
+          "name": "PyAutoCTI"
+        }
+      ],
+      "relations": [
+        "software"
+      ]
+    },
+    {
+      "id": "cti-workspace",
+      "name": "autocti_workspace",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/autocti_workspace"
+        }
+      ],
+      "repo": "autocti_workspace",
+      "github": "PyAutoLabs/autocti_workspace",
+      "projects": [
+        {
+          "id": "cti",
+          "name": "PyAutoCTI"
+        }
+      ],
+      "relations": [
+        "workspaces"
+      ]
+    },
+    {
+      "id": "cti-docs",
+      "name": "PyAutoCTI documentation",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/PyAutoCTI/tree/main/docs"
+        },
+        {
+          "label": "Published",
+          "url": "https://pyautocti.readthedocs.io/en/latest/"
+        }
+      ],
+      "repo": "PyAutoCTI",
+      "github": "PyAutoLabs/PyAutoCTI",
+      "projects": [
+        {
+          "id": "cti",
+          "name": "PyAutoCTI"
+        }
+      ],
+      "relations": [
+        "documentation"
+      ]
+    },
+    {
+      "id": "cti-assistant",
+      "name": "autocti_assistant",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/autocti_assistant"
+        }
+      ],
+      "repo": "autocti_assistant",
+      "github": "PyAutoLabs/autocti_assistant",
+      "projects": [
+        {
+          "id": "cti",
+          "name": "PyAutoCTI"
+        }
+      ],
+      "relations": [
+        "assistants"
+      ]
+    },
+    {
+      "id": "cti-visualization",
+      "name": "autocti_visualization",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/autocti_visualization"
+        }
+      ],
+      "repo": "autocti_visualization",
+      "github": "PyAutoLabs/autocti_visualization",
+      "projects": [
+        {
+          "id": "cti",
+          "name": "PyAutoCTI"
+        }
+      ],
+      "relations": [
+        "visualization"
+      ]
+    },
+    {
+      "id": "cti-tests",
+      "name": "autocti_workspace_test",
+      "links": [
+        {
+          "label": "Source",
+          "url": "https://github.com/PyAutoLabs/autocti_workspace_test"
+        }
+      ],
+      "repo": "autocti_workspace_test",
+      "github": "PyAutoLabs/autocti_workspace_test",
+      "projects": [
+        {
+          "id": "cti",
+          "name": "PyAutoCTI"
+        }
+      ],
+      "relations": [
+        "tests"
+      ]
+    }
+  ]
+}

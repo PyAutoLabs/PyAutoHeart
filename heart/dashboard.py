@@ -302,6 +302,10 @@ class Board:
     refreshed_at: str | None = None
 
 
+    resource_catalogue: dict | None = None
+    resource_repos: dict = field(default_factory=dict)
+    resource_now: datetime.datetime | None = None
+
 # --- verdict/state → glyph & colour maps ------------------------------------
 _VERDICT_STATE = {"red": FAIL, "yellow": WARN, "stale": INFO, "green": OK}
 _VERDICT_WORD = {"red": "RED", "yellow": "YELLOW", "stale": "STALE", "green": "GREEN"}
@@ -683,6 +687,7 @@ def build_board(
     now: datetime.datetime | None = None,
     stale_after: int = STALE_AFTER_SECONDS,
     devbox: dict | None = None,
+    resource_catalogue: dict | None = None,
 ) -> Board:
     """Assemble the format-agnostic :class:`Board`. Pure; never raises."""
     snapshot = _portable_cached_prompts(snapshot or {})
@@ -1113,6 +1118,9 @@ def build_board(
                               "and timeouts, and route confirmed repairs through the bug and start-dev skills."}
 
     board = Board(
+        resource_catalogue=resource_catalogue,
+        resource_repos=repos,
+        resource_now=now,
         verdict=v,
         score=score,
         ts=ts,
@@ -2283,6 +2291,8 @@ def _html_actions(board: Board) -> str:
 
 
 def _render_html(board: Board) -> str:
+    from heart.resources import render as render_resources
+    resource_html = render_resources(board.resource_catalogue, board.resource_repos, now=board.resource_now) if board.resource_catalogue is not None else ""
     word = _VERDICT_WORD.get(board.verdict, "GREEN")
     age = format_age(board.age_seconds, stale=board.stale)
     rows = []
@@ -2407,6 +2417,7 @@ def _render_html(board: Board) -> str:
 <body>
 {hero}
 {panel}
+{resource_html}
 <h2 id="observed-checks">Observed checks</h2>
 <div class="board">{''.join(rows)}</div>
 <section aria-labelledby="score-heading">
@@ -2607,11 +2618,13 @@ def render(
     quiet: bool = False,
     stale_after: int = STALE_AFTER_SECONDS,
     devbox: dict | None = None,
+    resource_catalogue: dict | None = None,
 ) -> str:
     """Render the unified board in ``fmt``. Pure: snapshot in → string out."""
     board = build_board(
         snapshot, verdict, validation,
         unobserved=unobserved, now=now, stale_after=stale_after, devbox=devbox,
+        resource_catalogue=resource_catalogue,
     )
     if fmt == "term":
         return _render_term(board, verdict or {}, quiet=quiet)
@@ -2643,6 +2656,7 @@ def main(argv: list[str] | None = None) -> int:
     """
     import argparse
     import os
+    import pathlib
 
     from heart import readiness, state
 
@@ -2662,6 +2676,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--devbox", metavar="PATH", default=None,
                     help="published dev-box board JSON to fill unobserved rows "
                          "(default under --cloud: state/devbox_board.json if present)")
+    ap.add_argument("--resources", type=pathlib.Path, default=pathlib.Path(__file__).resolve().parents[1] / "resources.json", help="Scientist public resource catalogue")
     ap.add_argument("--quiet", action="store_true", help="suppress drill-down details (term)")
     ap.add_argument("--no-color", action="store_true", help="disable ANSI colours")
     ap.add_argument("--stale-after", type=int, default=STALE_AFTER_SECONDS,
@@ -2723,8 +2738,10 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(badge_endpoint(board)))
         return 0
 
+    from heart.resources import load as load_resources
+    resource_catalogue = load_resources(ns.resources) if fmt == "html" and ns.resources.is_file() else None
     print(render(snapshot, verdict, validation, fmt=fmt, unobserved=unobserved,
-                 quiet=ns.quiet, stale_after=ns.stale_after, devbox=devbox))
+                 quiet=ns.quiet, stale_after=ns.stale_after, devbox=devbox, resource_catalogue=resource_catalogue))
     return 0
 
 

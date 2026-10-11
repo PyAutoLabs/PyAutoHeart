@@ -196,3 +196,20 @@ Cloud observations take precedence for families the cloud actually measured;
 otherwise published findings fill the gap. Missing or malformed inventories
 remain unknown, and neither aggregate time nor publication time refreshes old
 or undated evidence. This transport does not change release readiness.
+
+## Test-workspace resource view
+
+The dashboard CLI loads resources.json (or --resources), a generated public
+Scientist catalogue, and displays explicit `tests` relationships against cached
+repository CI observations. It never infers test ownership from suffixes or
+changes readiness. Per-workflow outcomes, observed time and source revision are
+shown when supplied; test-level counts/coverage are explicitly unavailable.
+Evidence older than 24 hours is labelled outdated for this navigation view;
+adverse conclusions remain visible. This display threshold is not a release gate.
+
+Regenerate the catalogue offline using Scientist's `--catalogue --repos
+<PathToMind>/repos.yaml` export, review it, then replace resources.json only after
+successful validation. The same export feeds Broca. Relationships and identities
+remain owned by Scientist and Mind; this file is a derived public snapshot, not a
+hand-maintained registry. Missing catalogues do not affect readiness. Rendering
+collects no new evidence, and opening a disclosure triggers no execution.
