@@ -491,7 +491,7 @@ def _classify_step():
 
 
 def _classify(tmp_path, files, *, event_name="pull_request", base=A_BASE,
-              fetch_ok=True):
+              fetch_ok=True, runner=".github/scripts/run_smoke.py"):
     """Run the real `Classify the diff` body over a synthetic file list.
 
     Returns ``(flags, step_summary)`` — the `$GITHUB_OUTPUT` pairs the step
@@ -512,6 +512,7 @@ def _classify(tmp_path, files, *, event_name="pull_request", base=A_BASE,
         PATH=f"{bindir}{os.pathsep}{env['PATH']}",
         BASE=base,
         EVENT_NAME=event_name,
+        RUNNER=runner,
         GITHUB_OUTPUT=str(out),
         GITHUB_STEP_SUMMARY=str(summary),
         FAKE_GIT_FILES="\n".join(files),
@@ -666,3 +667,19 @@ def test_a_relevance_skip_shows_the_reader_what_it_classified(tmp_path):
     for pattern in ("scripts/", "config/", ".github/",
                     "smoke_tests.txt", "smoke_notebooks.txt"):
         assert pattern in summary, pattern
+
+
+@pytest.mark.parametrize("runner", [".github/scripts/run_tests.py", ".github/scripts/retime.py", ""])
+@pytest.mark.parametrize("path", ["util.py", "tests/test_util.py", "catalogue/export.py", "pytest.ini", "pyproject.toml"])
+def test_custom_runners_run_for_non_smoke_code(tmp_path, runner, path):
+    flags, _ = _classify(tmp_path, [path], runner=runner)
+    assert flags == {"docs_only": "false", "no_smoke_relevant_changes": "false"}
+
+
+def test_custom_runner_keeps_docs_only_skip(tmp_path):
+    flags, _ = _classify(tmp_path, ["README.md"], runner=".github/scripts/run_tests.py")
+    assert flags == {"docs_only": "true", "no_smoke_relevant_changes": "false"}
+
+
+def test_runner_input_reaches_classifier():
+    assert _classify_step()["env"]["RUNNER"] == "${{ inputs.runner }}"

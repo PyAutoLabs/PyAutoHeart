@@ -147,6 +147,7 @@ jobs:
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           EVENT_NAME: ${{ github.event_name }}
+          RUNNER: ${{ inputs.runner }}
         run: |
           docs_only=false
           no_smoke_relevant_changes=false
@@ -181,7 +182,10 @@ jobs:
               # side is free because Heart never reads it; narrowing the `main`
               # side would cost the readiness gate its signal. So a push to
               # `main` keeps running the full matrix, always.
-              if [ "$EVENT_NAME" = "pull_request" ]; then
+              # Custom runners may consume root Python modules or tests/.
+              # Only the default smoke runner has this narrower input surface.
+              if [ "$EVENT_NAME" = "pull_request" ] \
+                 && [ "$RUNNER" = ".github/scripts/run_smoke.py" ]; then
                 no_smoke_relevant_changes=true
                 while IFS= read -r f; do
                   case "$f" in
