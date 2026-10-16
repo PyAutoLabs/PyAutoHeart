@@ -195,7 +195,7 @@ def test_workspace_installer_is_the_dependency_source_of_truth(tmp_path, monkeyp
     assert any(command == ["bash", str(installer)] for command, _ in calls)
     assert all("./LibraryA" not in command for command, _ in calls)
     installer_call = next(kwargs for command, kwargs in calls if command[0] == "bash")
-    assert installer_call["cwd"] == root
+    assert not installer_call["cwd"].exists()  # temporary layout cleaned up
     assert installer_call["env"]["PYTHON_VERSION"] == "3.12"
 
 
@@ -230,8 +230,8 @@ optional = ["nufftax>=0.6"]
         {"executable": "/fake/python", "version": "3.12.8"},
     )
 
-    assert any("./LibraryB" in command for command in commands)
-    assert any("./LibraryB[optional]" in command for command in commands)
+    assert any(str(root / "LibraryB") in command for command in commands)
+    assert any(str(root / "LibraryB") + "[optional]" in command for command in commands)
     assert all("nufftax" not in command for command in commands)
 
 
@@ -664,3 +664,48 @@ def test_pip_check_passes_through_when_clean(tmp_path, monkeypatch):
     spec = smoke.WorkspaceSpec("demo", "demo_workspace", ("LibraryB",), True)
 
     smoke._pip_check(Path("/fake/python"), {}, spec)  # must not raise
+
+
+@pytest.mark.parametrize('grouped', [False, True])
+@pytest.mark.parametrize('fail', [False, True])
+def test_installer_sees_flat_chain_and_cleans_up(tmp_path, monkeypatch, grouped, fail):
+    spec = smoke.WorkspaceSpec('demo', 'demo_workspace', ('LibraryA',))
+    root = make_tree(tmp_path, spec)
+    library = root / 'LibraryA'
+    if grouped:
+        (root / 'family').mkdir()
+        library.rename(root / 'family' / 'LibraryA')
+        library = root / 'family' / 'LibraryA'
+    monkeypatch.setattr(smoke._workspace, 'repo_path',
+                        lambda root, name: library if name == 'LibraryA' else root / name)
+    installer = root / spec.directory / '.github/scripts/smoke_install.sh'
+    installer.write_text('set -e\ntest -f ./LibraryA/pyproject.toml\n' +
+                         ('exit 17\n' if fail else ''))
+    staging = []
+    original = smoke._run
+    def run(command, **kwargs):
+        if command[0] == 'bash':
+            staging.append(kwargs['cwd'])
+            assert (kwargs['cwd'] / 'LibraryA').resolve() == library
+            return original(command, **kwargs)
+        return completed()
+    monkeypatch.setattr(smoke, '_run', run)
+    if fail:
+        with pytest.raises(subprocess.CalledProcessError):
+            smoke._install_environment(tmp_path / 'env', root, spec, {'version': '3.12.8'})
+    else:
+        smoke._install_environment(tmp_path / 'env', root, spec, {'version': '3.12.8'})
+    assert staging and not staging[0].exists()
+    assert library.is_dir()
+
+
+def test_installer_rejects_missing_chain_checkout(tmp_path, monkeypatch):
+    spec = smoke.WorkspaceSpec('demo', 'demo_workspace', ('LibraryA',))
+    root = make_tree(tmp_path, spec)
+    (root / 'LibraryA/pyproject.toml').unlink()
+    (root / 'LibraryA').rmdir()
+    calls = []
+    monkeypatch.setattr(smoke, '_run', lambda command, **kw: calls.append(command))
+    with pytest.raises(smoke.SmokeEnvironmentError, match='Missing dependency checkout LibraryA'):
+        smoke._install_environment(tmp_path / 'env', root, spec, {'version': '3.12.8'})
+    assert not any(c[0] == 'bash' for c in calls)
