@@ -215,3 +215,24 @@ hand-maintained registry. Missing catalogues do not affect readiness. Rendering
 collects no new evidence, and opening a disclosure triggers no execution.
 
 Resource CI is displayed only when available run URLs match the catalogue canonical GitHub repository. A reused local key, absent run provenance or foreign workflow URL cannot establish resource health; those rows show unavailable.
+
+## Reusable smoke workflow: custom runners and skipped checks
+
+The smoke-only PR path filter applies only to the default
+`.github/scripts/run_smoke.py`. A non-default `runner` bypasses that filter:
+pytest may depend on root Python modules, `tests/`, or packaging configuration.
+The separate docs-only allowlist still applies. Unknown or unavailable diffs
+continue to run the matrix. Existing callers need no new input.
+
+Caller audit (2026-10-16): the pipeline's `tests.yml` supplies
+`.github/scripts/run_tests.py` to both unit and slow jobs; both inherit the fix.
+`autolens_workspace_test` and `autogalaxy_workspace_test` supply
+`.github/scripts/retime.py` in their dispatch-only `retime.yml`; dispatch was
+already outside the PR filter. Default workspace smoke callers retain their
+existing filter. These are the custom-runner callers found in the organisation
+code search; live adoption is checked separately from this source audit.
+
+A skipped required job on a PR is **not green test evidence**, even if GitHub
+allows merging. Review the job conclusion and why it skipped. Heart's main-head
+CI rollup likewise requires explicit success; a synthetic classifier regression
+is not a substitute for observing the pipeline's unit/slow jobs on a live PR.
