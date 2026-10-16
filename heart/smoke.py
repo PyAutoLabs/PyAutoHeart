@@ -24,6 +24,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import tomllib
 import uuid
 from dataclasses import dataclass
@@ -260,7 +261,7 @@ def _optional_local_targets(organism_root: Path, chain: Iterable[str]) -> list[s
             data = tomllib.load(stream)
         extras = data.get("project", {}).get("optional-dependencies", {})
         if "optional" in extras:
-            targets.append(f"./{repo}[optional]")
+            targets.append(f"{pyproject.parent.resolve()}[optional]")
     return targets
 
 
@@ -314,13 +315,28 @@ def _install_environment(
     workspace = _workspace.repo_path(organism_root, spec.directory)
     installer = workspace / ".github" / "scripts" / "smoke_install.sh"
     if installer.is_file():
-        _run(["bash", installer], cwd=organism_root, env=env)
+        # The workspace-owned epilogue has the same flat contract as CI.
+        # Resolve from the real root first, then expose only this dependency
+        # chain. Never alter the root or leave symlinks behind after failure.
+        resolved = {}
+        for repo in spec.chain:
+            if Path(repo).name != repo or repo in {".", ".."}:
+                raise SmokeEnvironmentError(f"Invalid dependency checkout name: {repo}")
+            path = _workspace.repo_path(organism_root, repo).resolve()
+            if not path.is_dir():
+                raise SmokeEnvironmentError(f"Missing dependency checkout {repo}: {path}")
+            resolved[repo] = path
+        with tempfile.TemporaryDirectory(prefix="pyauto-smoke-install-") as directory:
+            staging = Path(directory)
+            for repo, path in resolved.items():
+                (staging / repo).symlink_to(path, target_is_directory=True)
+            _run(["bash", installer.resolve()], cwd=staging, env=env)
         return
 
     # Legacy workspaces have no CI epilogue yet.  Install their local chain and
     # discover the conventional `optional` extras from package metadata; Heart
     # does not carry a second list of third-party packages.
-    local_targets = [f"./{repo}" for repo in spec.chain]
+    local_targets = [str(_workspace.repo_path(organism_root, repo).resolve()) for repo in spec.chain]
     _run([python, "-m", "pip", "install", *local_targets], cwd=organism_root, env=env)
     optional_targets = _optional_local_targets(organism_root, spec.chain)
     if optional_targets:

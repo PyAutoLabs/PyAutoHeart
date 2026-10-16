@@ -236,3 +236,15 @@ A skipped required job on a PR is **not green test evidence**, even if GitHub
 allows merging. Review the job conclusion and why it skipped. Heart's main-head
 CI rollup likewise requires explicit success; a synthetic classifier regression
 is not a substitute for observing the pipeline's unit/slow jobs on a live PR.
+
+## Local smoke installer paths
+
+`heart.smoke` resolves the dependency chain through the shared repository resolver
+before running a workspace's `smoke_install.sh`. A temporary directory exposes
+those checkouts under their flat repository names, so the workspace-owned script
+keeps its existing CI contract on both flat and grouped local layouts. The links
+are removed on success or failure; original checkouts are never relocated.
+Missing chain directories fail explicitly. Legacy workspaces without an installer
+use resolved absolute paths for local packages and optional extras.
+The existing environment fingerprint/preflight remains authoritative: a failed
+rebuild cannot publish a successful environment marker or silently use old state.
