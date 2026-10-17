@@ -523,7 +523,8 @@ def test_the_legacy_unit_buckets_keep_the_sections_wording_truthful(tmp_path):
     assert unit["red_count"] == 1 and unit["yellow_count"] == 0
     (entry,) = unit["red"]
     assert entry == {"repo": REPO, "test": NODEID, "latest_seconds": 8.0,
-                     "baseline_seconds": 2.0, "ratio": 4.0, "samples": 1}
+                     "baseline_seconds": 2.0, "ratio": 4.0, "samples": 1,
+                     "run_speed_factor": 1.0, "normalized_seconds": 8.0}
 
     side = _sidecar(tmp_path, sub="yellow", junit=_junit(_case(time="4.0")))
     roll = ut.aggregate([side], "T", THRESHOLDS, record_prev_rows=_prev_rows(2.0))
@@ -873,3 +874,47 @@ def test_drift_is_never_classified_across_two_known_cache_states(tmp_path):
     (row,) = ut.aggregate([side], "T", THRESHOLDS,
                           record_prev_rows=_prev_rows(1.5))["tests"]
     assert row["state"] == "warn"
+
+
+def test_rolling_test_baseline_normalizes_common_runner_speed(tmp_path):
+    def record(run, at, values, python="3.12", cache=None):
+        return {"date": at[:10], "at": at, "python": python, "run_id": run,
+                "cache": cache or {}, "slowest": values}
+    nodes = {f"tests/test_demo.py::test_{i}": 6.0 for i in range(7)}
+    path = tmp_path / "RepoA.jsonl"
+    records = [record(i, f"2026-10-{i:02d}T10:00:00Z", nodes) for i in range(1, 5)]
+    # One exceptionally quick runner must not become every test's baseline.
+    records.append(record(5, "2026-10-05T10:00:00Z", {n: 1.5 for n in nodes}))
+    # Future and current-run evidence are excluded even if appended last.
+    records.append(record(9, "2026-10-09T10:00:00Z", {n: 1000 for n in nodes}))
+    path.write_text("\n".join(json.dumps(r) for r in records))
+    current = record(6, "2026-10-06T10:00:00Z", nodes)
+    previous = timings.previous_unit_rows(tmp_path, current_runs={(REPO, "3.12"): current}, window=7)
+    assert all(r["seconds"] == 6.0 and r["samples"] == 5 for r in previous.values())
+    for common_speed in (1.0, 2.1):
+        latest = [{"nodeid": n, "seconds": v * common_speed} for n, v in nodes.items()]
+        latest[0]["seconds"] *= 4
+        leg = {**current, "slowest": latest}
+        roll = ut.aggregate([{"name": REPO, "legs": [leg]}], "T", record_prev_rows=previous)
+        unit, _ = ut.legacy_summaries(roll)
+        assert unit["red_count"] == 1 and unit["yellow_count"] == 0
+        assert unit["red"][0]["test"] == latest[0]["nodeid"]
+        assert unit["red"][0]["ratio"] == 4.0
+        assert abs(unit["red"][0]["run_speed_factor"] - common_speed) < 1e-10
+
+
+def test_rolling_baseline_respects_python_epoch_and_cache(tmp_path):
+    records = [
+        {"date": "2026-10-01", "at": "2026-10-01T00:00:00Z", "run_id": 1,
+         "python": "3.12", "cache": {"jax": "hit", "numba": "hit"}, "slowest": {NODEID: 6}},
+        {"date": "2026-10-02", "at": "2026-10-02T00:00:00Z", "run_id": 2,
+         "python": "3.12", "cache": {"jax": "miss", "numba": "miss"}, "slowest": {NODEID: 100}},
+        {"date": "2026-10-03", "at": "2026-10-03T00:00:00Z", "run_id": 3,
+         "python": "3.13", "cache": {}, "slowest": {NODEID: 200}},
+    ]
+    (tmp_path / "RepoA.jsonl").write_text("\n".join(json.dumps(r) for r in records))
+    current = {**records[0], "run_id": 4, "at": "2026-10-04T00:00:00Z"}
+    rows = timings.previous_unit_rows(tmp_path, current_runs={(REPO, "3.12"): current}, window=7)
+    assert rows[(REPO, "3.12", NODEID)]["seconds"] == 6
+    assert rows[(REPO, "3.12", NODEID)]["samples"] == 1
+    assert not timings.previous_unit_rows(tmp_path, since="2026-10-02", current_runs={(REPO, "3.12"): current}, window=7)

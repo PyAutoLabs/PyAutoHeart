@@ -565,6 +565,11 @@ def aggregate(
 ) -> dict[str, Any]:
     """Fold the per-repo sidecars + the committed record into the rollup.
 
+    Test baselines use seven distinct prior runs from the same Python leg
+    and compatible cache state. A median suite speed ratio (at least five
+    shared tests with three samples each) normalizes common runner variation.
+    Raw seconds, baseline run IDs, sample counts and the factor remain visible.
+
     ``record_prev_rows`` is ``{(repo, python, nodeid): prev_row}`` and
     ``record_import_history`` is ``{(repo, package, python): [seconds]}``, both
     out of ``heart.timings`` (``timings/unit/<repo>.jsonl``). Unlike
@@ -614,6 +619,24 @@ def aggregate(
             slowest = [row for row in (leg.get("slowest") or [])
                        if isinstance(row, dict)]
 
+            # At least five shared tests with three prior observations: a
+            # lone slow test must not explain away its own regression. The
+            # median resists isolated outliers; sparse histories stay unscaled.
+            speed_ratios = []
+            for row in slowest:
+                previous = prev_rows.get((repo, python, str(row.get("nodeid") or "")), {})
+                baseline = _as_float(previous.get("seconds"))
+                seconds = _as_float(row.get("seconds"))
+                previous_cache = previous.get("cache_state")
+                compatible = not (leg_cache_state in {"hit", "miss"}
+                                  and previous_cache in {"hit", "miss"}
+                                  and leg_cache_state != previous_cache)
+                if (compatible and previous.get("run_id") != run_id
+                        and previous.get("samples", 1) >= 3
+                        and baseline and baseline > 0 and seconds and seconds > 0):
+                    speed_ratios.append(seconds / baseline)
+            run_speed_factor = statistics.median(speed_ratios) if len(speed_ratios) >= 5 else 1.0
+
             for row in slowest:
                 nodeid = str(row.get("nodeid") or "")
                 seconds = _as_float(row.get("seconds"))
@@ -621,7 +644,7 @@ def aggregate(
                     continue
                 prev_row = prev_rows.get((repo, python, nodeid))
                 state, ratio, delta = classify_test_drift(
-                    seconds, prev_row, thr, run_id=run_id,
+                    seconds / run_speed_factor, prev_row, thr, run_id=run_id,
                     cache=leg_cache_state, prev_cache_key="cache_state",
                 )
                 prev_s = _as_float((prev_row or {}).get("seconds"))
@@ -636,13 +659,22 @@ def aggregate(
                     "run_id": run_id,
                     "run_url": run_url,
                     "prev_s": prev_s,
+                    "samples": (prev_row or {}).get("samples", 1 if prev_row else 0),
+                    "run_speed_factor": run_speed_factor,
+                    "normalized_seconds": seconds / run_speed_factor,
+                    "baseline_run_ids": (prev_row or {}).get("baseline_run_ids", []),
                     "prev_run_id": prev_run_id,
                     "ratio": ratio,
                     "delta_s": delta,
                     "state": state,
-                    "prompt": (test_prompt(repo, nodeid, prev_s, seconds,
-                                           prev_run_url, run_url)
-                               if state == "warn" else None),
+                    "prompt": ((
+                        f"/hygiene perf: {repo} {nodeid}: {seconds:.2f}s raw, "
+                        f"{seconds / run_speed_factor:.2f}s normalized vs {prev_s:.2f}s "
+                        f"median ({(prev_row or {}).get('samples', 1)} samples; "
+                        f"runner factor {run_speed_factor:.3f}); {run_url}"
+                    ) if state == "warn" and (prev_row or {}).get("samples", 1) > 1
+                        else test_prompt(repo, nodeid, prev_s, seconds, prev_run_url, run_url)
+                        if state == "warn" else None),
                 })
 
             imported = leg.get("import") if isinstance(leg.get("import"), dict) else None
@@ -748,9 +780,9 @@ def legacy_summaries(
             "latest_seconds": round(_as_float(row.get("seconds")) or 0.0, 3),
             "baseline_seconds": round(_as_float(row.get("prev_s")) or 0.0, 3),
             "ratio": ratio,
-            # One recorded previous observation is the whole baseline here (the
-            # both-gates rule compares run to run), never a rolling window.
-            "samples": 1,
+            "samples": row.get("samples", 1),
+            "run_speed_factor": row.get("run_speed_factor", 1.0),
+            "normalized_seconds": row.get("normalized_seconds", row.get("seconds")),
         }
         if ratio > LEGACY_RED_FACTOR:
             unit["red"].append(entry)
@@ -998,7 +1030,7 @@ def main(argv: list[str] | None = None) -> int:
         rollup = aggregate(
             sidecars, ts, thresholds,
             record_prev_rows=_timings.previous_unit_rows(
-                unit_dir, since=since, current_runs=current_runs),
+                unit_dir, since=since, current_runs=current_runs, window=7),
             record_import_history=_timings.import_history(
                 unit_dir, int(thresholds.get("import_window", 7) or 7),
                 since=since,

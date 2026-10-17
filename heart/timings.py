@@ -106,6 +106,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
+import statistics
 import sys
 from pathlib import Path
 from typing import Any
@@ -741,8 +742,13 @@ def append_unit(path: Path | str, lines: list[dict[str, Any]]) -> int:
 def previous_unit_rows(
     unit_dir: Path | str = UNIT_DIR, since: str = "",
     current_runs: dict[tuple[str, str], dict[str, Any]] | None = None,
+    window: int = 1,
 ) -> dict[tuple[str, str, str], dict[str, Any]]:
-    """``{(repo, python, nodeid): prev_row}`` — the last recorded observation.
+    """``{(repo, python, nodeid): prev_row}`` — a comparable prior baseline.
+
+    ``window > 1`` selects a median over the latest distinct comparable runs.
+    Chronology, Python leg, epoch and known cache-state boundaries are honored.
+    Missing top-N test measurements are never treated as zero.
 
     The shape is exactly what ``smoke_timings.classify_drift`` expects of a
     previous row (``seconds``/``run_id``/``run_url``/``cache_state``), which is
@@ -791,6 +797,7 @@ def previous_unit_rows(
         repo = path.name[: -len(".jsonl")]
         records, _ = read_jsonl(path)
         latest: dict[str, dict[str, Any]] = {}
+        candidates: dict[str, list[dict[str, Any]]] = {}
         for record in records:
             if not _within_epoch(record, since):
                 continue
@@ -804,10 +811,36 @@ def previous_unit_rows(
                 before, now = observed(record), observed(current)
                 if before is None or now is None or before[1] >= now[0]:
                     continue
+                if window > 1:
+                    current_cache = unit_cache_state(current.get("cache"))
+                    prior_cache = unit_cache_state(record.get("cache"))
+                    if current_cache in {"hit", "miss"} and prior_cache in {"hit", "miss"} and current_cache != prior_cache:
+                        continue
+                candidates.setdefault(python, []).append(record)
                 previous = latest.get(python)
                 if previous is not None and observed(previous)[1] >= before[1]:
                     continue
+            if current_runs is None:
+                candidates.setdefault(python, []).append(record)
             latest[python] = record
+        samples_by_test = {}
+        if window > 1:
+            for python, records in candidates.items():
+                if current_runs is not None:
+                    records.sort(key=lambda record: observed(record)[1])
+                unique = {str(record.get("run_id")): record for record in records}
+                records = list(unique.values())[-window:]
+                values = {}
+                for record in records:
+                    for nodeid, value in (record.get("slowest") or {}).items():
+                        seconds = _as_float(value)
+                        if seconds is not None and seconds > 0:
+                            values.setdefault(nodeid, []).append(seconds)
+                baseline = dict(latest[python])
+                baseline["slowest"] = {nodeid: statistics.median(v) for nodeid, v in values.items()}
+                baseline["baseline_run_ids"] = [record.get("run_id") for record in records]
+                latest[python] = baseline
+                samples_by_test.update({(python, nodeid): len(v) for nodeid, v in values.items()})
         for python, record in latest.items():
             slowest = record.get("slowest")
             if not isinstance(slowest, dict):
@@ -818,6 +851,8 @@ def previous_unit_rows(
                     continue
                 out[(repo, python, str(nodeid))] = {
                     "seconds": seconds,
+                    **({"samples": samples_by_test.get((python, str(nodeid)), 1),
+                        "baseline_run_ids": record.get("baseline_run_ids", [])} if window > 1 else {}),
                     "run_id": record.get("run_id"),
                     "run_url": str(record.get("run_url") or ""),
                     # The state this baseline was measured under, so
