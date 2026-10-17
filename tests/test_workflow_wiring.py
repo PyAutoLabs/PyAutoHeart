@@ -370,3 +370,28 @@ def test_release_fft_workaround_preserves_flags_and_is_scoped_to_release(tmp_pat
             cwd=tmp_path, env=env, capture_output=True, text=True, check=True,
         )
         assert result.stdout == ((existing + " ") if existing else "") + "--xla_cpu_multi_thread_eigen=false"
+
+
+def test_pipeline_is_selected_for_smoke_and_routes_to_its_checkout(tmp_path):
+    import os
+    import subprocess
+
+    data = _load("workspace-validation.yml")
+    steps = data["jobs"]["find_scripts"]["steps"]
+    command = next(s["run"] for s in steps if s.get("id") == "script_matrix")
+    stub = tmp_path / "PyAutoHands/autohands/script_matrix.py"
+    stub.parent.mkdir(parents=True)
+    stub.write_text("import sys; print(' '.join(sys.argv[1:]))")
+    output = tmp_path / "output"
+    for mode, expected in [("smoke", True), ("release", False)]:
+        output.write_text("")
+        subprocess.run(["bash", "-ec", command], cwd=tmp_path,
+                       env={**os.environ, "MODE": mode, "GITHUB_OUTPUT": str(output)}, check=True)
+        assert ("euclid" in output.read_text().split()) is expected
+    route = next(s["run"] for s in data["jobs"]["run_scripts"]["steps"] if s.get("id") == "ws")
+    route = route.replace("${{ matrix.project.name }}", "euclid")
+    output.write_text("")
+    subprocess.run(["bash", "-ec", route], env={**os.environ, "GITHUB_OUTPUT": str(output)}, check=True)
+    registry = yaml.safe_load((WORKFLOWS.parents[1] / "config/repos.yaml").read_text())
+    pipeline = registry["repos"]["pipelines"][0]["name"]
+    assert output.read_text().strip() == f"repo={pipeline}"

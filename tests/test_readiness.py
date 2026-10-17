@@ -1174,3 +1174,15 @@ def test_release_ci_profile_files_no_details_for_out_of_scope_evidence():
 
     assert not any(d["key"] == "test_unknown" for d in v["stale_details"])
     assert any("test run status unknown" in r for r in v["na_reasons"])
+
+
+@pytest.mark.parametrize("conclusion, expected", [("success", "green"), ("failure", "red")])
+def test_pipeline_required_smoke_gates_release(conclusion, expected):
+    snap = make_snapshot()
+    snap["repos"]["PipelineA"] = {
+        "ci_status": _ws_ci("pipelines", **{"Smoke Tests": conclusion})
+    }
+    verdict = compute(snap)
+    assert verdict["verdict"] == expected
+    if expected == "red":
+        assert "PipelineA: Smoke Tests failure on main" in verdict["red_reasons"]

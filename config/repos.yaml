@@ -103,6 +103,7 @@ repos:
 # finding never gates a release, so a green `url_check` cannot mask a red
 # `smoke_tests`.
 required_workflows:
+  pipelines: ["Smoke Tests"]                        # pipeline smoke gates
   libraries: ["Tests"]                              # main.yml (pytest, 3.12 + 3.13)
   workspaces: ["Smoke Tests", "Navigator Check"]    # smoke_tests.yml + navigator_check.yml
   workspaces_test: ["Smoke Tests"]                  # smoke_tests.yml
