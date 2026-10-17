@@ -114,6 +114,7 @@ import datetime
 import json
 import sys
 from pathlib import Path
+from heart.result_provenance import trusted_results
 from typing import Any, Iterable, Sequence
 
 from heart import freeze, state
@@ -610,6 +611,9 @@ def _fold(
                     acc.testpypi_version = txt.splitlines()[0].strip()
             continue
         data = _read_json(path)
+        if not trusted_results(data, path):
+            acc._force_fail = True
+            continue
         kind = _classify(path.name, data)
         if kind == "rehearsal":
             acc.add_rehearsal(data)

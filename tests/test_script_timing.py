@@ -22,6 +22,9 @@ import pytest
 @pytest.fixture
 def tmp_state(tmp_path, monkeypatch):
     """Redirect HEART_STATE_DIR to a tmp dir and reload heart.checks.script_timing."""
+    # These fixtures model historical local reports, not CI-runner artifacts.
+    monkeypatch.delenv("GITHUB_WORKSPACE", raising=False)
+    monkeypatch.delenv("PYAUTO_RESULT_ROOT", raising=False)
     monkeypatch.setenv("HEART_STATE_DIR", str(tmp_path))
     import heart.state as state_mod
     importlib.reload(state_mod)

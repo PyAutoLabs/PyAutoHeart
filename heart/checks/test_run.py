@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from heart import _workspace
+from heart.result_provenance import trusted_results
 
 # Reuse the same root/latest resolution as script_timing.py: the one shared
 # resolver, via heart/_workspace.py, asked for the MAIN checkout — grading
@@ -208,6 +209,8 @@ def _from_per_job(results_dir: Path) -> dict[str, Any]:
     for jp in sorted(results_dir.glob("*__script.json")):
         data = _read_json(jp)
         if not isinstance(data, dict):
+            continue
+        if not trusted_results(data, jp):
             continue
         found = True
         s = data.get("summary", {}) or {}

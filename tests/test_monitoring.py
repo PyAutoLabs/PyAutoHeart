@@ -166,12 +166,13 @@ def test_fresh_published_complete_timing_survives_empty_cloud_slice():
     assert m["complete"] and m["score"] == 100
 
 
-def test_source_run_timestamp_survives_reaggregation(tmp_path):
+def test_source_run_timestamp_survives_reaggregation(tmp_path, monkeypatch):
+    monkeypatch.setenv("PYAUTO_RESULT_ROOT", str(tmp_path))
     import json
     import os
     from heart.checks import script_timing
     path = tmp_path / "example__script.json"
-    path.write_text(json.dumps({"project": "Example", "directory": "scripts", "results": [{"status": "passed", "file": "x.py", "duration_seconds": 2}]}))
+    path.write_text(json.dumps({"project": "Example", "directory": "scripts", "results": [{"status": "passed", "file": str(tmp_path / "x.py"), "duration_seconds": 2}]}))
     old = dt.datetime(2026, 9, 1, tzinfo=dt.timezone.utc).timestamp()
     os.utime(path, (old, old))
     rows = script_timing.scan_latest_results(tmp_path)
