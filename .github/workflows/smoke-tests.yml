@@ -254,6 +254,22 @@ jobs:
         with:
           path: workspace
 
+      - name: Reject tracked validation output
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C workspace ls-files -z > "$RUNNER_TEMP/tracked-paths"
+          bad=0
+          while IFS= read -r -d '' path; do
+            case "$path" in
+              test-results/*|*/test-results/*|*__script.json|smoke_timings.json|*/smoke_timings.json)
+                echo "::error::Tracked validation output: $path"
+                bad=1
+                ;;
+            esac
+          done < "$RUNNER_TEMP/tracked-paths"
+          exit "$bad"
+
       - name: Clone dependency chain + PyAutoHands (matching branch if it exists)
         # DEPTH 1, on the clone and on the matching-branch fetch alike: nothing
         # downstream reads this history. The libraries are `pip install`ed from

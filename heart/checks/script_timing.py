@@ -69,6 +69,7 @@ from typing import Any
 import yaml
 
 from heart import _workspace
+from heart.result_provenance import trusted_results
 
 HEART_STATE_DIR = Path(
     os.environ.get("HEART_STATE_DIR")
@@ -311,6 +312,8 @@ def scan_latest_results(results_dir: Path) -> list[dict[str, Any]]:
         try:
             data = json.loads(json_path.read_text())
         except json.JSONDecodeError:
+            continue
+        if not trusted_results(data, json_path):
             continue
         project = data.get("project", "")
         directory = data.get("directory", "")

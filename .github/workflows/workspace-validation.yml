@@ -622,6 +622,13 @@ jobs:
           path: all-results
           pattern: results-*
           merge-multiple: true
+      - name: Checkout Heart result provenance guard
+        uses: actions/checkout@v4
+        with:
+          repository: PyAutoLabs/PyAutoHeart
+          path: PyAutoHeart
+      - name: Reject foreign result paths before aggregation
+        run: PYTHONPATH=PyAutoHeart python3 -m heart.result_provenance all-results --root "$GITHUB_WORKSPACE"
       - name: Aggregate into report.json
         run: |
           export PYTHONPATH="$PYTHONPATH:$(pwd)/PyAutoHands"
