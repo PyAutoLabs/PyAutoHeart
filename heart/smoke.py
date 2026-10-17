@@ -557,11 +557,33 @@ def _wipe_output(workspace: Path) -> None:
     output = workspace / "output"
     if not output.is_dir() or output.is_symlink():
         return
-    for child in output.iterdir():
-        if child.is_symlink() or child.is_file():
-            child.unlink()
-        elif child.is_dir():
-            shutil.rmtree(child)
+    # Read the index before deleting anything. A failed git read must not turn
+    # an unknown tracked set into permission to wipe user-controlled files.
+    result = subprocess.run(
+        ["git", "ls-files", "-z", "--", "output/"],
+        cwd=workspace, capture_output=True, check=True,
+    )
+    tracked = {
+        workspace / os.fsdecode(name)
+        for name in result.stdout.split(b"\0") if name
+    }
+    protected = tracked | {parent for path in tracked for parent in path.parents}
+
+    def remove_untracked(directory: Path) -> None:
+        for child in directory.iterdir():
+            if child in tracked:
+                continue
+            if child in protected:
+                # A tracked descendant can have a symlink in its place in the
+                # working tree. Preserve it; never follow it outside output/.
+                if child.is_dir() and not child.is_symlink():
+                    remove_untracked(child)
+            elif child.is_symlink() or child.is_file():
+                child.unlink()
+            elif child.is_dir():
+                shutil.rmtree(child)
+
+    remove_untracked(output)
 
 
 def _load_nonempty_lines(path: Path) -> list[str]:
