@@ -882,7 +882,9 @@ def build_board(
                 st, summary = OK, f"{g} tracked tests within baseline"
             details = [
                 f"✗ {e['repo']}  {e['test'].split('::')[-1]}  "
-                f"{e['latest_seconds']:.2f}s vs {e['baseline_seconds']:.2f}s ({e['ratio']}×)"
+                f"{e.get('normalized_seconds', e['latest_seconds']):.2f}s vs {e['baseline_seconds']:.2f}s ({e['ratio']}×)"
+                + (f" · raw {e['latest_seconds']:.2f}s / runner {e['run_speed_factor']:.3f}"
+                   if e.get('run_speed_factor', 1.0) != 1.0 else "")
                 for e in (ut.get("red") or [])[:5]
             ]
             suite_details, timing_html = timing_display.suites(snapshot.get("unit_timings"))
