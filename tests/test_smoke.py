@@ -10,6 +10,48 @@ import pytest
 from heart import smoke
 
 
+def test_wipe_output_preserves_index_and_removes_generated_files(tmp_path):
+    def git(*args):
+        return subprocess.run(
+            ["git", *args], cwd=tmp_path, check=True,
+            capture_output=True, text=True,
+        ).stdout
+
+    git("init")
+    output = tmp_path / "output"
+    (output / "nested").mkdir(parents=True)
+    (output / ".gitignore").write_text("*\n")
+    sentinel = output / "nested" / "keep\n this.txt"
+    sentinel.write_text("tracked\n")
+    git("add", "-f", "output")
+    before = git("status", "--short")
+    (output / "nested" / "generated.txt").write_text("stale")
+    (output / "generated").mkdir()
+    (output / "generated" / "result").write_text("stale")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "safe").write_text("safe")
+    (output / "link").symlink_to(outside, target_is_directory=True)
+    smoke._wipe_output(tmp_path)
+    assert sentinel.read_text() == "tracked\n"
+    assert (output / ".gitignore").exists()
+    assert sorted(p.name for p in output.iterdir()) == [".gitignore", "nested"]
+    assert list((output / "nested").iterdir()) == [sentinel]
+    assert (outside / "safe").read_text() == "safe"
+    # Ignore the deliberately untracked external fixture in the status check.
+    assert git("status", "--short", "--", "output") == before
+
+
+def test_wipe_output_fails_closed_without_git_index(tmp_path):
+    output = tmp_path / "output"
+    output.mkdir()
+    sentinel = output / "keep"
+    sentinel.write_text("safe")
+    with pytest.raises(subprocess.CalledProcessError):
+        smoke._wipe_output(tmp_path)
+    assert sentinel.read_text() == "safe"
+
+
 # Fixture repo and root names are deliberately synthetic (LibraryA/LibraryB
 # chains under an `organism` root): nothing in smoke.py matches a spec against
 # a real repo list, so a real name here would be an instance fact in organ code
