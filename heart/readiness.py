@@ -109,7 +109,7 @@ RELEASE_READY_FILE = state.HEART_STATE_DIR / "release_ready.json"
 # (see config/repos.yaml `required_workflows`). A red `smoke_tests` on a
 # workspace's main is a real release blocker — a green `url_check` cannot mask
 # it because url is not a required workflow.
-GATED_WORKSPACE_GROUPS = frozenset({"workspaces", "workspaces_test", "howto"})
+GATED_WORKSPACE_GROUPS = frozenset({"workspaces", "workspaces_test", "howto", "pipelines"})
 
 # gate key -> (penalty per occurrence, cap). Score = 100 - sum(min(n*w, cap)).
 # Advisory only; colour is decided by reason presence, not by score.

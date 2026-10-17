@@ -117,6 +117,7 @@ jobs:
             [autofit_test]=autofit_workspace_test [autogalaxy_test]=autogalaxy_workspace_test
             [autolens_test]=autolens_workspace_test
             [howtogalaxy]=HowToGalaxy [howtolens]=HowToLens [howtofit]=HowToFit
+            [euclid]=euclid_strong_lens_modeling_pipeline
           )
           for proj in "${!WS[@]}"; do
             git clone --depth 1 "https://github.com/PyAutoLabs/${WS[$proj]}" "$proj"
@@ -129,11 +130,11 @@ jobs:
           # mode=release scopes to workspace + workspace_test only (per the M3
           # spec) — HowTo* are tutorial repos with no profile_release.yaml and
           # aren't part of the release-fidelity surface. mode=smoke keeps the
-          # full 9-project sweep, unchanged.
+          # full workspace/tutorial sweep plus the Euclid pipeline.
           if [ "$MODE" = "release" ]; then
             PROJECTS="autofit autogalaxy autolens autofit_test autogalaxy_test autolens_test"
           else
-            PROJECTS="autofit autogalaxy autolens autofit_test autogalaxy_test autolens_test howtogalaxy howtolens howtofit"
+            PROJECTS="autofit autogalaxy autolens autofit_test autogalaxy_test autolens_test howtogalaxy howtolens howtofit euclid"
           fi
           matrix="$(python3 PyAutoHands/autohands/script_matrix.py $PROJECTS)"
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
@@ -215,6 +216,7 @@ jobs:
             howtogalaxy)     echo "repo=HowToGalaxy" >> "$GITHUB_OUTPUT" ;;
             howtolens)       echo "repo=HowToLens" >> "$GITHUB_OUTPUT" ;;
             howtofit)        echo "repo=HowToFit" >> "$GITHUB_OUTPUT" ;;
+            euclid)          echo "repo=euclid_strong_lens_modeling_pipeline" >> "$GITHUB_OUTPUT" ;;
             *)               echo "repo=autolens_workspace_test" >> "$GITHUB_OUTPUT" ;;
           esac
       - name: Checkout workspace
@@ -473,10 +475,10 @@ jobs:
         python-version: ["3.12"]
         project: ${{ fromJSON(needs.find_scripts.outputs.matrix) }}
     steps:
-      - name: Gate (*_test workspaces have no notebooks)
+      - name: Gate (test workspaces and pipelines have no notebook sweep)
         id: gate
         run: |
-          if [[ "${{ matrix.project.name }}" == *_test ]]; then
+          if [[ "${{ matrix.project.name }}" == *_test || "${{ matrix.project.name }}" == euclid ]]; then
             echo "run=false" >> "$GITHUB_OUTPUT"
           else
             echo "run=true" >> "$GITHUB_OUTPUT"
