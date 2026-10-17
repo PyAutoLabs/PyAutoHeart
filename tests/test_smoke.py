@@ -24,7 +24,9 @@ def test_wipe_output_preserves_index_and_removes_generated_files(tmp_path):
     sentinel = output / "nested" / "keep\n this.txt"
     sentinel.write_text("tracked\n")
     git("add", "-f", "output")
+    git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "fixture")
     before = git("status", "--short")
+    assert before == ""
     (output / "nested" / "generated.txt").write_text("stale")
     (output / "generated").mkdir()
     (output / "generated" / "result").write_text("stale")
