@@ -33,9 +33,13 @@ Deliberate choices, each one a recorded lesson:
   look faster the more it breaks. The conclusion *mix* is recorded beside the
   median so the coverage behind the number stays visible.
 * **``cancelled`` is disambiguated, not counted.** The concurrency block
-  cancels superseded PR runs by design — benign. A ``cancelled`` run on ``main``,
-  or one with no newer run of the same workflow on the same branch, is a
-  kill/hang suspect and becomes an *event*. ``timed_out`` is always an event.
+  cancels a superseded run by design — benign, on ``main`` pushes as much as on
+  PRs. The signature is a newer run of the same workflow on the same branch
+  created no later than the cancelled run ended (``updated_at``, plus
+  ``SUPERSEDE_SLACK_S``): the arrival of that run is what cancelled it. A
+  ``cancelled`` run with no such successor is a kill/hang suspect and becomes
+  an *event* (``pull_request`` runs also keep the older, looser "any newer run
+  on the PR branch" test). ``timed_out`` is always an event.
 * **Drift needs BOTH gates.** A gate is flagged ``warn`` only when today's
   median is ≥ ``yellow_factor`` × its recent history *and* ≥ ``min_delta_s``
   above it in absolute terms — the profiling conductor's doctrine. The ratio
@@ -103,6 +107,15 @@ CONFIG_PATH = HEART_HOME / "config" / "repos.yaml"
 # raw (superseded PR runs included) with the benign share reported separately
 # as `superseded`, so the mix always adds up to what the API actually said.
 TRACKED_CONCLUSIONS = ("success", "failure", "cancelled", "timed_out")
+
+# How long after a cancelled run's recorded end (``updated_at``) its successor
+# may still be created and count as the run that superseded it. A concurrency
+# cancel is caused BY the successor's arrival, so the successor's created_at
+# normally precedes the cancelled run's updated_at (observed: 1-2 s before it,
+# e.g. a library Tests main-push burst, 2026-10-17 20:01). The slack only absorbs second-level
+# stamp granularity and API write ordering; it is far shorter than any push
+# cadence, so a real kill followed by an unrelated later push stays a suspect.
+SUPERSEDE_SLACK_S = 60
 
 # Fallback when config/repos.yaml is unreadable; kept in sync with the YAML.
 DEFAULT_CI_TIMING_THRESHOLDS = {
@@ -236,26 +249,37 @@ def queue_s(run: dict[str, Any]) -> float | None:
 def classify_cancelled(run: dict[str, Any], siblings: list[dict[str, Any]]) -> str:
     """``"superseded"`` (benign) or ``"suspect"`` (a kill/hang candidate).
 
-    The concurrency block cancels superseded PR runs by design, so a cancelled
-    ``pull_request`` run with a NEWER run of the same workflow on the same
-    ``head_branch`` is benign and is only counted. A cancelled run on ``main``
-    — or one with no successor — is nobody's design: it is a kill-timer or hang
-    suspect and becomes an event with its run URL.
+    A workflow's concurrency group cancels the in-flight run when a newer run
+    of the same workflow on the same ``head_branch`` arrives — on ``main``
+    pushes as well as on PRs. So a cancelled run of ANY event is benign when
+    such a sibling was created after it and no later than its own end
+    (``updated_at`` + ``SUPERSEDE_SLACK_S``): that sibling is what cancelled
+    it. A cancelled ``pull_request`` run (not on ``main``) additionally stays
+    benign under the original rule — any newer run on the PR branch — so PR
+    handling is no looser and no stricter than before. Anything else — no
+    successor at all, or one created long after the run had already ended —
+    is nobody's design: a kill-timer or hang suspect, and an event.
     """
-    if str(run.get("head_branch") or "") == "main":
-        return "suspect"
-    if str(run.get("event") or "") != "pull_request":
-        return "suspect"
     branch = run.get("head_branch")
     workflow = run.get("workflow")
     mine = run.get("created_at") or run.get("run_started_at") or ""
+    mine_dt = _parse_iso(mine)
+    ended = _parse_iso(run.get("updated_at"))
+    deadline = (ended + datetime.timedelta(seconds=SUPERSEDE_SLACK_S)
+                if ended is not None else None)
+    legacy_pr = (str(run.get("event") or "") == "pull_request"
+                 and str(branch or "") != "main")
     for other in siblings:
         if other is run:
             continue
         if other.get("workflow") != workflow or other.get("head_branch") != branch:
             continue
         theirs = other.get("created_at") or other.get("run_started_at") or ""
-        if theirs > mine:
+        if legacy_pr and theirs > mine:
+            return "superseded"
+        theirs_dt = _parse_iso(theirs)
+        if (mine_dt is not None and theirs_dt is not None and deadline is not None
+                and mine_dt < theirs_dt <= deadline):
             return "superseded"
     return "suspect"
 
@@ -296,6 +320,10 @@ def time_workflow(
         r for r in runs
         if r.get("workflow") == workflow and r.get("conclusion") and r.get("run_started_at")
     ]
+    # The run that cancelled a superseded one is often still in flight when
+    # we look, so supersession is judged against EVERY run of the workflow,
+    # not only the completed ones being timed.
+    siblings = [r for r in runs if r.get("workflow") == workflow]
     durations: list[float] = []
     pr_durations: list[float] = []
     queues: list[float] = []
@@ -327,7 +355,7 @@ def time_workflow(
         if concl == "timed_out":
             kind = "timed_out"
         elif concl == "cancelled":
-            if classify_cancelled(run, mine) == "superseded":
+            if classify_cancelled(run, siblings) == "superseded":
                 superseded += 1
             else:
                 kind = "suspect_cancelled"

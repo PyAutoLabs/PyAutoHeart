@@ -6,6 +6,7 @@ in `config/repos.yaml`, which is the declared surface, never in test data.
 
 from __future__ import annotations
 
+import datetime
 import json
 
 from heart.checks import ci_timing as ct
@@ -139,7 +140,9 @@ def test_cancelled_pr_run_with_newer_same_branch_run_is_superseded(tmp_path):
     assert side["workflows"]["Gate One"]["conclusions"]["cancelled"] == 1
 
 
-def test_cancelled_on_main_is_always_suspect(tmp_path):
+def test_cancelled_main_run_whose_successor_came_long_after_it_ended_is_suspect(tmp_path):
+    """A newer run created ten minutes AFTER the cancelled one had already
+    ended cannot be what cancelled it: a real kill, still an event."""
     payload = {"workflow_runs": [
         _run("Gate One", "cancelled", branch="main",
              created="2026-08-20T09:00:00Z", updated="2026-08-20T09:50:00Z"),
@@ -151,6 +154,91 @@ def test_cancelled_on_main_is_always_suspect(tmp_path):
                             config_path=_cfg(tmp_path))
     (event,) = side["events"]
     assert event["kind"] == "suspect_cancelled"
+    assert side["workflows"]["Gate One"]["superseded"] == 0
+
+
+def test_superseded_main_push_burst_is_benign(tmp_path):
+    """Modelled on a library Tests burst, 2026-10-17 20:01: four main pushes in
+    seventeen seconds; the concurrency group cancelled the middle two the
+    moment the next push's run was created (1 s before each cancelled run's
+    recorded end). Benign supersession, not kill-timer events."""
+    payload = {"workflow_runs": [
+        _run("Gate One", "success", branch="main",
+             created="2026-10-17T20:01:19Z", started="2026-10-17T20:01:19Z",
+             updated="2026-10-17T20:16:22Z", url="https://github.invalid/run/4"),
+        _run("Gate One", "cancelled", branch="main",
+             created="2026-10-17T20:01:13Z", started="2026-10-17T20:01:13Z",
+             updated="2026-10-17T20:01:20Z", url="https://github.invalid/run/3"),
+        _run("Gate One", "cancelled", branch="main",
+             created="2026-10-17T20:01:07Z", started="2026-10-17T20:01:07Z",
+             updated="2026-10-17T20:01:14Z", url="https://github.invalid/run/2"),
+        _run("Gate One", "success", branch="main",
+             created="2026-10-17T20:01:02Z", started="2026-10-17T20:01:02Z",
+             updated="2026-10-17T20:08:40Z", url="https://github.invalid/run/1"),
+    ]}
+    side = ct.build_sidecar(REPO, "libraries", "OwnerX", payload, "T",
+                            config_path=_cfg(tmp_path))
+    assert side["events"] == []
+    assert side["workflows"]["Gate One"]["superseded"] == 2
+    assert side["workflows"]["Gate One"]["conclusions"]["cancelled"] == 2
+
+
+def test_superseded_main_run_counts_an_in_flight_successor(tmp_path):
+    """The run that cancelled a main push is often still running when Heart
+    looks; it has no conclusion yet but still proves the supersession."""
+    payload = {"workflow_runs": [
+        _run("Gate One", "", status="in_progress", branch="main",
+             created="2026-10-17T20:01:19Z", started="2026-10-17T20:01:19Z",
+             updated="2026-10-17T20:05:00Z"),
+        _run("Gate One", "cancelled", branch="main",
+             created="2026-10-17T20:01:13Z", started="2026-10-17T20:01:13Z",
+             updated="2026-10-17T20:01:20Z"),
+    ]}
+    side = ct.build_sidecar(REPO, "libraries", "OwnerX", payload, "T",
+                            config_path=_cfg(tmp_path))
+    assert side["events"] == []
+    assert side["workflows"]["Gate One"]["superseded"] == 1
+
+
+def test_successor_within_the_slack_after_end_is_superseded():
+    """Stamp granularity/ordering slack: a successor created just after the
+    recorded end still counts; one minutes later does not."""
+    cancelled = ct.normalize_runs([_run(
+        "Gate One", "cancelled", branch="main",
+        created="2026-10-17T20:00:00Z", updated="2026-10-17T20:01:00Z")])[0]
+    def successor(created):
+        return ct.normalize_runs([_run("Gate One", "success", branch="main",
+                                       created=created)])[0]
+    end = datetime.datetime(2026, 10, 17, 20, 1, tzinfo=datetime.timezone.utc)
+    inside = (end + datetime.timedelta(seconds=ct.SUPERSEDE_SLACK_S - 1)
+              ).isoformat().replace("+00:00", "Z")
+    assert ct.classify_cancelled(cancelled, [cancelled, successor(inside)]) == "superseded"
+    assert ct.classify_cancelled(
+        cancelled, [cancelled, successor("2026-10-17T20:05:00Z")]) == "suspect"
+
+
+def test_lone_cancelled_main_run_is_suspect(tmp_path):
+    """No successor at all on main: a real kill or hang, an event."""
+    payload = {"workflow_runs": [
+        _run("Gate One", "cancelled", branch="main",
+             created="2026-10-17T20:00:00Z", started="2026-10-17T20:00:00Z",
+             updated="2026-10-17T20:45:00Z", url="https://github.invalid/run/5"),
+        _run("Gate One", "success", branch="main",
+             created="2026-10-17T19:00:00Z", started="2026-10-17T19:00:00Z",
+             updated="2026-10-17T19:10:00Z"),
+        # a newer run on ANOTHER branch, or of ANOTHER workflow, proves nothing
+        _run("Gate One", "success", branch="feat/z",
+             created="2026-10-17T20:10:00Z", started="2026-10-17T20:10:00Z",
+             updated="2026-10-17T20:20:00Z"),
+        _run("Gate Two", "success", branch="main",
+             created="2026-10-17T20:10:00Z", started="2026-10-17T20:10:00Z",
+             updated="2026-10-17T20:20:00Z"),
+    ]}
+    side = ct.build_sidecar(REPO, "libraries", "OwnerX", payload, "T",
+                            config_path=_cfg(tmp_path))
+    (event,) = side["events"]
+    assert event["kind"] == "suspect_cancelled"
+    assert event["run_url"] == "https://github.invalid/run/5"
     assert side["workflows"]["Gate One"]["superseded"] == 0
 
 
