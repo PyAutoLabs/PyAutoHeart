@@ -40,6 +40,14 @@ Deliberate choices, each one a recorded lesson:
   ``cancelled`` run with no such successor is a kill/hang suspect and becomes
   an *event* (``pull_request`` runs also keep the older, looser "any newer run
   on the PR branch" test). ``timed_out`` is always an event.
+* **A PR cancelled because its PR closed is ``abandoned``, not a suspect.**
+  Closing a PR cancels its in-flight runs with no successor at all, and GitHub
+  empties the run's ``pull_requests`` once the PR is closed, so the closure is
+  read from the repo's recently closed PRs (``--closed-prs``). A cancelled
+  ``pull_request`` run that was not superseded is abandoned when a PR on the
+  same head branch closed between the run's creation and its end
+  (``updated_at`` + ``SUPERSEDE_SLACK_S``). Push/``main`` cancels never use
+  this rule, and with no closed-PR feed it simply does not fire.
 * **Drift needs BOTH gates.** A gate is flagged ``warn`` only when today's
   median is ≥ ``yellow_factor`` × its recent history *and* ≥ ``min_delta_s``
   above it in absolute terms — the profiling conductor's doctrine. The ratio
@@ -73,6 +81,7 @@ Per-repo sidecar schema (``<name>.ci_timing.json``)::
           "conclusions": {"success": 14, "failure": 1, "cancelled": 3,
                           "timed_out": 0},
           "superseded": 2,               # of those `cancelled`, benign ones
+          "abandoned": 1,                # cancelled because their PR closed
           "actions_url": "https://github.com/OwnerX/RepoA/actions"
         }
       },
@@ -104,8 +113,9 @@ HEART_HOME = Path(__file__).resolve().parents[2]
 CONFIG_PATH = HEART_HOME / "config" / "repos.yaml"
 
 # Conclusions whose *count* is recorded per workflow. `cancelled` is recorded
-# raw (superseded PR runs included) with the benign share reported separately
-# as `superseded`, so the mix always adds up to what the API actually said.
+# raw (superseded and abandoned PR runs included) with the benign shares
+# reported separately as `superseded` and `abandoned`, so the mix always adds
+# up to what the API actually said.
 TRACKED_CONCLUSIONS = ("success", "failure", "cancelled", "timed_out")
 
 # How long after a cancelled run's recorded end (``updated_at``) its successor
@@ -246,8 +256,44 @@ def queue_s(run: dict[str, Any]) -> float | None:
     return round(max(0.0, (started - created).total_seconds()), 1)
 
 
-def classify_cancelled(run: dict[str, Any], siblings: list[dict[str, Any]]) -> str:
-    """``"superseded"`` (benign) or ``"suspect"`` (a kill/hang candidate).
+def normalize_closed_prs(payload: Any) -> list[dict[str, str]]:
+    """Coerce a closed-PR feed into ``[{"head_ref", "closed_at"}]``.
+
+    Accepts the slim list ``ci_timing.sh`` writes (``head_ref``/``closed_at``)
+    and the raw REST ``/pulls`` shape (``head.ref``). Anything unusable — no
+    feed, a fetch error, garbage — degrades to ``[]``, which disables the
+    abandoned rule rather than failing the check.
+    """
+    if not isinstance(payload, list):
+        return []
+    out: list[dict[str, str]] = []
+    for pr in payload:
+        if not isinstance(pr, dict):
+            continue
+        head = pr.get("head") if isinstance(pr.get("head"), dict) else {}
+        ref = str(pr.get("head_ref") or head.get("ref") or "")
+        closed = str(pr.get("closed_at") or "")
+        if ref and closed:
+            out.append({"head_ref": ref, "closed_at": closed})
+    return out
+
+
+def read_closed_prs(path: str | Path | None) -> list[dict[str, str]]:
+    """The closed-PR feed at ``path``, or ``[]`` on any problem (I/O)."""
+    if not path:
+        return []
+    try:
+        return normalize_closed_prs(json.loads(Path(path).read_text()))
+    except (OSError, ValueError):
+        return []
+
+
+def classify_cancelled(
+    run: dict[str, Any],
+    siblings: list[dict[str, Any]],
+    closed_prs: list[dict[str, str]] | None = None,
+) -> str:
+    """``"superseded"`` / ``"abandoned"`` (benign) or ``"suspect"``.
 
     A workflow's concurrency group cancels the in-flight run when a newer run
     of the same workflow on the same ``head_branch`` arrives — on ``main``
@@ -259,6 +305,15 @@ def classify_cancelled(run: dict[str, Any], siblings: list[dict[str, Any]]) -> s
     handling is no looser and no stricter than before. Anything else — no
     successor at all, or one created long after the run had already ended —
     is nobody's design: a kill-timer or hang suspect, and an event.
+
+    The one exception is a closed PR. Closing a PR cancels its in-flight
+    ``pull_request`` runs (not on ``main``) with no successor, so such a run
+    is ``"abandoned"`` when ``closed_prs`` holds a PR on the same head branch
+    whose ``closed_at`` lies in [run ``created_at``, ``updated_at`` +
+    ``SUPERSEDE_SLACK_S``]. The lower bound stops an older PR on a reused
+    branch name from matching; the upper bound keeps a PR that stayed open
+    past the cancel, or closed long after, a suspect. Supersession is checked
+    first, so a run that was both superseded and later abandoned counts once.
     """
     branch = run.get("head_branch")
     workflow = run.get("workflow")
@@ -281,6 +336,13 @@ def classify_cancelled(run: dict[str, Any], siblings: list[dict[str, Any]]) -> s
         if (mine_dt is not None and theirs_dt is not None and deadline is not None
                 and mine_dt < theirs_dt <= deadline):
             return "superseded"
+    if legacy_pr and mine_dt is not None and deadline is not None:
+        for pr in closed_prs or []:
+            if pr.get("head_ref") != branch:
+                continue
+            closed_dt = _parse_iso(pr.get("closed_at"))
+            if closed_dt is not None and mine_dt <= closed_dt <= deadline:
+                return "abandoned"
     return "suspect"
 
 
@@ -308,13 +370,16 @@ def _median(values: list[float]) -> float | None:
 
 
 def time_workflow(
-    repo: str, workflow: str, runs: list[dict[str, Any]], actions_url: str
+    repo: str, workflow: str, runs: list[dict[str, Any]], actions_url: str,
+    closed_prs: list[dict[str, str]] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Time one workflow's runs → (entry, events).
 
     Only *completed* runs with a usable ``run_started_at`` participate: an
     in-flight run has no duration, and a run with no start stamp cannot be
-    timed honestly.
+    timed honestly. ``closed_prs`` (the repo's recently closed PRs) lets a
+    PR run cancelled by its PR's closure count as ``abandoned`` rather than
+    become an event; ``None``/``[]`` keeps the superseded-only behaviour.
     """
     mine = [
         r for r in runs
@@ -329,6 +394,7 @@ def time_workflow(
     queues: list[float] = []
     conclusions = {k: 0 for k in TRACKED_CONCLUSIONS}
     superseded = 0
+    abandoned = 0
     events: list[dict[str, Any]] = []
     window_from = ""
 
@@ -355,8 +421,11 @@ def time_workflow(
         if concl == "timed_out":
             kind = "timed_out"
         elif concl == "cancelled":
-            if classify_cancelled(run, siblings) == "superseded":
+            verdict = classify_cancelled(run, siblings, closed_prs)
+            if verdict == "superseded":
                 superseded += 1
+            elif verdict == "abandoned":
+                abandoned += 1
             else:
                 kind = "suspect_cancelled"
         if kind:
@@ -380,6 +449,7 @@ def time_workflow(
         "window_from": window_from,
         "conclusions": conclusions,
         "superseded": superseded,
+        "abandoned": abandoned,
         "actions_url": actions_url,
     }
     return entry, events
@@ -393,11 +463,14 @@ def build_sidecar(
     ts: str,
     config_path: Path | str = CONFIG_PATH,
     error: str = "",
+    closed_prs: Any = None,
 ) -> dict[str, Any]:
     """Construct one repo's ci_timing sidecar.
 
     ``error`` is the reason the runs fetch failed. When set the sidecar carries
     NO workflows and NO events: a dead query must never render as a quiet repo.
+    ``closed_prs`` is the repo's recently closed PRs (see
+    ``normalize_closed_prs``); missing or unusable means no abandoned rule.
     """
     actions_url = f"https://github.com/{owner}/{name}/actions" if owner else ""
     if error:
@@ -407,10 +480,11 @@ def build_sidecar(
         }
 
     normalized = normalize_runs(runs)
+    closed = normalize_closed_prs(closed_prs)
     workflows: dict[str, Any] = {}
     events: list[dict[str, Any]] = []
     for workflow in tracked_workflows(name, group, config_path):
-        entry, evts = time_workflow(name, workflow, normalized, actions_url)
+        entry, evts = time_workflow(name, workflow, normalized, actions_url, closed)
         # A workflow with no completed runs in the window is not evidence of
         # anything; recording it as a zero-run gate keeps the board honest
         # about coverage rather than dropping it silently.
@@ -568,6 +642,7 @@ def aggregate(
                 "window_from": entry.get("window_from", ""),
                 "conclusions": entry.get("conclusions") or {},
                 "superseded": entry.get("superseded", 0),
+                "abandoned": entry.get("abandoned", 0),
                 "actions_url": actions_url,
                 "baseline_s": baseline,
                 "ratio": ratio,
@@ -687,6 +762,10 @@ def main(argv: list[str] | None = None) -> int:
                          "previous board.json only the fallback")
     ap.add_argument("--fetch-error", default="",
                     help="reason the runs fetch failed; recorded instead of a bogus quiet repo")
+    ap.add_argument("--closed-prs", default="",
+                    help="JSON list of the repo's recently closed PRs (head_ref, "
+                         "closed_at); missing/unreadable => no abandoned rule, "
+                         "never an error")
     ns = ap.parse_args(argv)
 
     ts = ns.ts or datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -729,7 +808,8 @@ def main(argv: list[str] | None = None) -> int:
         runs = []
         error = error or "runs payload was not valid JSON"
 
-    sidecar = build_sidecar(ns.name, ns.group, ns.owner, runs, ts, error=error)
+    sidecar = build_sidecar(ns.name, ns.group, ns.owner, runs, ts, error=error,
+                            closed_prs=read_closed_prs(ns.closed_prs))
     _write(Path(ns.out), sidecar)
     print(repo_summary_line(sidecar))
     return 0
