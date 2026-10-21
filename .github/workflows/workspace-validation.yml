@@ -131,12 +131,22 @@ jobs:
           # spec) — HowTo* are tutorial repos with no profile_release.yaml and
           # aren't part of the release-fidelity surface. mode=smoke keeps the
           # full workspace/tutorial sweep plus the Euclid pipeline.
+          #
+          # ORDERED names projects whose smoke_tests.txt is order-dependent: they
+          # become ONE matrix entry carrying the list (run via run_python.py
+          # --list) instead of one shard per scripts/<subdir>. The Euclid
+          # pipeline's scripts/tools/diagnose_latent.py replays fits that
+          # start_here.py and the top-level scripts/*.py produce earlier in the
+          # list; sharded per directory it ran alone and failed
+          # (cloud#39224774724, PyAutoHands#317).
+          ORDERED=""
           if [ "$MODE" = "release" ]; then
             PROJECTS="autofit autogalaxy autolens autofit_test autogalaxy_test autolens_test"
           else
             PROJECTS="autofit autogalaxy autolens autofit_test autogalaxy_test autolens_test howtogalaxy howtolens howtofit euclid"
+            ORDERED="--ordered euclid"
           fi
-          matrix="$(python3 PyAutoHands/autohands/script_matrix.py $PROJECTS)"
+          matrix="$(python3 PyAutoHands/autohands/script_matrix.py $PROJECTS $ORDERED)"
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
   generate_notebooks:
@@ -357,12 +367,25 @@ jobs:
           pip install "nufftax>=0.6.1,<0.7.0"
       - name: "Run Python scripts [mode=smoke, source-shadowed, smoke profile]"
         if: needs.find_scripts.outputs.mode == 'smoke'
+        env:
+          SHARD_PROJECT: ${{ matrix.project.name }}
+          SHARD_DIRECTORY: ${{ matrix.project.directory }}
+          SHARD_SCRIPT_LIST: ${{ matrix.project.script_list }}
         run: |
           LIBS="$(pwd)/libs"
           export PYTHONPATH="$LIBS/PyAutoNerves:$LIBS/PyAutoArray:$LIBS/PyAutoFit:$LIBS/PyAutoGalaxy:$LIBS/PyAutoLens:$(pwd)/PyAutoHands:$PYTHONPATH"
           pushd workspace
+          # An ordered entry (script_matrix.py --ordered) carries its list and a
+          # directory relative to the workspace root ("."); its entries run in
+          # list order in one output dir. A per-directory shard (no list) keeps
+          # the historical scripts/<subdir> discovery run.
+          if [ -n "$SHARD_SCRIPT_LIST" ]; then
+            set -- "$SHARD_DIRECTORY" --list "$SHARD_SCRIPT_LIST"
+          else
+            set -- "scripts/$SHARD_DIRECTORY"
+          fi
           python3 "$(pwd)/../PyAutoHands/autohands/run_python.py" \
-            "${{ matrix.project.name }}" "scripts/${{ matrix.project.directory }}" \
+            "$SHARD_PROJECT" "$@" \
             --report-dir test-results
       - name: "Run Python scripts [mode=release, wheels, release profile, no source on PYTHONPATH]"
         if: needs.find_scripts.outputs.mode == 'release'
@@ -389,6 +412,9 @@ jobs:
           # per-script in the workspace's own config/build/profile_smoke.yaml, rather
           # than as a second run-wide number here (PyAutoHands#226).
           BUILD_SCRIPT_TIMEOUT: "1800"
+          SHARD_PROJECT: ${{ matrix.project.name }}
+          SHARD_DIRECTORY: ${{ matrix.project.directory }}
+          SHARD_SCRIPT_LIST: ${{ matrix.project.script_list }}
         run: |
           # Deliberately NOT adding library source dirs to PYTHONPATH (closes
           # Gap A) — `import autolens` etc. resolve to the pip-installed
@@ -408,15 +434,25 @@ jobs:
             echo "::error::config/build/profile_release.yaml missing — no release profile defined for this workspace"
             exit 1
           fi
+          # Same shard shape as the smoke step (no project is ordered in
+          # release mode today; kept symmetric so one cannot drift).
+          if [ -n "$SHARD_SCRIPT_LIST" ]; then
+            set -- "$SHARD_DIRECTORY" --list "$SHARD_SCRIPT_LIST"
+          else
+            set -- "scripts/$SHARD_DIRECTORY"
+          fi
           python3 "$(pwd)/../PyAutoHands/autohands/run_python.py" \
-            "${{ matrix.project.name }}" "scripts/${{ matrix.project.directory }}" \
+            "$SHARD_PROJECT" "$@" \
             --report-dir test-results \
             --env-config "$ENV_CONFIG"
       - name: Upload script results
+        # The name's leg suffix is the shard's directory, or `ordered` for an
+        # ordered entry (script_matrix.py --ordered), whose directory is "." —
+        # one per project, so the (project, suffix) pair stays unique.
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: results-scripts-${{ matrix.project.name }}-${{ matrix.project.directory }}
+          name: results-scripts-${{ matrix.project.name }}-${{ matrix.project.script_list && 'ordered' || matrix.project.directory }}
           path: workspace/test-results/
           retention-days: 30
       - name: Upload the per-script timings (scripts leg) under a globbable name
@@ -460,7 +496,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: smoke-timings-scripts-${{ matrix.project.name }}-${{ matrix.project.directory }}
+          name: smoke-timings-scripts-${{ matrix.project.name }}-${{ matrix.project.script_list && 'ordered' || matrix.project.directory }}
           path: workspace/**/smoke_timings.json
           if-no-files-found: ignore
 

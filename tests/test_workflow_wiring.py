@@ -175,12 +175,16 @@ def test_validation_timing_artifact_names_carry_the_leg():
     weekly run, so the name has to carry the (project, directory) pair the
     script matrix keeps unique — exactly as the sibling `results-*` upload does.
     """
+    suffix = {
+        # An ordered entry's directory is "." (PyAutoHands#317), so the scripts
+        # leg names it `ordered`; per-directory shards keep their directory.
+        "scripts": "${{ matrix.project.script_list && 'ordered' || matrix.project.directory }}",
+        # The notebook leg never runs an ordered entry (euclid is gated off).
+        "notebooks": "${{ matrix.project.directory }}",
+    }
     for job_name, leg in TIMING_LEGS:
         name = _timing_step(job_name)["with"]["name"]
-        assert name == (
-            f"smoke-timings-{leg}-"
-            "${{ matrix.project.name }}-${{ matrix.project.directory }}"
-        )
+        assert name == f"smoke-timings-{leg}-${{{{ matrix.project.name }}}}-{suffix[leg]}"
 
 
 def test_validation_timing_upload_cannot_fail_the_weekly_sweep():
@@ -388,6 +392,9 @@ def test_pipeline_is_selected_for_smoke_and_routes_to_its_checkout(tmp_path):
         subprocess.run(["bash", "-ec", command], cwd=tmp_path,
                        env={**os.environ, "MODE": mode, "GITHUB_OUTPUT": str(output)}, check=True)
         assert ("euclid" in output.read_text().split()) is expected
+        # euclid's smoke list is order-dependent: it must be one ordered shard,
+        # never per-directory (PyAutoHands#317) — and only where it is selected.
+        assert ("--ordered euclid" in output.read_text()) is expected
     route = next(s["run"] for s in data["jobs"]["run_scripts"]["steps"] if s.get("id") == "ws")
     route = route.replace("${{ matrix.project.name }}", "euclid")
     output.write_text("")
@@ -395,3 +402,76 @@ def test_pipeline_is_selected_for_smoke_and_routes_to_its_checkout(tmp_path):
     registry = yaml.safe_load((WORKFLOWS.parents[1] / "config/repos.yaml").read_text())
     pipeline = registry["repos"]["pipelines"][0]["name"]
     assert output.read_text().strip() == f"repo={pipeline}"
+
+
+# --- ordered shards (PyAutoHands#317) --------------------------------------
+#
+# script_matrix.py --ordered emits ONE entry for an order-dependent project:
+# {"name", "directory": ".", "script_list": "smoke_tests.txt"}. Both run steps
+# must hand that list to run_python.py --list with the directory as given
+# (relative to the workspace root, so root start_here.py and top-level
+# scripts/*.py resolve), while per-directory shards keep "scripts/<dir>".
+
+RUN_STEPS = (
+    "Run Python scripts [mode=smoke",
+    "Run Python scripts [mode=release",
+)
+
+
+def _run_step_argv(step_name, entry, tmp_path):
+    """Execute a run step's shell against a stub run_python.py; return its argv."""
+    step = _step(_load("workspace-validation.yml")["jobs"]["run_scripts"], step_name)
+    env = {
+        **os.environ,
+        "SHARD_PROJECT": entry["name"],
+        "SHARD_DIRECTORY": entry["directory"],
+        "SHARD_SCRIPT_LIST": entry.get("script_list", ""),
+    }
+    for key, value in step.get("env", {}).items():
+        if "${{" not in str(value):
+            env[key] = str(value)
+    hands = tmp_path / "PyAutoHands/autohands"
+    hands.mkdir(parents=True, exist_ok=True)
+    argv_out = tmp_path / "argv.json"
+    (hands / "run_python.py").write_text(
+        "import json, sys; json.dump(sys.argv[1:], open(%r, 'w'))" % str(argv_out)
+    )
+    ws = tmp_path / "workspace"
+    (ws / "config/build").mkdir(parents=True, exist_ok=True)
+    (ws / "config/build/profile_release.yaml").write_text("defaults: {}\n")
+    subprocess.run(["bash", "-ec", step["run"]], cwd=tmp_path, env=env, check=True,
+                   capture_output=True, text=True)
+    import json
+    return json.loads(argv_out.read_text())
+
+
+def test_run_steps_read_the_shard_from_the_matrix_entry():
+    for name in RUN_STEPS:
+        env = _step(_load("workspace-validation.yml")["jobs"]["run_scripts"], name)["env"]
+        assert env["SHARD_PROJECT"] == "${{ matrix.project.name }}"
+        assert env["SHARD_DIRECTORY"] == "${{ matrix.project.directory }}"
+        assert env["SHARD_SCRIPT_LIST"] == "${{ matrix.project.script_list }}"
+
+
+def test_ordered_entry_runs_its_list_from_the_workspace_root(tmp_path):
+    entry = {"name": "euclid", "directory": ".", "script_list": "smoke_tests.txt"}
+    for i, name in enumerate(RUN_STEPS):
+        argv = _run_step_argv(name, entry, tmp_path / str(i))
+        assert argv[:4] == ["euclid", ".", "--list", "smoke_tests.txt"]
+        assert "--report-dir" in argv
+
+
+def test_per_directory_shard_keeps_its_historical_invocation(tmp_path):
+    entry = {"name": "autolens", "directory": "imaging"}
+    for i, name in enumerate(RUN_STEPS):
+        argv = _run_step_argv(name, entry, tmp_path / str(i))
+        assert argv[:2] == ["autolens", "scripts/imaging"]
+        assert "--list" not in argv
+
+
+def test_ordered_results_artifact_name_is_valid_and_distinct():
+    upload = _step(_load("workspace-validation.yml")["jobs"]["run_scripts"], "Upload script results")
+    assert upload["with"]["name"] == (
+        "results-scripts-${{ matrix.project.name }}-"
+        "${{ matrix.project.script_list && 'ordered' || matrix.project.directory }}"
+    )
