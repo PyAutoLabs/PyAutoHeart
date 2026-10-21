@@ -22,6 +22,12 @@
 # render. HEART_PREV_BOARD_URL overrides the URL (tests, staging boards); any
 # fetch failure degrades to "no history", never to an error.
 #
+# A second, best-effort call per repo fetches the recently CLOSED pull requests
+# (head ref + closed_at only): GitHub empties a run's `pull_requests` once its
+# PR closes, so this is the only way to tell a PR run cancelled by its PR's
+# closure ("abandoned", benign) from a kill. Its failure degrades to the
+# superseded-only classification, never to an error or a fetch_error.
+#
 # Observer boundary: everything written lives under $HEART_STATE_DIR. A repo
 # whose runs fetch fails records the reason and NO workflows — "we could not
 # ask" must never render as "all quiet".
@@ -31,6 +37,22 @@ source "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../_common.sh"
 
 # Recent runs, newest first, every branch and every event.
 _CI_TIMING_RUNS_PATH="actions/runs?per_page=50"
+# Recently closed PRs, newest-updated first; one page covers the runs window.
+_CI_TIMING_CLOSED_PRS_PATH="pulls?state=closed&per_page=50"
+_CI_TIMING_CLOSED_PRS_JQ='[.[] | {head_ref: .head.ref, closed_at: .closed_at}]'
+
+# Print the path of a tempfile holding the repo's slim closed-PR list, or
+# nothing when it cannot be had. Never fails the check.
+_ci_timing_closed_prs() {
+  local owner_name="$1" tmp
+  tmp="$(mktemp)"
+  if gh api "repos/$owner_name/$_CI_TIMING_CLOSED_PRS_PATH" \
+      --jq "$_CI_TIMING_CLOSED_PRS_JQ" >"$tmp" 2>/dev/null && [[ -s "$tmp" ]]; then
+    printf '%s' "$tmp"
+  else
+    rm -f "$tmp"
+  fi
+}
 
 time_one_repo_ci() {
   local owner_name="$1"
@@ -53,10 +75,16 @@ time_one_repo_ci() {
   fi
   rm -f "$err"
 
+  local closed_prs=""
+  [[ -z "$fetch_error" ]] && closed_prs="$(_ci_timing_closed_prs "$owner_name")"
+
   printf '%s' "$runs" | PYTHONPATH="$HEART_HOME" python3 -m heart.checks.ci_timing \
     --name "$name" --group "$group" --owner "$owner" --ts "$ts" \
-    --fetch-error "$fetch_error" \
+    --fetch-error "$fetch_error" --closed-prs "$closed_prs" \
     --out "$HEART_PER_REPO_DIR/$name.ci_timing.json"
+  rc=$?
+  [[ -n "$closed_prs" ]] && rm -f "$closed_prs"
+  return $rc
 }
 
 # Print the path of a tempfile holding the previously published board.json, or

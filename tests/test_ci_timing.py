@@ -678,3 +678,152 @@ def test_main_aggregate_compares_only_inside_the_current_epoch(tmp_path,
     # ...and the pre-boundary day is not in the rolled-forward history either.
     assert [h["date"] for h in roll["history"]] == ["2026-09-05", "2026-09-06"]
     capsys.readouterr()
+
+
+# --- a PR run cancelled because its PR closed is `abandoned`, not a suspect ---
+#
+# Closing a PR cancels its in-flight runs with no successor, and GitHub empties
+# a run's `pull_requests` once the PR is closed, so closure comes from the
+# repo's closed-PR feed (`--closed-prs`).
+
+def _closed(branch, closed_at):
+    return {"head_ref": branch, "closed_at": closed_at}
+
+
+def _abandoned_payload():
+    """Modelled on two workspace-test smoke PR runs, 2026-09-19: each was
+    cancelled ~20 s after its PR closed unmerged, with no successor run."""
+    return {"workflow_runs": [
+        _run("Gate One", "cancelled", event="pull_request", branch="feat/regroup",
+             created="2026-09-19T10:59:28Z", started="2026-09-19T10:59:30Z",
+             updated="2026-09-19T11:06:13Z", url="https://github.invalid/run/a"),
+        _run("Gate Two", "cancelled", event="pull_request", branch="feat/regroup",
+             created="2026-09-19T10:59:26Z", started="2026-09-19T10:59:28Z",
+             updated="2026-09-19T11:06:08Z", url="https://github.invalid/run/b"),
+    ]}
+
+
+def test_pr_runs_cancelled_by_their_pr_closing_are_abandoned(tmp_path):
+    closed = [_closed("feat/regroup", "2026-09-19T11:05:51Z")]
+    side = ct.build_sidecar(REPO, "workspaces", "OwnerX", _abandoned_payload(), "T",
+                            config_path=_cfg(tmp_path), closed_prs=closed)
+    assert side["events"] == []
+    for workflow in ("Gate One", "Gate Two"):
+        entry = side["workflows"][workflow]
+        assert entry["abandoned"] == 1
+        assert entry["superseded"] == 0
+        assert entry["conclusions"]["cancelled"] == 1
+
+
+def test_the_raw_rest_pulls_shape_is_accepted_too(tmp_path):
+    closed = [{"head": {"ref": "feat/regroup"}, "closed_at": "2026-09-19T11:05:47Z"}]
+    side = ct.build_sidecar(REPO, "workspaces", "OwnerX", _abandoned_payload(), "T",
+                            config_path=_cfg(tmp_path), closed_prs=closed)
+    assert side["events"] == []
+
+
+def test_pr_cancel_with_its_pr_still_open_stays_suspect(tmp_path):
+    """No closure in the feed (the PR is open): nobody's design, an event."""
+    closed = [_closed("feat/other", "2026-09-19T11:05:51Z")]
+    side = ct.build_sidecar(REPO, "workspaces", "OwnerX", _abandoned_payload(), "T",
+                            config_path=_cfg(tmp_path), closed_prs=closed)
+    assert [e["kind"] for e in side["events"]] == ["suspect_cancelled"] * 2
+    assert side["workflows"]["Gate One"]["abandoned"] == 0
+
+
+def test_pr_closed_ten_minutes_after_the_cancel_stays_suspect(tmp_path):
+    closed = [_closed("feat/regroup", "2026-09-19T11:16:13Z")]
+    side = ct.build_sidecar(REPO, "workspaces", "OwnerX", _abandoned_payload(), "T",
+                            config_path=_cfg(tmp_path), closed_prs=closed)
+    assert len(side["events"]) == 2
+    assert side["workflows"]["Gate One"]["abandoned"] == 0
+
+
+def test_a_closure_from_before_the_run_was_created_does_not_count(tmp_path):
+    """An older PR on a reused branch name cannot have cancelled a later run."""
+    closed = [_closed("feat/regroup", "2026-09-19T10:00:00Z")]
+    side = ct.build_sidecar(REPO, "workspaces", "OwnerX", _abandoned_payload(), "T",
+                            config_path=_cfg(tmp_path), closed_prs=closed)
+    assert len(side["events"]) == 2
+
+
+def test_closure_within_the_slack_after_the_end_counts_and_beyond_does_not():
+    run = ct.normalize_runs([_run(
+        "Gate One", "cancelled", event="pull_request", branch="feat/x",
+        created="2026-10-17T20:00:00Z", updated="2026-10-17T20:01:00Z")])[0]
+    end = datetime.datetime(2026, 10, 17, 20, 1, tzinfo=datetime.timezone.utc)
+    inside = (end + datetime.timedelta(seconds=ct.SUPERSEDE_SLACK_S)
+              ).isoformat().replace("+00:00", "Z")
+    outside = (end + datetime.timedelta(seconds=ct.SUPERSEDE_SLACK_S + 1)
+               ).isoformat().replace("+00:00", "Z")
+    assert ct.classify_cancelled(run, [run], [_closed("feat/x", inside)]) == "abandoned"
+    assert ct.classify_cancelled(run, [run], [_closed("feat/x", outside)]) == "suspect"
+
+
+def test_missing_or_empty_closed_pr_feed_keeps_todays_behaviour(tmp_path):
+    for feed in (None, [], {}, "garbage", [None, {"head_ref": "feat/regroup"}]):
+        side = ct.build_sidecar(REPO, "workspaces", "OwnerX", _abandoned_payload(),
+                                "T", config_path=_cfg(tmp_path), closed_prs=feed)
+        assert [e["kind"] for e in side["events"]] == ["suspect_cancelled"] * 2
+        assert side["workflows"]["Gate One"]["abandoned"] == 0
+
+
+def test_main_push_cancel_never_uses_the_abandoned_rule(tmp_path):
+    payload = {"workflow_runs": [
+        _run("Gate One", "cancelled", event="push", branch="main",
+             created="2026-09-19T10:59:28Z", started="2026-09-19T10:59:30Z",
+             updated="2026-09-19T11:06:13Z"),
+    ]}
+    closed = [_closed("main", "2026-09-19T11:05:51Z")]
+    side = ct.build_sidecar(REPO, "libraries", "OwnerX", payload, "T",
+                            config_path=_cfg(tmp_path), closed_prs=closed)
+    (event,) = side["events"]
+    assert event["kind"] == "suspect_cancelled"
+    assert side["workflows"]["Gate One"]["abandoned"] == 0
+
+
+def test_superseded_wins_over_abandoned():
+    """A run with both a successor and a later closure counts once, as superseded."""
+    run, successor = ct.normalize_runs([
+        _run("Gate One", "cancelled", event="pull_request", branch="feat/x",
+             created="2026-10-17T20:00:00Z", updated="2026-10-17T20:01:00Z"),
+        _run("Gate One", "success", event="pull_request", branch="feat/x",
+             created="2026-10-17T20:00:59Z"),
+    ])
+    assert ct.classify_cancelled(
+        run, [run, successor], [_closed("feat/x", "2026-10-17T20:00:30Z")]
+    ) == "superseded"
+
+
+def test_aggregate_carries_the_abandoned_count():
+    side = _sidecar(600.0)
+    side["workflows"]["Gate One"]["abandoned"] = 2
+    roll = ct.aggregate([side], {}, "2026-08-24", "T", ct.DEFAULT_CI_TIMING_THRESHOLDS)
+    assert roll["gates"][0]["abandoned"] == 2
+    # an older sidecar without the key reads as zero
+    roll = ct.aggregate([_sidecar(600.0)], {}, "2026-08-24", "T",
+                        ct.DEFAULT_CI_TIMING_THRESHOLDS)
+    assert roll["gates"][0]["abandoned"] == 0
+
+
+def test_main_reads_the_closed_pr_file_and_degrades_without_it(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("HEART_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("NO_COLOR", "1")
+    payload = json.dumps({"workflow_runs": [
+        _run("Tests", "cancelled", event="pull_request", branch="feat/regroup",
+             created="2026-09-19T10:59:28Z", started="2026-09-19T10:59:30Z",
+             updated="2026-09-19T11:06:13Z"),
+    ]})
+    feed = tmp_path / "closed.json"
+    feed.write_text(json.dumps([_closed("feat/regroup", "2026-09-19T11:05:51Z")]))
+    out = tmp_path / "LibA.ci_timing.json"
+    for closed_arg, n_events in ((str(feed), 0), ("", 1),
+                                 (str(tmp_path / "missing.json"), 1)):
+        monkeypatch.setattr("sys.stdin", __import__("io").StringIO(payload))
+        rc = ct.main(["--name", "LibA", "--group", "libraries", "--owner", "OwnerX",
+                      "--ts", "T", "--closed-prs", closed_arg, "--out", str(out)])
+        assert rc == 0
+        side = json.loads(out.read_text())
+        assert side["error"] == ""
+        assert len(side["events"]) == n_events
+    capsys.readouterr()
