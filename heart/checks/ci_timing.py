@@ -112,7 +112,7 @@ TRACKED_CONCLUSIONS = ("success", "failure", "cancelled", "timed_out")
 # may still be created and count as the run that superseded it. A concurrency
 # cancel is caused BY the successor's arrival, so the successor's created_at
 # normally precedes the cancelled run's updated_at (observed: 1-2 s before it,
-# e.g. PyAutoFit Tests 2026-10-17 20:01). The slack only absorbs second-level
+# e.g. a library Tests main-push burst, 2026-10-17 20:01). The slack only absorbs second-level
 # stamp granularity and API write ordering; it is far shorter than any push
 # cadence, so a real kill followed by an unrelated later push stays a suspect.
 SUPERSEDE_SLACK_S = 60

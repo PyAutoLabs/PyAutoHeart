@@ -158,7 +158,7 @@ def test_cancelled_main_run_whose_successor_came_long_after_it_ended_is_suspect(
 
 
 def test_superseded_main_push_burst_is_benign(tmp_path):
-    """Modelled on PyAutoFit Tests, 2026-10-17 20:01: four main pushes in
+    """Modelled on a library Tests burst, 2026-10-17 20:01: four main pushes in
     seventeen seconds; the concurrency group cancelled the middle two the
     moment the next push's run was created (1 s before each cancelled run's
     recorded end). Benign supersession, not kill-timer events."""
