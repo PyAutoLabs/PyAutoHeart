@@ -26,9 +26,7 @@ copy → paste, on a laptop or a phone.
 <!-- The line below is auto-updated by .github/workflows/heart-health.yml (everything -->
 <!-- between the heart:begin/heart:end markers is replaced with the rendered strip). -->
 <!-- heart:begin -->
-🟡 Monitoring 17/100 · release **YELLOW** · [dashboard →](https://pyautolabs.github.io/PyAutoHeart/)
-
-**Warnings:** workspace validation not passing (1 failed, cloud#39224774724: euclid scripts/tools/diagnose_latent.py)
+🔵 Monitoring 40/100 · release **STALE** · [dashboard →](https://pyautolabs.github.io/PyAutoHeart/)
 <!-- heart:end -->
 
 ## How PyAutoHeart works
