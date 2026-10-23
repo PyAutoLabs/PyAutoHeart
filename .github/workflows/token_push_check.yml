@@ -52,6 +52,14 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Resolve the release libraries (config/repos.yaml)
+        # The token scope and the probe read the SAME list: the release-gating
+        # libraries declared in config/repos.yaml, never a second copy here.
+        id: libs
+        run: |
+          pip install --quiet pyyaml
+          echo "repos=$(PYTHONPATH="$PWD" python -m heart.checks.token_push --print-repos)" >> "$GITHUB_OUTPUT"
+
       - name: Mint App token (release libraries, contents write)
         id: app_token
         uses: actions/create-github-app-token@v3
@@ -59,7 +67,7 @@ jobs:
           client-id: ${{ vars.APP_CLIENT_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
           owner: PyAutoLabs
-          repositories: PyAutoFit,PyAutoArray,PyAutoGalaxy,PyAutoLens,PyAutoNerves
+          repositories: ${{ steps.libs.outputs.repos }}
           permission-contents: write
 
       - name: Probe ls-remote + push --dry-run

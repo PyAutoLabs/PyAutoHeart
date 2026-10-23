@@ -1617,7 +1617,9 @@ def _unobs_section(key: str, title: str) -> Section:
 # and the all-in-one plan are written from, so the two can never disagree.
 TICK_CMD = "pyauto-heart tick"
 VERIFY_INSTALL_CMD = "pyauto-heart verify_install --report-json"
-TOKEN_PUSH_CMD = "gh workflow run token_push_check.yml -R PyAutoLabs/PyAutoHeart"
+# Heart's own owner from config/repos.yaml (REPO_OWNERS above), never a literal.
+TOKEN_PUSH_CMD = ("gh workflow run token_push_check.yml -R "
+                  f"{REPO_OWNERS.get('PyAutoHeart', '<owner>')}/PyAutoHeart")
 REHEARSE_STEP = ("dispatch a release rehearsal with the release skill with `rehearse`, then "
                  "`pyauto-heart validate --ingest <artifacts>`")
 

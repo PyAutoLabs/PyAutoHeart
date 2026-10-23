@@ -30,14 +30,28 @@ from typing import Any, Callable, Sequence
 HEART_HOME = Path(__file__).resolve().parents[2]
 SIDECAR = HEART_HOME / "state" / "token_push.json"
 SCHEMA = "token_push/1"
-OWNER = "PyAutoLabs"
-# The release job's library matrix (PyAutoHands release.yml `release`).
-REPOS = ("PyAutoNerves", "PyAutoFit", "PyAutoArray", "PyAutoGalaxy", "PyAutoLens")
 PROBE_REF = "refs/heads/token-push-check-dryrun"
 # Older than this, a passing sidecar no longer vouches for the credential.
 STALE_HOURS = 48
 
 Runner = Callable[[Sequence[str], str], "subprocess.CompletedProcess[str]"]
+
+
+# Repo identity comes from the declared config surface (config/repos.yaml),
+# never from literals — the tenant firewall keeps instance facts out of organ
+# code. Imported lazily: readiness imports this module.
+def release_repos() -> list[str]:
+    """The release-gating libraries (the release job's library set)."""
+    from heart.readiness import load_release_gate_names
+
+    return load_release_gate_names()
+
+
+def repo_owners() -> dict:
+    """{repo name: GitHub owner}, read the way the dashboard reads it."""
+    from heart.dashboard import _repo_owners
+
+    return _repo_owners()
 
 
 def _run(cmd: Sequence[str], cwd: str) -> "subprocess.CompletedProcess[str]":
@@ -51,8 +65,11 @@ def _tail(proc: "subprocess.CompletedProcess[str]") -> str:
     return lines[-1][:300] if lines else f"exit {proc.returncode}"
 
 
-def probe(repos: Sequence[str] = REPOS, run: Runner = _run) -> dict[str, dict[str, Any]]:
+def probe(repos: Sequence[str] | None = None, run: Runner = _run,
+          owners: dict | None = None) -> dict[str, dict[str, Any]]:
     """{repo: {ls_remote, push, error}} for each repo; never raises."""
+    repos = list(repos) if repos is not None else release_repos()
+    owners = owners if owners is not None else repo_owners()
     out: dict[str, dict[str, Any]] = {}
     with tempfile.TemporaryDirectory(prefix="token-push-") as tmp:
         # A throwaway repo with one empty commit: HEAD must name a commit for
@@ -63,8 +80,13 @@ def probe(repos: Sequence[str] = REPOS, run: Runner = _run) -> dict[str, dict[st
                      "commit", "-q", "--allow-empty", "-m", "token push probe"]):
             run(cmd, tmp)
         for repo in repos:
-            url = f"https://github.com/{OWNER}/{repo}.git"
             row: dict[str, Any] = {"ls_remote": False, "push": False, "error": None}
+            owner = owners.get(repo)
+            if not owner:
+                row["error"] = "no owner for this repo in config/repos.yaml"
+                out[repo] = row
+                continue
+            url = f"https://github.com/{owner}/{repo}.git"
             try:
                 ls = run(["git", "ls-remote", "--heads", url, "main"], tmp)
                 row["ls_remote"] = ls.returncode == 0
@@ -107,7 +129,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--out", type=Path, default=SIDECAR)
     ap.add_argument("--identity", default=os.environ.get("APP_SLUG") or "pyautolabs-bot")
+    ap.add_argument("--print-repos", action="store_true",
+                    help="print the comma-separated repo list (the App token scope) and exit")
     ns = ap.parse_args(argv)
+    if ns.print_repos:
+        print(",".join(release_repos()))
+        return 0
     run_url = ""
     if os.environ.get("GITHUB_RUN_ID"):
         run_url = (f"{os.environ.get('GITHUB_SERVER_URL', 'https://github.com')}/"
