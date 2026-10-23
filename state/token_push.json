@@ -1,0 +1,33 @@
+{
+  "checked_at": "2026-10-23T14:02:03+00:00",
+  "identity": "pyautolabs-bot",
+  "repos": {
+    "PyAutoArray": {
+      "error": null,
+      "ls_remote": true,
+      "push": true
+    },
+    "PyAutoFit": {
+      "error": null,
+      "ls_remote": true,
+      "push": true
+    },
+    "PyAutoGalaxy": {
+      "error": null,
+      "ls_remote": true,
+      "push": true
+    },
+    "PyAutoLens": {
+      "error": null,
+      "ls_remote": true,
+      "push": true
+    },
+    "PyAutoNerves": {
+      "error": null,
+      "ls_remote": true,
+      "push": true
+    }
+  },
+  "run_url": "https://github.com/PyAutoLabs/PyAutoHeart/actions/runs/39966149210",
+  "schema": "token_push/1"
+}
