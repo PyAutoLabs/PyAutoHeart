@@ -48,7 +48,8 @@ on:
 # actions:  read   → list and download workflow artifacts (smoke_timings,
 #                    unit_timings). The artifact endpoints need this scope even
 #                    for the repo's own artifacts, and the default token grant
-#                    does not include it.
+#                    does not include it. (Cross-repo reads use the App
+#                    token minted in the job, not this grant.)
 permissions:
   contents: write
   issues: write
@@ -94,20 +95,30 @@ jobs:
       - name: Install PyYAML
         run: pip install --quiet pyyaml
 
+      - name: Mint App token (read-only, every polled repo)
+        # The checks below read OTHER repos: CI runs and main commits
+        # (ci_status, ci_timing, no_run_census), open PRs (open_prs) and the
+        # artifact /zip downloads smoke_timings and unit_timings make against
+        # the workspaces and libraries. A cross-repo artifact download needs
+        # actions:read ON THAT REPO, which the repo-scoped GITHUB_TOKEN never
+        # has (the endpoint answers 403). The org App token is owner-wide (no
+        # `repositories:`) and read-only. No fallback: a failed mint fails the
+        # job rather than rendering a board from a token that cannot see.
+        id: app_token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: PyAutoLabs
+          permission-actions: read
+          permission-contents: read
+          permission-pull-requests: read
+
       - name: Run cloud-safe checks (CI, timing, smoke and release evidence)
         env:
-          # The repo-scoped GITHUB_TOKEN is enough for every check here except
-          # the artifact /zip downloads smoke_timings and unit_timings make
-          # against OTHER repos (workspaces and libraries respectively):
-          # actions/download-artifact documents a cross-repo download as needing
-          # a token with actions:read ON THAT REPO, and the default token has no
-          # standing there — the endpoint answers 403. The check records that
-          # per repo as an honest error rather than a quiet-looking empty
-          # result, and the remedy is a secret, never a code change: a
-          # fine-grained PAT (Actions: read on the workspace AND library repos)
-          # stored as HEART_TIMINGS_TOKEN. Absent that secret this falls back to
-          # the auto-provisioned token and Heart's own artifacts still ingest.
-          GH_TOKEN: ${{ secrets.HEART_TIMINGS_TOKEN || secrets.GITHUB_TOKEN }}
+          # Owner-wide read-only App token (step above). A per-repo refusal is
+          # still recorded by each check as that repo's honest error.
+          GH_TOKEN: ${{ steps.app_token.outputs.token }}
         run: |
           # API-only checks: CI conclusions and open PRs (health), then CI
           # wall-clock, the NO_RUN census, the per-script smoke timings and the

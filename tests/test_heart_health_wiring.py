@@ -47,15 +47,18 @@ def test_the_job_can_read_actions_artifacts():
     assert data["permissions"]["actions"] == "read"
 
 
-def test_the_cloud_step_prefers_the_timings_token_and_falls_back():
+def test_the_cloud_step_uses_the_minted_app_token_without_fallback():
     """Cross-repo artifact downloads need a token with actions:read on THAT
-    repo; the remedy is a secret, not a code change. Absent it the step still
-    runs on the auto-provisioned token."""
+    repo. The job mints an owner-wide read-only App token for it; there is no
+    fallback to the repo-scoped token — a missing credential fails the job."""
     _, job = _job()
+    mint = next(s for s in job["steps"] if s.get("id") == "app_token")
+    assert mint["uses"].startswith("actions/create-github-app-token@")
+    assert mint["with"]["permission-actions"] == "read"
+    assert "repositories" not in mint["with"]
     token = _cloud_step(job)["env"]["GH_TOKEN"]
-    assert "secrets.HEART_TIMINGS_TOKEN" in token
-    assert "secrets.GITHUB_TOKEN" in token
-    assert "||" in token
+    assert token == "${{ steps.app_token.outputs.token }}"
+    assert "||" not in token
 
 
 def test_the_snapshot_folds_in_the_smoke_timings_rollup():
