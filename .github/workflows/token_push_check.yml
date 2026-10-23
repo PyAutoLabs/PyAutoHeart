@@ -12,13 +12,23 @@ name: Token Push Check
 # RED, a missing or >48 h old sidecar is STALE). The job fails after the commit
 # when any push was refused, so the Actions tab shows red too.
 #
-# Observer boundary: the only write is that sidecar commit to PyAutoHeart.
+# It also runs on any pull request that changes this workflow or the probe
+# (same-repo PR branches receive the org App secret), so the real App token is
+# exercised before merge. A PR run probes, logs per-repo results, uploads the
+# JSON as an artifact and fails on any refusal — but commits nothing.
+#
+# Observer boundary: the only write is that sidecar commit to PyAutoHeart
+# (never from a pull_request run).
 
 on:
   schedule:
     # Daily 04:30 UTC — ahead of the 05:00 heart-health board, which reads it.
     - cron: "30 4 * * *"
   workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/token_push_check.yml
+      - heart/checks/token_push.py
 
 # contents: write → commit the sidecar into Heart's OWN repo (GITHUB_TOKEN).
 # The library probes use the App token only.
@@ -67,7 +77,15 @@ jobs:
           # the App helper so it plays no part in that.
           git config --global --unset-all credential.https://github.com.helper || true
 
-      - name: Commit the sidecar (own repo only)
+      - name: Upload the sidecar (pull_request runs)
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: token-push-sidecar
+          path: state/token_push.json
+
+      - name: Commit the sidecar (own repo only, never from a PR)
+        if: github.event_name != 'pull_request'
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
