@@ -1617,6 +1617,7 @@ def _unobs_section(key: str, title: str) -> Section:
 # and the all-in-one plan are written from, so the two can never disagree.
 TICK_CMD = "pyauto-heart tick"
 VERIFY_INSTALL_CMD = "pyauto-heart verify_install --report-json"
+TOKEN_PUSH_CMD = "gh workflow run token_push_check.yml -R PyAutoLabs/PyAutoHeart"
 REHEARSE_STEP = ("dispatch a release rehearsal with the release skill with `rehearse`, then "
                  "`pyauto-heart validate --ingest <artifacts>`")
 
@@ -1665,6 +1666,14 @@ STALE_REMEDIES: dict[str, dict] = {
         "step": ("re-run the deep PyPI leg "
                  "(`python3 -m heart.checks.version_skew --pypi` from the Heart "
                  "checkout) once PyPI answers again")},
+    # the release push credential — a GitHub workflow, so the remedy dispatches
+    # it (the sidecar it commits lands on the next pull of Heart)
+    "token_push_unknown": {"command": TOKEN_PUSH_CMD,
+                           "step": f"run the push-credential check with `{TOKEN_PUSH_CMD}`, "
+                                   "then pull PyAutoHeart"},
+    "token_push_stale": {"command": TOKEN_PUSH_CMD,
+                         "step": f"re-run the push-credential check with `{TOKEN_PUSH_CMD}`, "
+                                 "then pull PyAutoHeart (the evidence expired)"},
 }
 
 # What a stale row copies when its key has no entry here (a gap added since

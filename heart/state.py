@@ -79,6 +79,12 @@ def _configured_repos() -> set[str] | None:
     return names
 
 
+def _token_push_sidecar() -> dict[str, Any]:
+    from heart.checks import token_push
+
+    return token_push.load()
+
+
 def aggregate() -> dict[str, Any]:
     """Collapse per-repo JSON sidecars into one state.json snapshot."""
     _ensure_dirs()
@@ -127,6 +133,10 @@ def aggregate() -> dict[str, Any]:
         "verify_install": _read_json_or_default(HEART_STATE_DIR / "verify_install.json", {}),
         "url_check": _read_json_or_default(HEART_STATE_DIR / "url_check.json", {}),
         "validation_report": _read_json_or_default(HEART_STATE_DIR / "validation_report.json", {}),
+        # The release push-credential proof is COMMITTED (state/token_push.json,
+        # written by token_push_check.yml), not a local cache: every checkout —
+        # dev box, the cloud board, the nightly driver — reads the same file.
+        "token_push": _token_push_sidecar(),
     }
     atomic_write_json(HEART_STATE_FILE, snapshot)
     return snapshot

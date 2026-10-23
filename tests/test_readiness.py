@@ -43,6 +43,16 @@ def _green_validation_report(ts: str = "2026-06-01T00:00:00+00:00") -> dict:
     }
 
 
+def _green_token_push(ts: str = "2026-06-01T00:00:00+00:00") -> dict:
+    """A sidecar where the App can push to every library, checked at ``ts``."""
+    return {
+        "schema": "token_push/1",
+        "checked_at": ts,
+        "identity": "pyautolabs-bot",
+        "repos": {lib: {"ls_remote": True, "push": True, "error": None} for lib in LIBS},
+    }
+
+
 def make_snapshot(**overrides) -> dict:
     """A fully-green baseline snapshot; override slices per test."""
     snap = {
@@ -58,6 +68,9 @@ def make_snapshot(**overrides) -> dict:
         "validation_report": _green_validation_report(),
     }
     snap.update(overrides)
+    # fresh App push-credential proof for every library, dated at the
+    # snapshot's own ts (so an overridden ts never ages it into a gap)
+    snap.setdefault("token_push", _green_token_push(snap["ts"]))
     return snap
 
 
@@ -899,6 +912,9 @@ def make_ci_snapshot(**overrides) -> dict:
         "validation_report": _green_validation_report(),
     }
     snap.update(overrides)
+    # fresh App push-credential proof for every library, dated at the
+    # snapshot's own ts (so an overridden ts never ages it into a gap)
+    snap.setdefault("token_push", _green_token_push(snap["ts"]))
     return snap
 
 
@@ -1186,3 +1202,54 @@ def test_pipeline_required_smoke_gates_release(conclusion, expected):
     assert verdict["verdict"] == expected
     if expected == "red":
         assert "PipelineA: Smoke Tests failure on main" in verdict["red_reasons"]
+
+
+# ---------------------------------------------------------------------------
+# release push credential (heart/checks/token_push.py sidecar)
+# ---------------------------------------------------------------------------
+
+def test_token_push_all_pushable_and_fresh_is_green():
+    v = compute(make_snapshot())
+    assert v["verdict"] == "green"
+    assert not any("push credential" in r for r in v["reasons"])
+
+
+def test_token_push_refused_is_red():
+    tp = _green_token_push()
+    tp["repos"]["PyAutoArray"] = {"ls_remote": True, "push": False,
+                                  "error": "push --dry-run: 403"}
+    v = compute(make_snapshot(token_push=tp))
+    assert v["verdict"] == "red"
+    assert any("push credential refused" in r and "PyAutoArray" in r
+               and "pyautolabs-bot" in r for r in v["red_reasons"])
+
+
+def test_token_push_not_run_is_stale_tier():
+    v = compute(make_snapshot(token_push={}))
+    assert v["verdict"] == "stale"
+    assert any("push credential check not run" in r for r in v["stale_reasons"])
+    assert any(d["key"] == "token_push_unknown" for d in v["stale_details"])
+
+
+def test_token_push_older_than_48h_is_stale_tier():
+    tp = _green_token_push("2026-05-29T00:00:00+00:00")  # 72 h before snapshot ts
+    v = compute(make_snapshot(token_push=tp))
+    assert v["verdict"] == "stale"
+    assert any("push credential check stale" in r and "72h" in r for r in v["stale_reasons"])
+    assert any(d["key"] == "token_push_stale" for d in v["stale_details"])
+
+
+def test_token_push_library_missing_is_stale_not_pass():
+    tp = _green_token_push()
+    del tp["repos"]["PyAutoLens"]
+    v = compute(make_snapshot(token_push=tp))
+    assert v["verdict"] == "stale"
+    assert any("unverified" in r and "PyAutoLens" in r for r in v["stale_reasons"])
+
+
+def test_token_push_refusal_dominates_staleness():
+    tp = _green_token_push("2026-05-01T00:00:00+00:00")
+    tp["repos"]["PyAutoFit"]["push"] = False
+    v = compute(make_snapshot(token_push=tp))
+    assert v["verdict"] == "red"
+    assert not any("push credential check stale" in r for r in v["stale_reasons"])

@@ -1,0 +1,99 @@
+name: Token Push Check
+
+# Proves, ahead of any release, that the org-owned `pyautolabs-bot` GitHub App
+# — the identity PyAutoHands release.yml tags the libraries with — can still
+# push to all five release libraries. It mints a one-hour App token scoped to
+# those five, installs it as git's credential helper and runs
+# heart/checks/token_push.py: `git ls-remote` + `git push --dry-run` per
+# library. --dry-run sends no pack and creates no ref, so nothing is pushed.
+#
+# The result is committed to Heart's own repo as state/token_push.json (the
+# sidecar `state.aggregate` folds in and `readiness` grades: a refused push is
+# RED, a missing or >48 h old sidecar is STALE). The job fails after the commit
+# when any push was refused, so the Actions tab shows red too.
+#
+# Observer boundary: the only write is that sidecar commit to PyAutoHeart.
+
+on:
+  schedule:
+    # Daily 04:30 UTC — ahead of the 05:00 heart-health board, which reads it.
+    - cron: "30 4 * * *"
+  workflow_dispatch:
+
+# contents: write → commit the sidecar into Heart's OWN repo (GITHUB_TOKEN).
+# The library probes use the App token only.
+permissions:
+  contents: write
+
+concurrency:
+  group: token-push-check
+  cancel-in-progress: false
+
+jobs:
+  token-push:
+    name: App push credential (dry-run)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PyAutoHeart
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Mint App token (release libraries, contents write)
+        id: app_token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: PyAutoLabs
+          repositories: PyAutoFit,PyAutoArray,PyAutoGalaxy,PyAutoLens,PyAutoNerves
+          permission-contents: write
+
+      - name: Probe ls-remote + push --dry-run
+        env:
+          GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          APP_SLUG: ${{ steps.app_token.outputs.app-slug }}
+        run: |
+          # gh as git's credential helper for github.com (reads GH_TOKEN). The
+          # probes run in a throwaway repo outside this checkout, so checkout's
+          # persisted GITHUB_TOKEN header (local to PyAutoHeart/.git/config)
+          # never reaches them.
+          gh auth setup-git
+          PYTHONPATH="$PWD" python -m heart.checks.token_push --out state/token_push.json
+          # The commit below pushes Heart with checkout's GITHUB_TOKEN; drop
+          # the App helper so it plays no part in that.
+          git config --global --unset-all credential.https://github.com.helper || true
+
+      - name: Commit the sidecar (own repo only)
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add state/token_push.json
+          if git diff --cached --quiet; then
+            echo "token_push.json unchanged — nothing to commit."
+            exit 0
+          fi
+          git commit -m "chore(heart): token push check sidecar [skip ci]"
+          # Other Heart writers (heart-health) may land first: rebase and retry.
+          for attempt in 1 2 3; do
+            if git push origin "HEAD:${GITHUB_REF_NAME}"; then
+              exit 0
+            fi
+            git pull --rebase origin "${GITHUB_REF_NAME}"
+          done
+          echo "::error::could not push the token_push sidecar after 3 attempts"
+          exit 1
+
+      - name: Fail on any refused push
+        run: |
+          python3 - <<'PY'
+          import json, sys
+          data = json.load(open("state/token_push.json"))
+          bad = [r for r, row in data["repos"].items() if row.get("push") is not True]
+          for r in bad:
+              print(f"::error::{data['identity']} cannot push to PyAutoLabs/{r}: {data['repos'][r].get('error')}")
+          sys.exit(1 if bad else 0)
+          PY
