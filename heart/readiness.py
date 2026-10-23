@@ -19,7 +19,10 @@ The verdict uses STRICT release gates:
   release-validation report last ingested reports ``validation_outcome ==
   "fail"`` (a stage failed, or failing/timed-out counts were recorded). A report
   predating that field falls back to ``release_ready == false`` → RED, so the
-  gate fails closed on evidence it cannot classify.
+  gate fails closed on evidence it cannot classify. Also RED: the release push
+  credential (``heart/checks/token_push.py``, the ``pyautolabs-bot`` App's
+  ``git push --dry-run``) was refused by any library; a missing, partial or
+  older-than-48 h proof is STALE.
 - **YELLOW** (caution) for soft signals: workspace-validation not passing (the
   workspace scripts/notebooks carry standing debt, so this is advisory — never a
   hard block), script-timing regressions, stale open PRs, stale parked scripts, a
@@ -93,6 +96,7 @@ import yaml
 from heart import state, validate
 from heart.checks.ci_status import FAILURE_CONCLUSIONS, load_required_workflows
 from heart.checks.test_run import counts_measured as tr_counts_measured
+from heart.checks.token_push import STALE_HOURS as TOKEN_PUSH_STALE_HOURS
 from heart.heart_color import (
     c_bold, c_fail, c_info, c_meta, c_ok, c_warn,
     glyph_fail, glyph_ok, glyph_warn,
@@ -147,6 +151,9 @@ _WEIGHTS: dict[str, tuple[int, int]] = {
     "validation_unknown": (12, 12),
     "validation_profile": (12, 12),
     "validation_stale": (10, 10),
+    "token_push_refused": (40, 40),
+    "token_push_unknown": (10, 10),
+    "token_push_stale": (10, 10),
 }
 
 
@@ -643,6 +650,36 @@ def compute(
             add_stale("release validation status unknown", "validation_unknown")
     else:
         add_stale("no release validation for current source", "validation_absent")
+
+    # --- release push credential (RED on a refused push, STALE if unproven) ---
+    # heart/checks/token_push.py: the pyautolabs-bot App's `git push --dry-run`
+    # to each release library. A refusal means the release's tag push would
+    # fail — a real blocker. A missing, partial or aged sidecar is an evidence
+    # gap (re-run the check), never an implied pass.
+    tp = snapshot.get("token_push")
+    tp_repos = tp.get("repos") if isinstance(tp, dict) else None
+    if isinstance(tp_repos, dict) and tp_repos:
+        identity = str(tp.get("identity") or "identity unknown")
+        refused = [lib for lib in libs
+                   if isinstance(tp_repos.get(lib), dict) and tp_repos[lib].get("push") is False]
+        unproven = [lib for lib in libs
+                    if not isinstance(tp_repos.get(lib), dict)
+                    or not isinstance(tp_repos[lib].get("push"), bool)]
+        age = _age_days(tp.get("checked_at"), ref)
+        if refused:
+            red.append(f"release push credential refused ({identity}): {', '.join(refused)}")
+            hit("token_push_refused")
+        elif unproven:
+            add_stale(f"release push credential unverified ({identity}): {', '.join(unproven)}",
+                      "token_push_unknown")
+        elif age is None or age * 24 > TOKEN_PUSH_STALE_HOURS:
+            add_stale(
+                f"release push credential check stale ({identity}, "
+                + ("age unknown)" if age is None else f"{int(age * 24)}h old)"),
+                "token_push_stale",
+            )
+    else:
+        add_stale("release push credential check not run", "token_push_unknown")
 
     # --- script timing (YELLOW) ---
     timing = snapshot.get("script_timing", {}) or {}
