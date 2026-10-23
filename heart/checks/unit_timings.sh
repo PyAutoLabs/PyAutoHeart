@@ -78,10 +78,9 @@ ingest_one_repo() {
   while read -r id artifact_name; do
     [[ -z "$id" ]] && continue
     err="$(mktemp)"
-    # KNOWN RISK: the repo-scoped GITHUB_TOKEN may be refused (403) by the /zip
-    # endpoint for ANOTHER repo's artifacts. The remedy is a secret, not a code
-    # change — HEART_TIMINGS_TOKEN, a fine-grained PAT with Actions: read on the
-    # library repos (see .github/workflows/heart-health.yml). Either way one
+    # The /zip endpoint refuses (403) another repo's artifacts to a token
+    # without actions:read there; heart-health.yml supplies an owner-wide
+    # read-only GitHub App token for exactly this. Either way one
     # leg's failure is recorded as that leg's error and must not lose the repo's
     # other leg, hence the `.error` marker and the `continue`.
     if gh api "repos/$owner_name/actions/artifacts/$id/zip" >"$downloads/$id.zip" 2>"$err" \
