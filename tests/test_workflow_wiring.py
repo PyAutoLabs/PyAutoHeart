@@ -231,6 +231,19 @@ def test_timing_artifacts_stay_out_of_the_aggregate_namespace():
         assert not _timing_step(job_name)["with"]["name"].startswith(prefix)
 
 
+def test_validation_result_download_preserves_artifact_directories():
+    """Same-named sidecars must never share a concurrent download destination."""
+    analyze = _load("workspace-validation.yml")["jobs"]["analyze"]
+    download = _step(analyze, "Download all result artifacts")
+    assert download["with"]["merge-multiple"] is False
+    assert download["with"]["path"] == "all-results"
+    guard = _step(analyze, "Reject foreign result paths before aggregation")
+    aggregate = _step(analyze, "Aggregate into report.json")
+    assert "all-results" in guard["run"]
+    assert "all-results/" in aggregate["run"]
+    assert analyze["steps"].index(guard) < analyze["steps"].index(aggregate)
+
+
 # --- the discard-stale-results guard --------------------------------------
 #
 # A workspace repo that tracks its own test-results/ (one did, by accident, in
