@@ -44,6 +44,34 @@ def test_clean_shard_and_explicit_local_replay(tmp_path, monkeypatch):
     assert provenance.main([str(tmp_path), "--root", str(tmp_path)]) == 0
 
 
+def test_nested_artifacts_keep_same_named_sidecars_and_validate_every_shard(tmp_path):
+    runner = tmp_path / "runner"
+    results = tmp_path / "all-results"
+    for name in ("first", "second"):
+        artifact = results / f"results-scripts-{name}"
+        artifact.mkdir(parents=True)
+        (artifact / "report.json").write_text(json.dumps(shard(runner / name / "test.py")))
+        (artifact / "smoke_timings.json").write_text(json.dumps({"timings": [name]}))
+
+    assert len(list(results.rglob("smoke_timings.json"))) == 2
+    assert provenance.main([str(results), "--root", str(runner)]) == 0
+
+    # Nesting must not hide a foreign shard behind a passing sibling.
+    foreign = results / "results-scripts-second" / "report.json"
+    foreign.write_text(json.dumps(shard(tmp_path / "outside/test.py")))
+    assert provenance.main([str(results), "--root", str(runner)]) == 1
+
+
+@pytest.mark.parametrize("payload", ['{"results":', '{"results": {}}'])
+def test_nested_malformed_result_shard_still_fails(tmp_path, payload, capsys):
+    artifact = tmp_path / "all-results" / "results-scripts-example"
+    artifact.mkdir(parents=True)
+    report = artifact / "report.json"
+    report.write_text(payload)
+    assert provenance.main([str(artifact.parent), "--root", str(tmp_path)]) == 1
+    assert str(report) in capsys.readouterr().err
+
+
 def test_symlink_escape_is_rejected(tmp_path):
     root = tmp_path / "runner"
     root.mkdir()

@@ -659,7 +659,10 @@ jobs:
         with:
           path: all-results
           pattern: results-*
-          merge-multiple: true
+          # Each shard includes smoke_timings.json. Flattening artifacts lets
+          # concurrent downloads overwrite that shared name and corrupt JSON.
+          # Both provenance and aggregation already walk nested directories.
+          merge-multiple: false
       - name: Checkout Heart result provenance guard
         uses: actions/checkout@v4
         with:
