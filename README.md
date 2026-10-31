@@ -26,7 +26,7 @@ copy → paste, on a laptop or a phone.
 <!-- The line below is auto-updated by .github/workflows/heart-health.yml (everything -->
 <!-- between the heart:begin/heart:end markers is replaced with the rendered strip). -->
 <!-- heart:begin -->
-🔴 Monitoring 20/100 · release **RED** · [dashboard →](https://pyautolabs.github.io/PyAutoHeart/)
+🔴 Monitoring 25/100 · release **RED** · [dashboard →](https://pyautolabs.github.io/PyAutoHeart/)
 
 **Blockers:** release validation FAILED (stage integrate)
 <!-- heart:end -->
