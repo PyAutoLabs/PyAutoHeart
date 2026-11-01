@@ -135,6 +135,27 @@ def test_failed_producers_override_pass(evidence, which, conclusion):
     assert run(evidence)["validation_outcome"] == "fail"
 
 
+def test_skewed_start_stamp_does_not_hide_a_finished_rehearsal(evidence):
+    # PyAutoHands run 41290559836 (2026-11-01): created_at an hour late, after
+    # its own updated_at, while the run really finished before the integrate.
+    evidence["producer"]["created_at"] = "2026-10-01T12:40:00Z"
+    evidence["producer"]["updated_at"] = "2026-10-01T11:59:51Z"
+    result = run(evidence)
+    assert result["rehearsal_matched"]
+    assert result["validation_outcome"] == "pass"
+    # The skewed stamp must not date the evidence after the integrate start.
+    assert report(evidence)["ts"] <= "2026-10-01T12:00:00"
+    assert "rehearse" in report(evidence)["stages"]
+
+
+def test_skewed_start_stamp_cannot_admit_a_later_rehearsal(evidence):
+    evidence["producer"]["created_at"] = "2026-10-01T12:40:00Z"
+    evidence["producer"]["updated_at"] = "2026-10-01T12:20:00Z"
+    result = run(evidence)
+    assert not result["rehearsal_matched"]
+    assert result["validation_outcome"] == "incomplete"
+
+
 def test_missing_rehearsal_is_incomplete(evidence):
     evidence["artifact"] = None
     assert run(evidence)["validation_outcome"] == "incomplete"
