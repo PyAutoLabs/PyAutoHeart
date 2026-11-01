@@ -82,6 +82,24 @@ def matching_rehearsal(
     )
 
 
+def _effective_created(run: dict):
+    """When a producer run started, robust to a skewed ``created_at``.
+
+    A run cannot finish before it was created, so ``created_at`` later than
+    ``updated_at`` is a bad start stamp, not a late run: on 2026-11-01 GitHub
+    reported PyAutoHands run 41290559836 as created 09:50:55Z yet updated
+    09:09:27Z (every job start stamp an hour late), and the valid rehearsal
+    was discarded. Take the earlier of the two; ``None`` when either is
+    missing, so an unstamped run is still skipped. Ordering against the
+    integration remains ``matching_rehearsal``'s ``produced <= start`` check.
+    """
+    created = release_run._parse_ts(run.get("created_at"))
+    updated = release_run._parse_ts(run.get("updated_at"))
+    if not created or not updated:
+        return None
+    return min(created, updated)
+
+
 def collect(config: dict, fetch=api, get_artifact=download) -> dict[str, Any]:
     """Observe the newest integration only; never fall back to an older pass.
 
@@ -136,7 +154,7 @@ def collect(config: dict, fetch=api, get_artifact=download) -> dict[str, Any]:
                 f"repos/{producer_repo}/actions/workflows/release.yml/runs?branch=main&per_page=20"
             ).get("workflow_runs", [])
             for candidate in candidates[:20]:
-                created = release_run._parse_ts(candidate.get("created_at"))
+                created = _effective_created(candidate)
                 if (
                     not created
                     or created > observed
