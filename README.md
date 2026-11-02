@@ -26,7 +26,9 @@ copy → paste, on a laptop or a phone.
 <!-- The line below is auto-updated by .github/workflows/heart-health.yml (everything -->
 <!-- between the heart:begin/heart:end markers is replaced with the rendered strip). -->
 <!-- heart:begin -->
-🟢 Monitoring 52/100 · release **GREEN** · [dashboard →](https://pyautolabs.github.io/PyAutoHeart/)
+🟡 Monitoring 29/100 · release **YELLOW** · [dashboard →](https://pyautolabs.github.io/PyAutoHeart/)
+
+**Warnings:** workspace validation not passing (0 failed, 1 timeout, cloud#41432188469: autofit_test scripts/searches/MultiStartResumeNaNCounters.py)
 <!-- heart:end -->
 
 ## How PyAutoHeart works
