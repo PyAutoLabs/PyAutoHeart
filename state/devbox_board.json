@@ -7,7 +7,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-11-04T13:59:17+00:00"
+        "ts": "2026-11-04T14:55:43+00:00"
       }
     },
     "HowToGalaxy": {
@@ -17,7 +17,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-11-04T13:59:17+00:00"
+        "ts": "2026-11-04T14:55:44+00:00"
       }
     },
     "HowToLens": {
@@ -27,7 +27,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-11-04T13:59:17+00:00"
+        "ts": "2026-11-04T14:55:44+00:00"
       }
     },
     "PyAutoArray": {
@@ -37,7 +37,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-11-04T13:59:16+00:00"
+        "ts": "2026-11-04T14:55:44+00:00"
       }
     },
     "PyAutoBrain": {
@@ -47,7 +47,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-11-04T13:59:17+00:00"
+        "ts": "2026-11-04T14:55:44+00:00"
       }
     },
     "PyAutoCTI": {
@@ -57,7 +57,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-11-04T13:59:17+00:00"
+        "ts": "2026-11-04T14:55:43+00:00"
       }
     },
     "PyAutoEars": {
@@ -67,7 +67,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-11-04T13:59:17+00:00"
+        "ts": "2026-11-04T14:55:43+00:00"
       }
     },
     "PyAutoEyes": {
@@ -77,7 +77,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-11-04T13:59:17+00:00"
+        "ts": "2026-11-04T14:55:43+00:00"
       }
     },
     "PyAutoFit": {
@@ -87,7 +87,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-11-04T13:59:17+00:00"
+        "ts": "2026-11-04T14:55:44+00:00"
       }
     },
     "PyAutoGalaxy": {
@@ -97,7 +97,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-11-04T13:59:17+00:00"
+        "ts": "2026-11-04T14:55:44+00:00"
       }
     },
     "PyAutoHands": {
@@ -107,7 +107,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-11-04T13:59:17+00:00"
+        "ts": "2026-11-04T14:55:43+00:00"
       }
     },
     "PyAutoHeart": {
@@ -117,7 +117,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-11-04T13:59:17+00:00"
+        "ts": "2026-11-04T14:55:44+00:00"
       }
     },
     "PyAutoInsight": {
@@ -127,7 +127,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-11-04T13:59:17+00:00"
+        "ts": "2026-11-04T14:55:44+00:00"
       }
     },
     "PyAutoLens": {
@@ -137,7 +137,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-11-04T13:59:17+00:00"
+        "ts": "2026-11-04T14:55:44+00:00"
       }
     },
     "PyAutoMemory": {
@@ -147,17 +147,17 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-11-04T13:59:17+00:00"
+        "ts": "2026-11-04T14:55:44+00:00"
       }
     },
     "PyAutoMind": {
       "repo_state": {
         "ahead": 0,
-        "behind": 1,
+        "behind": 0,
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-11-04T13:59:17+00:00"
+        "ts": "2026-11-04T14:55:43+00:00"
       }
     },
     "PyAutoNerves": {
@@ -167,7 +167,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-11-04T13:59:17+00:00"
+        "ts": "2026-11-04T14:55:44+00:00"
       }
     },
     "PyAutoPulse": {
@@ -177,7 +177,7 @@
         "branch": "main",
         "dirty_files": 1,
         "dirty_real": 0,
-        "ts": "2026-11-04T13:59:17+00:00"
+        "ts": "2026-11-04T14:55:44+00:00"
       }
     },
     "autocti_workspace": {
@@ -187,7 +187,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-11-04T13:59:17+00:00"
+        "ts": "2026-11-04T14:55:43+00:00"
       }
     },
     "autocti_workspace_test": {
@@ -197,7 +197,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-11-04T13:59:17+00:00"
+        "ts": "2026-11-04T14:55:44+00:00"
       }
     },
     "autofit_workspace": {
@@ -207,7 +207,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-11-04T13:59:17+00:00"
+        "ts": "2026-11-04T14:55:44+00:00"
       }
     },
     "autofit_workspace_developer": {
@@ -217,7 +217,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-11-04T13:59:17+00:00"
+        "ts": "2026-11-04T14:55:44+00:00"
       }
     },
     "autofit_workspace_test": {
@@ -227,7 +227,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-11-04T13:59:17+00:00"
+        "ts": "2026-11-04T14:55:44+00:00"
       }
     },
     "autogalaxy_workspace": {
@@ -237,7 +237,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-11-04T13:59:17+00:00"
+        "ts": "2026-11-04T14:55:44+00:00"
       }
     },
     "autogalaxy_workspace_test": {
@@ -247,7 +247,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-11-04T13:59:17+00:00"
+        "ts": "2026-11-04T14:55:43+00:00"
       }
     },
     "autolens_workspace": {
@@ -257,7 +257,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-11-04T13:59:17+00:00"
+        "ts": "2026-11-04T14:55:43+00:00"
       }
     },
     "autolens_workspace_developer": {
@@ -267,7 +267,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-11-04T13:59:17+00:00"
+        "ts": "2026-11-04T14:55:43+00:00"
       }
     },
     "autolens_workspace_test": {
@@ -277,7 +277,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-11-04T13:59:17+00:00"
+        "ts": "2026-11-04T14:55:43+00:00"
       }
     },
     "euclid_strong_lens_modeling_pipeline": {
@@ -287,7 +287,7 @@
         "branch": "main",
         "dirty_files": 0,
         "dirty_real": 0,
-        "ts": "2026-11-04T13:59:17+00:00"
+        "ts": "2026-11-04T14:55:44+00:00"
       }
     }
   },
@@ -1794,7 +1794,7 @@
           "family": "manifest_drift",
           "fresh": true,
           "id": "manifest_drift:coverage",
-          "observed_at": "2026-11-04T13:59:48.244108+00:00",
+          "observed_at": "2026-11-04T14:56:13.390495+00:00",
           "owner": "manifest_drift",
           "source": "snapshot.manifest_drift",
           "status": "green",
@@ -1802,7 +1802,7 @@
           "summary": "Repository manifest drift: green"
         }
       ],
-      "observed_at": "2026-11-04T13:59:48.244108+00:00",
+      "observed_at": "2026-11-04T14:56:13.390495+00:00",
       "state": "ok",
       "summary": "Repository manifest drift: green"
     },
@@ -2533,7 +2533,7 @@
           "family": "profiling_drift",
           "fresh": true,
           "id": "profiling_drift:coverage",
-          "observed_at": "2026-11-04T13:59:31.775424+00:00",
+          "observed_at": "2026-11-04T14:55:56.243390+00:00",
           "owner": "profiling_drift",
           "source": "snapshot.profiling_drift",
           "status": "green",
@@ -2541,7 +2541,7 @@
           "summary": "588 results clean"
         }
       ],
-      "observed_at": "2026-11-04T13:59:31.775424+00:00",
+      "observed_at": "2026-11-04T14:55:56.243390+00:00",
       "state": "ok",
       "summary": "588 results clean"
     },
@@ -2557,7 +2557,7 @@
           "family": "required_workflow_drift",
           "fresh": true,
           "id": "required_workflow_drift:coverage",
-          "observed_at": "2026-11-04T13:59:36.473342+00:00",
+          "observed_at": "2026-11-04T14:56:02.309631+00:00",
           "owner": "required_workflow_drift",
           "source": "snapshot.required_workflow_drift",
           "status": "green",
@@ -2565,7 +2565,7 @@
           "summary": "Required workflow coverage: green"
         }
       ],
-      "observed_at": "2026-11-04T13:59:36.473342+00:00",
+      "observed_at": "2026-11-04T14:56:02.309631+00:00",
       "state": "ok",
       "summary": "Required workflow coverage: green"
     },
@@ -21709,108 +21709,28 @@
       "summary": "526 scripts timed across 11 repos \u00b7 slowest HowToGalaxy scripts/chapter_3_pixelizations/tutorial_4_adaptive_reconstruction.py 1m"
     },
     "test_run": {
-      "details": [
-        "\u2717 autofit_test scripts/searches/MultiStartResumeNaNCounters.py (timeout)"
-      ],
+      "details": [],
       "monitoring_checks": [
         {
-          "action": {
-            "kind": "prompt",
-            "label": "inspect finding",
-            "payload": "Use the health and release skills to inspect autofit_test. For missing evidence, use the documented validation or install-verification procedure in the required environment, ingest results and re-assess. A rehearsal is not authorization to publish a release."
-          },
-          "applicability_reason": null,
-          "applicable": true,
-          "blocked_reason": null,
-          "evidence": {
-            "project": "autofit_test",
-            "script": "scripts/searches/MultiStartResumeNaNCounters.py",
-            "state": "red",
-            "status": "timeout"
-          },
-          "family": "test_run",
-          "fresh": false,
-          "id": "test_run:autofit_test:",
-          "observed_at": "2026-11-02T10:51:56Z",
-          "owner": "test_run",
-          "source": "snapshot.test_run:test_run/failing_scripts/0",
-          "status": "red",
-          "subject": "autofit_test",
-          "summary": "red"
-        },
-        {
-          "action": {
-            "kind": "prompt",
-            "label": "inspect workspace validation",
-            "payload": "Use the health skill. Inspect the latest workspace validation report, identify failures and timeouts, and route confirmed repairs through the bug and start-dev skills."
-          },
+          "action": null,
           "applicability_reason": null,
           "applicable": true,
           "blocked_reason": null,
           "evidence": null,
           "family": "test_run",
-          "fresh": false,
+          "fresh": true,
           "id": "test_run:coverage",
-          "observed_at": "2026-11-02T10:51:56Z",
+          "observed_at": "2026-11-04T14:21:33Z",
           "owner": "test_run",
           "source": "snapshot.test_run",
-          "status": "red",
+          "status": "green",
           "subject": "Workspace validation",
-          "summary": "NOT ready \u2014 1409p / 0f / 125s @ cloud#41432188469"
-        },
-        {
-          "action": {
-            "kind": "prompt",
-            "label": "inspect finding",
-            "payload": "Use the health and release skills to inspect test_run. For missing evidence, use the documented validation or install-verification procedure in the required environment, ingest results and re-assess. A rehearsal is not authorization to publish a release."
-          },
-          "applicability_reason": null,
-          "applicable": true,
-          "blocked_reason": null,
-          "evidence": {
-            "cloud_counts": {
-              "failed": 0,
-              "passed": 1409,
-              "skipped": 125,
-              "timeout": 1
-            },
-            "cloud_ready": false,
-            "cloud_report_run_id": 41432188469,
-            "cloud_url": "https://github.com/PyAutoLabs/PyAutoHeart/actions/runs/41432188469",
-            "counts_measured": true,
-            "failed": 0,
-            "failing_scripts": [
-              {
-                "project": "autofit_test",
-                "script": "scripts/searches/MultiStartResumeNaNCounters.py",
-                "status": "timeout"
-              }
-            ],
-            "parked_stale": [],
-            "parked_stale_count": 0,
-            "passed": 1409,
-            "per_project": {},
-            "ready": false,
-            "run_label": "cloud#41432188469",
-            "skipped": 125,
-            "source": "cloud",
-            "timeout": 1,
-            "ts": "2026-11-02T10:51:56Z"
-          },
-          "family": "test_run",
-          "fresh": false,
-          "id": "test_run:test_run:",
-          "observed_at": "2026-11-02T10:51:56Z",
-          "owner": "test_run",
-          "source": "snapshot.test_run:test_run",
-          "status": "red",
-          "subject": "test_run",
-          "summary": "red"
+          "summary": "ready \u2014 1412p / 0f / 125s @ cloud#41846751069"
         }
       ],
-      "observed_at": "2026-11-02T10:51:56Z",
-      "state": "fail",
-      "summary": "NOT ready \u2014 1409p / 0f / 125s @ cloud#41432188469"
+      "observed_at": "2026-11-04T14:21:33Z",
+      "state": "ok",
+      "summary": "ready \u2014 1412p / 0f / 125s @ cloud#41846751069"
     },
     "unit_test_timing": {
       "details": [
@@ -35364,7 +35284,7 @@
           "family": "version_skew",
           "fresh": true,
           "id": "version_skew:HowToFit:",
-          "observed_at": "2026-11-04T13:59:33.779594+00:00",
+          "observed_at": "2026-11-04T14:55:59.895691+00:00",
           "owner": "version_skew",
           "source": "snapshot.version_skew:version_skew/workspaces/3",
           "status": "green",
@@ -35386,7 +35306,7 @@
           "family": "version_skew",
           "fresh": true,
           "id": "version_skew:HowToGalaxy:",
-          "observed_at": "2026-11-04T13:59:33.779594+00:00",
+          "observed_at": "2026-11-04T14:55:59.895691+00:00",
           "owner": "version_skew",
           "source": "snapshot.version_skew:version_skew/workspaces/4",
           "status": "green",
@@ -35408,7 +35328,7 @@
           "family": "version_skew",
           "fresh": true,
           "id": "version_skew:HowToLens:",
-          "observed_at": "2026-11-04T13:59:33.779594+00:00",
+          "observed_at": "2026-11-04T14:55:59.895691+00:00",
           "owner": "version_skew",
           "source": "snapshot.version_skew:version_skew/workspaces/5",
           "status": "green",
@@ -35430,7 +35350,7 @@
           "family": "version_skew",
           "fresh": true,
           "id": "version_skew:autofit_workspace:",
-          "observed_at": "2026-11-04T13:59:33.779594+00:00",
+          "observed_at": "2026-11-04T14:55:59.895691+00:00",
           "owner": "version_skew",
           "source": "snapshot.version_skew:version_skew/workspaces/0",
           "status": "green",
@@ -35452,7 +35372,7 @@
           "family": "version_skew",
           "fresh": true,
           "id": "version_skew:autogalaxy_workspace:",
-          "observed_at": "2026-11-04T13:59:33.779594+00:00",
+          "observed_at": "2026-11-04T14:55:59.895691+00:00",
           "owner": "version_skew",
           "source": "snapshot.version_skew:version_skew/workspaces/1",
           "status": "green",
@@ -35474,7 +35394,7 @@
           "family": "version_skew",
           "fresh": true,
           "id": "version_skew:autolens_workspace:",
-          "observed_at": "2026-11-04T13:59:33.779594+00:00",
+          "observed_at": "2026-11-04T14:55:59.895691+00:00",
           "owner": "version_skew",
           "source": "snapshot.version_skew:version_skew/workspaces/2",
           "status": "green",
@@ -35490,7 +35410,7 @@
           "family": "version_skew",
           "fresh": true,
           "id": "version_skew:coverage",
-          "observed_at": "2026-11-04T13:59:33.779594+00:00",
+          "observed_at": "2026-11-04T14:55:59.895691+00:00",
           "owner": "version_skew",
           "source": "snapshot.version_skew",
           "status": "green",
@@ -35512,7 +35432,7 @@
           "family": "version_skew",
           "fresh": true,
           "id": "version_skew:euclid_strong_lens_modeling_pipeline:",
-          "observed_at": "2026-11-04T13:59:33.779594+00:00",
+          "observed_at": "2026-11-04T14:55:59.895691+00:00",
           "owner": "version_skew",
           "source": "snapshot.version_skew:version_skew/workspaces/6",
           "status": "green",
@@ -35520,7 +35440,7 @@
           "summary": "OK"
         }
       ],
-      "observed_at": "2026-11-04T13:59:33.779594+00:00",
+      "observed_at": "2026-11-04T14:55:59.895691+00:00",
       "state": "ok",
       "summary": "all floors satisfiable"
     },
@@ -35721,7 +35641,7 @@
           "evidence": "magnification-maps-wiring/PyAutoLens",
           "id": "drift:dirty:magnification-maps-wiring/PyAutoLens",
           "key": "dirty",
-          "observed_at": "2026-11-04T13:59:48.383178+00:00",
+          "observed_at": "2026-11-04T14:56:13.545964+00:00",
           "reason": "3 uncommitted file(s) in task worktree",
           "release_severity": null,
           "source": "local worktree inventory",
@@ -35738,7 +35658,7 @@
           "evidence": "magnification-maps-wiring/PyAutoArray",
           "id": "drift:dirty:magnification-maps-wiring/PyAutoArray",
           "key": "dirty",
-          "observed_at": "2026-11-04T13:59:48.383178+00:00",
+          "observed_at": "2026-11-04T14:56:13.545964+00:00",
           "reason": "2 uncommitted file(s) in task worktree",
           "release_severity": null,
           "source": "local worktree inventory",
@@ -35755,7 +35675,7 @@
           "evidence": "magnification-maps-wiring/PyAutoGalaxy",
           "id": "drift:dirty:magnification-maps-wiring/PyAutoGalaxy",
           "key": "dirty",
-          "observed_at": "2026-11-04T13:59:48.383178+00:00",
+          "observed_at": "2026-11-04T14:56:13.545964+00:00",
           "reason": "2 uncommitted file(s) in task worktree",
           "release_severity": null,
           "source": "local worktree inventory",
@@ -35772,7 +35692,7 @@
           "evidence": "PyAutoCortex",
           "id": "drift:canonical_dirty:PyAutoCortex",
           "key": "canonical_dirty",
-          "observed_at": "2026-11-04T13:59:48.383178+00:00",
+          "observed_at": "2026-11-04T14:56:13.545964+00:00",
           "reason": "1 uncommitted file(s) in canonical checkout",
           "release_severity": null,
           "source": "local worktree inventory",
@@ -35789,7 +35709,7 @@
           "evidence": "PyAutoPulse",
           "id": "drift:canonical_dirty:PyAutoPulse",
           "key": "canonical_dirty",
-          "observed_at": "2026-11-04T13:59:48.383178+00:00",
+          "observed_at": "2026-11-04T14:56:13.545964+00:00",
           "reason": "1 uncommitted file(s) in canonical checkout",
           "release_severity": null,
           "source": "local worktree inventory",
@@ -35816,7 +35736,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "worktree_drift:PyAutoArray:",
-          "observed_at": "2026-11-04T13:59:28.807181+00:00",
+          "observed_at": "2026-11-04T14:55:53.090501+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift:worktree_drift/dirty/1",
           "status": "red",
@@ -35841,7 +35761,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "worktree_drift:PyAutoGalaxy:",
-          "observed_at": "2026-11-04T13:59:28.807181+00:00",
+          "observed_at": "2026-11-04T14:55:53.090501+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift:worktree_drift/dirty/2",
           "status": "red",
@@ -35866,7 +35786,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "worktree_drift:PyAutoLens:",
-          "observed_at": "2026-11-04T13:59:28.807181+00:00",
+          "observed_at": "2026-11-04T14:55:53.090501+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift:worktree_drift/dirty/0",
           "status": "red",
@@ -35885,12 +35805,12 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "worktree_drift:coverage",
-          "observed_at": "2026-11-04T13:59:28.807181+00:00",
+          "observed_at": "2026-11-04T14:55:53.090501+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift",
           "status": "red",
           "subject": "Worktree drift",
-          "summary": "2 orphan / 0 missing / 3 dirty"
+          "summary": "0 orphan / 0 missing / 3 dirty"
         },
         {
           "action": {
@@ -35905,7 +35825,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "drift:canonical_dirty:PyAutoCortex",
-          "observed_at": "2026-11-04T13:59:48.383178+00:00",
+          "observed_at": "2026-11-04T14:56:13.545964+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift",
           "status": "yellow",
@@ -35925,7 +35845,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "drift:canonical_dirty:PyAutoPulse",
-          "observed_at": "2026-11-04T13:59:48.383178+00:00",
+          "observed_at": "2026-11-04T14:56:13.545964+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift",
           "status": "yellow",
@@ -35945,7 +35865,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "drift:dirty:magnification-maps-wiring/PyAutoArray",
-          "observed_at": "2026-11-04T13:59:48.383178+00:00",
+          "observed_at": "2026-11-04T14:56:13.545964+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift",
           "status": "yellow",
@@ -35965,7 +35885,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "drift:dirty:magnification-maps-wiring/PyAutoGalaxy",
-          "observed_at": "2026-11-04T13:59:48.383178+00:00",
+          "observed_at": "2026-11-04T14:56:13.545964+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift",
           "status": "yellow",
@@ -35985,42 +35905,12 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "drift:dirty:magnification-maps-wiring/PyAutoLens",
-          "observed_at": "2026-11-04T13:59:48.383178+00:00",
+          "observed_at": "2026-11-04T14:56:13.545964+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift",
           "status": "yellow",
           "subject": "magnification-maps-wiring/PyAutoLens",
           "summary": "3 uncommitted file(s) in task worktree"
-        },
-        {
-          "action": {
-            "kind": "prompt",
-            "label": "inspect finding",
-            "payload": "Use the health and repo-cleanup skills. Inspect private local finding in the canonical checkout and active task ledger on the dev box. Preserve edits and claims; refresh with pyauto-heart tick and publish with pyauto-heart publish. Do not delete, reset, merge or close work without authorization."
-          },
-          "applicability_reason": null,
-          "family": "worktree_drift",
-          "id": "worktree_drift:private:840cffa0b7cfed87",
-          "observed_at": "2026-11-04T13:59:48.383178+00:00",
-          "source": "devbox",
-          "status": "yellow",
-          "subject": "Local observation (private details)",
-          "summary": "Inspect full evidence on the dev box; private paths omitted"
-        },
-        {
-          "action": {
-            "kind": "prompt",
-            "label": "inspect finding",
-            "payload": "Use the health and repo-cleanup skills. Inspect private local finding in the canonical checkout and active task ledger on the dev box. Preserve edits and claims; refresh with pyauto-heart tick and publish with pyauto-heart publish. Do not delete, reset, merge or close work without authorization."
-          },
-          "applicability_reason": null,
-          "family": "worktree_drift",
-          "id": "worktree_drift:private:bb2ba12bd1dd3e46",
-          "observed_at": "2026-11-04T13:59:48.383178+00:00",
-          "source": "devbox",
-          "status": "yellow",
-          "subject": "Local observation (private details)",
-          "summary": "Inspect full evidence on the dev box; private paths omitted"
         },
         {
           "action": {
@@ -36039,7 +35929,7 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "worktree_drift:PyAutoCortex:",
-          "observed_at": "2026-11-04T13:59:28.807181+00:00",
+          "observed_at": "2026-11-04T14:55:53.090501+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift:worktree_drift/canonical_dirty/0",
           "status": "yellow",
@@ -36063,48 +35953,18 @@
           "family": "worktree_drift",
           "fresh": true,
           "id": "worktree_drift:PyAutoPulse:",
-          "observed_at": "2026-11-04T13:59:28.807181+00:00",
+          "observed_at": "2026-11-04T14:55:53.090501+00:00",
           "owner": "worktree_drift",
           "source": "snapshot.worktree_drift:worktree_drift/canonical_dirty/1",
           "status": "yellow",
           "subject": "PyAutoPulse",
           "summary": "yellow"
-        },
-        {
-          "action": {
-            "kind": "prompt",
-            "label": "inspect finding",
-            "payload": "Use the health and repo-cleanup skills. Inspect private local finding in the canonical checkout and active task ledger on the dev box. Preserve edits and claims; refresh with pyauto-heart tick and publish with pyauto-heart publish. Do not delete, reset, merge or close work without authorization."
-          },
-          "applicability_reason": null,
-          "family": "worktree_drift",
-          "id": "worktree_drift:private:bfec66b4cb391ebd",
-          "observed_at": "2026-11-04T13:59:28.807181+00:00",
-          "source": "devbox",
-          "status": "yellow",
-          "subject": "Local observation (private details)",
-          "summary": "Inspect full evidence on the dev box; private paths omitted"
-        },
-        {
-          "action": {
-            "kind": "prompt",
-            "label": "inspect finding",
-            "payload": "Use the health and repo-cleanup skills. Inspect private local finding in the canonical checkout and active task ledger on the dev box. Preserve edits and claims; refresh with pyauto-heart tick and publish with pyauto-heart publish. Do not delete, reset, merge or close work without authorization."
-          },
-          "applicability_reason": null,
-          "family": "worktree_drift",
-          "id": "worktree_drift:private:de9ad297d82f3beb",
-          "observed_at": "2026-11-04T13:59:28.807181+00:00",
-          "source": "devbox",
-          "status": "yellow",
-          "subject": "Local observation (private details)",
-          "summary": "Inspect full evidence on the dev box; private paths omitted"
         }
       ],
-      "observed_at": "2026-11-04T13:59:28.807181+00:00",
+      "observed_at": "2026-11-04T14:55:53.090501+00:00",
       "state": "fail",
-      "summary": "2 orphan / 0 missing / 3 dirty"
+      "summary": "0 orphan / 0 missing / 3 dirty"
     }
   },
-  "ts": "2026-11-04T13:59:48.383178+00:00"
+  "ts": "2026-11-04T14:56:13.545964+00:00"
 }
