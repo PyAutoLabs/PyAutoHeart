@@ -59,13 +59,15 @@ def test_29_repos_polled(config):
     assert total == 29, f"expected 29 polled repos, got {total}"
 
 
-def test_cti_polled_but_not_release_gating(config):
-    """A resurrecting library is polled for health but excluded from the
-    release-validation gate until it ships (release_gate: false)."""
+def test_cti_is_a_release_gate_library(config):
+    """PyAutoCTI joined the lockstep release train on 2026-11-04 (cti-upkeep
+    ruling R6, PyAutoHands#332), so it is polled AND release-gating. Until then
+    it carried `release_gate: false` while it was being resurrected."""
     from heart import readiness
 
     assert "PyAutoCTI" in readiness.load_library_names()
-    assert "PyAutoCTI" not in readiness.load_release_gate_names()
+    assert "PyAutoCTI" in readiness.load_release_gate_names()
+    assert readiness.load_release_gate_names() == readiness.load_library_names()
 
 
 def _all_names(config):

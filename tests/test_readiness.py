@@ -9,7 +9,8 @@ import pytest
 
 from heart import readiness
 
-LIBS = ["PyAutoNerves", "PyAutoFit", "PyAutoArray", "PyAutoGalaxy", "PyAutoLens"]
+# The release-gate libraries (config/repos.yaml); PyAutoCTI joined 2026-11-04.
+LIBS = ["PyAutoNerves", "PyAutoFit", "PyAutoArray", "PyAutoGalaxy", "PyAutoLens", "PyAutoCTI"]
 
 # Deterministic 40-char main HEAD sha per library; the baseline validation
 # report's commit_shas match these, so the release-validation gate stays GREEN.
