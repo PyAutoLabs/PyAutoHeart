@@ -22,10 +22,12 @@ repos:
       owner: PyAutoLabs
     - name: PyAutoCTI
       owner: PyAutoLabs
-      # Polled for health/CI, but NOT part of the release-validation gate yet:
-      # PyAutoCTI is mid-resurrection (not released), so it has no release
-      # evidence to confirm. Flip to true (or drop this key) when CTI ships.
-      release_gate: false
+      # A release-gate library since 2026-11-04 (cti-upkeep ruling R6, phase 1,
+      # PyAutoHands#332): CTI joined the lockstep train as its sixth library, so
+      # its CI/branch/clean/behind state and its rehearsal commit sha gate the
+      # release like the other five. Flipped BEFORE the first modern autocti
+      # release on purpose: no library gate compares PyPI versions, so the stale
+      # 2024 wheel cannot block the release that replaces it.
 
   build_workflow:
     - name: PyAutoHands
