@@ -1,8 +1,13 @@
 {
-  "checked_at": "2026-11-04T12:26:41+00:00",
+  "checked_at": "2026-11-05T12:40:20+00:00",
   "identity": "pyautolabs-bot",
   "repos": {
     "PyAutoArray": {
+      "error": null,
+      "ls_remote": true,
+      "push": true
+    },
+    "PyAutoCTI": {
       "error": null,
       "ls_remote": true,
       "push": true
@@ -28,6 +33,6 @@
       "push": true
     }
   },
-  "run_url": "https://github.com/PyAutoLabs/PyAutoHeart/actions/runs/41829294823",
+  "run_url": "https://github.com/PyAutoLabs/PyAutoHeart/actions/runs/42029091512",
   "schema": "token_push/1"
 }
