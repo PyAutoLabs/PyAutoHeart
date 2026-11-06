@@ -23,7 +23,7 @@ on:
   workflow_call:
     inputs:
       package:
-        description: "PyAuto package to build docs for: autonerves|autofit|autoarray|autogalaxy|autolens|pyautoscientist (docs-only)"
+        description: "PyAuto package to build docs for: autonerves|autofit|autoarray|autogalaxy|autolens|autocti|pyautoscientist (docs-only)"
         required: true
         type: string
 
@@ -41,6 +41,8 @@ jobs:
             autoarray)  repo=PyAutoArray;  deps="PyAutoNerves" ;;
             autogalaxy) repo=PyAutoGalaxy; deps="PyAutoNerves PyAutoFit PyAutoArray" ;;
             autolens)   repo=PyAutoLens;   deps="PyAutoNerves PyAutoFit PyAutoArray PyAutoGalaxy" ;;
+            # arcticpy is installed by its own step below (autocti only).
+            autocti)    repo=PyAutoCTI;    deps="PyAutoNerves PyAutoFit PyAutoArray" ;;
             # Docs-only repos: no pip package — install docs/requirements.txt.
             pyautoscientist) repo=PyAutoBrain; deps=""; install=requirements ;;
             *) echo "::error::unknown package '${{ inputs.package }}'"; exit 1 ;;
@@ -71,6 +73,15 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+
+      # autocti imports arcticpy lazily, so the build runs without it, but
+      # autosummary then cannot import the arcticpy-backed classes autocti
+      # re-exports (TrapInstantCapture, ROEChargeInjection, ...) and those API
+      # pages come out empty. Install it as lib-tests.yml does, so this check
+      # sees the same pages Read the Docs (which also installs arcticpy) builds.
+      - name: Install arcticpy (autocti only — source-only C++ sdist)
+        if: ${{ inputs.package == 'autocti' }}
+        uses: PyAutoLabs/PyAutoHeart/.github/actions/install-arcticpy@main
 
       - name: Install (deps + package from source, [optional] + [docs] extras)
         run: |
