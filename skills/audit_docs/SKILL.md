@@ -3,14 +3,14 @@ name: audit-docs
 description: Audit docs/api/*.rst files across repos for broken module paths, missing classes, and stale autosummary entries.
 ---
 
-Scan Sphinx API documentation across PyAutoFit, PyAutoGalaxy, and PyAutoLens for broken `.. currentmodule::` paths and stale `.. autosummary::` class references. Optionally auto-fix broken entries.
+Scan Sphinx API documentation across PyAutoFit, PyAutoGalaxy, PyAutoLens, and PyAutoCTI for broken `.. currentmodule::` paths and stale `.. autosummary::` class references. Optionally auto-fix broken entries.
 
 A **PyAutoHeart** check — documentation correctness is part of the validation surface Heart owns. The audit is read-only; auto-fix is opt-in and confined to the docs files it flags.
 
 ## Usage
 
 ```
-$audit-docs                         # audit all three repos (default)
+$audit-docs                         # audit all four repos (default)
 $audit-docs PyAutoLens              # audit one repo
 $audit-docs PyAutoGalaxy PyAutoFit  # audit specific repos
 $audit-docs --fix                   # audit all repos and auto-fix broken references
@@ -26,6 +26,7 @@ In Claude, invoke the same skill as `/audit_docs`.
 | `PyAutoFit` | `./PyAutoFit/docs/api/` |
 | `PyAutoGalaxy` | `./PyAutoGalaxy/docs/api/` |
 | `PyAutoLens` | `./PyAutoLens/docs/api/` |
+| `PyAutoCTI` | `./PyAutoCTI/docs/api/` |
 
 All paths are relative to the workspace root.
 
@@ -33,7 +34,7 @@ All paths are relative to the workspace root.
 
 ### 1. Determine which repos to audit
 
-- **Default: audit ALL three repos.** Cross-package references (e.g. PyAutoLens docs referencing autoarray modules) mean a change in one library can break another library's docs.
+- **Default: audit ALL four repos.** Cross-package references (e.g. PyAutoLens docs referencing autoarray modules) mean a change in one library can break another library's docs.
 - Only audit a subset if the user explicitly passes repo names as arguments.
 
 ### 2. Parse RST files
@@ -155,6 +156,7 @@ gh issue comment <number> --repo <owner/repo> --body "$(cat <<'AUDIT_EOF'
 | PyAutoFit | X | Y | X | Y | Z |
 | PyAutoGalaxy | X | Y | X | Y | Z |
 | PyAutoLens | X | Y | X | Y | Z |
+| PyAutoCTI | X | Y | X | Y | Z |
 
 <details if any failures>
 AUDIT_EOF
