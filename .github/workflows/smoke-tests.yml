@@ -270,6 +270,56 @@ jobs:
           done < "$RUNNER_TEMP/tracked-paths"
           exit "$bad"
 
+      - name: Reject untimed network downloads
+        # A download with no timeout can hang in ssl.read until the 300 s smoke
+        # cap kills the script: 2026-09-07, PyAutoHeart run 34099198772, an
+        # untimed urlretrieve to hips2fits in autolens_workspace. Fixed once in
+        # autolens_workspace#293, back in four scripts within three weeks
+        # (#537). So the pattern is gated, not remembered: any
+        # `urlretrieve(` call (it takes no timeout at all) or `urlopen(`
+        # without a timeout under scripts/ fails here, in seconds, with the
+        # file:line. Use `urlopen(url, timeout=...)` and write the bytes.
+        # AST-based, so comments and strings never trip it. Self-contained
+        # (no `${{ }}`) so tests/test_workflow_wiring.py runs it verbatim.
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import ast, os, sys, warnings
+          from pathlib import Path
+
+          warnings.simplefilter("ignore", SyntaxWarning)  # a script's own escapes are not ours to report
+
+          root = Path(os.environ.get("WORKSPACE_DIR", "workspace"))
+          bad = 0
+          for path in sorted((root / "scripts").rglob("*.py")):
+              rel = path.relative_to(root).as_posix()
+              try:
+                  tree = ast.parse(path.read_text(encoding="utf-8"), filename=rel)
+              except (SyntaxError, UnicodeDecodeError) as exc:
+                  print(f"::warning file={rel}::not scanned for untimed downloads: {exc}")
+                  continue
+              calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call)]
+              for node in sorted(calls, key=lambda n: (n.lineno, n.col_offset)):
+                  func = node.func
+                  name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
+                  if name == "urlretrieve":
+                      why = "urlretrieve() cannot take a timeout; use urlopen(url, timeout=...)"
+                  elif name == "urlopen" and not (
+                      len(node.args) >= 3  # urlopen(url, data, timeout)
+                      or any(k.arg in ("timeout", None) for k in node.keywords)
+                  ):
+                      why = "urlopen() without timeout="
+                  else:
+                      continue
+                  print(f"::error file={rel},line={node.lineno}::{why}")
+                  print(f"{rel}:{node.lineno}: {why}")
+                  bad += 1
+          if bad:
+              print(f"{bad} untimed network download(s) under scripts/", file=sys.stderr)
+          sys.exit(1 if bad else 0)
+          PY
+
       - name: Clone dependency chain + PyAutoHands (matching branch if it exists)
         # DEPTH 1, on the clone and on the matching-branch fetch alike: nothing
         # downstream reads this history. The libraries are `pip install`ed from
@@ -718,6 +768,8 @@ jobs:
           import os
           import subprocess
           from pathlib import Path
+
+          warnings.simplefilter("ignore", SyntaxWarning)  # a script's own escapes are not ours to report
 
 
           def as_int(text):
