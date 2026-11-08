@@ -488,3 +488,76 @@ def test_ordered_results_artifact_name_is_valid_and_distinct():
         "results-scripts-${{ matrix.project.name }}-"
         "${{ matrix.project.script_list && 'ordered' || matrix.project.directory }}"
     )
+
+
+# The untimed-download gate (PyAutoHeart#326): an AST scan of scripts/ in the
+# PR gate, self-contained so it runs verbatim here against planted scripts.
+
+DOWNLOAD_STEP = "Reject untimed network downloads"
+
+
+def _download_step():
+    gate = _job_steps("smoke-tests.yml", "smoke")
+    return gate, _index(gate, DOWNLOAD_STEP)
+
+
+def test_download_gate_runs_before_the_install_and_is_self_contained():
+    gate, i = _download_step()
+    assert _index(gate, "Checkout workspace") < i < _index(gate, "Install")
+    assert "${{" not in gate[i]["run"]
+    assert "if" not in gate[i]  # every smoke run, every workspace caller
+
+
+def test_download_gate_flags_untimed_calls_with_file_and_line(tmp_path):
+    _, i = _download_step()
+    step = _job_steps("smoke-tests.yml", "smoke")[i]
+    scripts = tmp_path / "workspace" / "scripts" / "cluster"
+    scripts.mkdir(parents=True)
+    (scripts / "bad.py").write_text(
+        "import urllib.request\n"
+        "from urllib.request import urlopen, urlretrieve\n"
+        "urllib.request.urlretrieve('https://x', 'f.fits')\n"
+        "urlretrieve('https://x', 'f.fits')\n"
+        "with urllib.request.urlopen('https://x') as r:\n"
+        "    r.read()\n"
+        "urlopen('https://x', None)\n"
+    )
+    res = _run_discard(step, tmp_path)
+    assert res.returncode == 1, res.stdout + res.stderr
+    plain = [l for l in res.stdout.splitlines() if not l.startswith("::")]
+    assert [l.split(":")[1] for l in plain] == ["3", "4", "5", "7"], res.stdout
+    assert all(l.startswith("scripts/cluster/bad.py:") for l in plain)
+    assert sum(l.startswith("::error file=scripts/cluster/bad.py,line=")
+               for l in res.stdout.splitlines()) == 4
+
+
+def test_download_gate_passes_timed_calls_and_mentions(tmp_path):
+    _, i = _download_step()
+    step = _job_steps("smoke-tests.yml", "smoke")[i]
+    scripts = tmp_path / "workspace" / "scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "ok.py").write_text(
+        '"""Never use urlretrieve(url, path) here."""\n'
+        "import urllib.request\n"
+        "# urllib.request.urlopen(url) without a timeout would hang\n"
+        "with urllib.request.urlopen('https://x', timeout=30) as r:\n"
+        "    r.read()\n"
+        "urllib.request.urlopen('https://x', None, 60)\n"
+        "kw = {'timeout': 5}\n"
+        "urllib.request.urlopen('https://x', **kw)\n"
+    )
+    res = _run_discard(step, tmp_path)
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert "::error" not in res.stdout
+
+
+def test_download_gate_is_a_no_op_without_scripts_and_honours_workspace_dir(tmp_path):
+    _, i = _download_step()
+    step = _job_steps("smoke-tests.yml", "smoke")[i]
+    res = _run_discard(step, tmp_path)
+    assert res.returncode == 0, res.stderr
+    other = tmp_path / "elsewhere" / "scripts"
+    other.mkdir(parents=True)
+    (other / "bad.py").write_text("from urllib.request import urlretrieve\nurlretrieve('u', 'p')\n")
+    res = _run_discard(step, tmp_path, env={"WORKSPACE_DIR": "elsewhere"})
+    assert res.returncode == 1 and "scripts/bad.py:2" in res.stdout
