@@ -446,7 +446,7 @@ jobs:
         id: numba-cache
         continue-on-error: true
         with:
-          path: ${{ github.workspace }}/.numba_cache
+          path: /tmp/numba_cache
           key: pyauto-numba-${{ runner.os }}-py${{ steps.keys.outputs.pyfull }}-e${{ env.PYAUTO_CACHE_EPOCH }}-${{ github.run_id }}
           restore-keys: |
             pyauto-numba-${{ runner.os }}-py${{ steps.keys.outputs.pyfull }}-e${{ env.PYAUTO_CACHE_EPOCH }}-
@@ -459,7 +459,7 @@ jobs:
         continue-on-error: true
         env:
           JAX_PATH: ${{ github.workspace }}/.pyauto_jax_cache
-          NUMBA_PATH: ${{ github.workspace }}/.numba_cache
+          NUMBA_PATH: /tmp/numba_cache
           DS_PATH: workspace/dataset
         run: |
           measure() {
@@ -638,11 +638,16 @@ jobs:
           # This runner is the other surface that executes workspace scripts
           # under JAX, so it needs the same treatment.
           JAX_TRACEBACK_FILTERING: "off"
-          # The restored-and-saved directory, not a per-run temporary: the
-          # runner copies this job env into every script subprocess, so all
-          # of them share the one numba cache the steps above and below
-          # carry between runs.
-          NUMBA_CACHE_DIR: ${{ github.workspace }}/.numba_cache
+          # The restored-and-saved directory: the runner copies this job env
+          # into every script subprocess, so all of them share the one numba
+          # cache the steps above and below carry between runs. It MUST be
+          # /tmp/numba_cache: every workspace's profile_smoke.yaml sets
+          # `NUMBA_CACHE_DIR: "/tmp/numba_cache"` as a default, and profile
+          # defaults override this inherited value (autohands env_config
+          # apply_profile). While this pointed at a workspace path, numba wrote
+          # to /tmp while the cache steps restored and saved an empty
+          # directory, so the numba cache missed on every leg.
+          NUMBA_CACHE_DIR: /tmp/numba_cache
           MPLCONFIGDIR: /tmp/matplotlib
           PYTHONPATH: ${{ github.workspace }}/PyAutoHands/autohands
           # autonerves defaults this to ~/.cache/pyauto_jax when it is unset; an
@@ -702,7 +707,7 @@ jobs:
           JAX_EXACT: ${{ steps.jax-cache.outputs.cache-hit }}
           JAX_MB_BEFORE: ${{ steps.cache-before.outputs.jax_mb }}
           JAX_N_BEFORE: ${{ steps.cache-before.outputs.jax_n }}
-          NUMBA_PATH: ${{ github.workspace }}/.numba_cache
+          NUMBA_PATH: /tmp/numba_cache
           NUMBA_KEY_RESTORED: ${{ steps.numba-cache.outputs.cache-matched-key }}
           NUMBA_EXACT: ${{ steps.numba-cache.outputs.cache-hit }}
           NUMBA_MB_BEFORE: ${{ steps.cache-before.outputs.numba_mb }}
@@ -878,7 +883,7 @@ jobs:
         continue-on-error: true
         uses: actions/cache/save@v4
         with:
-          path: ${{ github.workspace }}/.numba_cache
+          path: /tmp/numba_cache
           key: pyauto-numba-${{ runner.os }}-py${{ steps.keys.outputs.pyfull }}-e${{ env.PYAUTO_CACHE_EPOCH }}-${{ github.run_id }}
 
       - name: Save simulated datasets

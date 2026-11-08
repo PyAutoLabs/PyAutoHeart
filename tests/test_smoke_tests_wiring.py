@@ -94,11 +94,13 @@ def test_the_epoch_salt_is_declared_once_at_the_job_level():
 def test_the_runner_step_names_both_cache_dirs_and_is_otherwise_untouched():
     step = _step(_steps(), RUNNER_STEP)
     cache_dir = step["env"]["JAX_COMPILATION_CACHE_DIR"]
-    # numba's directory moved out of /tmp: a per-run temporary is neither
-    # restorable nor saveable, so it bought nothing across runs.
+    # numba's directory is the one the workspace profiles write: every
+    # profile_smoke.yaml defaults NUMBA_CACHE_DIR to /tmp/numba_cache, and a
+    # profile default overrides this inherited value. The restore and save
+    # steps name the same absolute path, which actions/cache carries between
+    # runs like any other.
     numba_dir = step["env"]["NUMBA_CACHE_DIR"]
-    assert numba_dir.startswith("${{ github.workspace }}/")
-    assert not numba_dir.startswith("/tmp")
+    assert numba_dir == NUMBA_DIR
     # An explicit path under the workspace: the default is a home-directory
     # cache the cache steps could not name, and the runner copies this job env
     # into every script subprocess, so all of them share the one directory.
@@ -191,7 +193,7 @@ def test_the_numba_key_is_per_full_python_version_and_carries_the_salt():
     step = _step(_steps(), NUMBA_RESTORE_STEP)
     assert step["uses"].startswith("actions/cache/restore@")
     assert step["id"] == "numba-cache"
-    assert step["with"]["path"] == "${{ github.workspace }}/.numba_cache"
+    assert step["with"]["path"] == NUMBA_DIR
     key = step["with"]["key"]
     for component in ("${{ runner.os }}", "${{ steps.keys.outputs.pyfull }}",
                       "${{ env.PYAUTO_CACHE_EPOCH }}", "${{ github.run_id }}"):
@@ -201,6 +203,24 @@ def test_the_numba_key_is_per_full_python_version_and_carries_the_salt():
     assert key.startswith(fallback)
     assert "${{ github.run_id }}" not in fallback
     assert fallback.endswith("-e${{ env.PYAUTO_CACHE_EPOCH }}-")
+
+
+NUMBA_DIR = "/tmp/numba_cache"
+
+
+def test_every_numba_reference_names_the_directory_the_profiles_write():
+    """Every workspace profile_smoke.yaml sets NUMBA_CACHE_DIR=/tmp/numba_cache
+    as a default, and profile defaults override the inherited job env. The
+    restore, measure, run and save steps must all name that same directory, or
+    the cache carried between runs is an empty one (it was, on every leg, until
+    this was pinned)."""
+    text = (WORKFLOWS / "smoke-tests.yml").read_text()
+    assert ".numba_cache" not in text
+    steps = _steps()
+    assert _step(steps, NUMBA_RESTORE_STEP)["with"]["path"] == NUMBA_DIR
+    assert _step(steps, NUMBA_SAVE_STEP)["with"]["path"] == NUMBA_DIR
+    assert f"NUMBA_CACHE_DIR: {NUMBA_DIR}" in text
+    assert f"NUMBA_PATH: {NUMBA_DIR}" in text
 
 
 def test_the_stamp_step_makes_the_numba_fallback_safe():
