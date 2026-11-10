@@ -26,9 +26,9 @@ copy → paste, on a laptop or a phone.
 <!-- The line below is auto-updated by .github/workflows/heart-health.yml (everything -->
 <!-- between the heart:begin/heart:end markers is replaced with the rendered strip). -->
 <!-- heart:begin -->
-🔴 Monitoring 11/100 · release **RED** · [dashboard →](https://pyautolabs.github.io/PyAutoHeart/)
+🔴 Monitoring 21/100 · release **RED** · [dashboard →](https://pyautolabs.github.io/PyAutoHeart/)
 
-**Blockers:** [PyAutoGalaxy](https://github.com/PyAutoLabs/PyAutoGalaxy): CI failure ([run](https://api.github.com/repos/PyAutoLabs/PyAutoGalaxy/actions/runs/42605341827)); [PyAutoLens](https://github.com/PyAutoLabs/PyAutoLens): CI failure ([run](https://api.github.com/repos/PyAutoLabs/PyAutoLens/actions/runs/42605339633))
+**Blockers:** [autocti_workspace](https://github.com/PyAutoLabs/autocti_workspace): Smoke Tests failure on main ([run](https://api.github.com/repos/PyAutoLabs/autocti_workspace/actions/runs/42883685928))
 <!-- heart:end -->
 
 ## How PyAutoHeart works
