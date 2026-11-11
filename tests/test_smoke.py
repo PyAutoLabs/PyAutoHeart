@@ -573,6 +573,26 @@ def test_shipped_arcticpy_installer_exists_and_is_the_only_pin():
     assert 'ARCTICPY_VERSION="${ARCTICPY_VERSION:-' in body
 
 
+def test_arcticpy_build_never_reuses_a_pip_cached_wheel():
+    """The arcticpy install must bypass pip's cache (PyAutoHeart#330).
+
+    The wheel is built on the machine and links its libgsl by soname, so a copy
+    cached on one runner image fails to import on the next: the 2026-11 move
+    from ubuntu-24.04 (libgsl.so.27) to ubuntu-26.04 (libgsl.so.28) turned
+    autocti_workspace smoke red through exactly that restored wheel.
+    """
+    body = smoke.ARCTICPY_INSTALLER.read_text()
+    # Join backslash continuations so the check sees the whole pip command.
+    logical = body.replace("\\\n", " ")
+    installs = [
+        line
+        for line in logical.splitlines()
+        if "pip install" in line and '"arcticpy==' in line
+    ]
+    assert len(installs) == 1, installs
+    assert "--no-cache-dir" in installs[0].split()
+
+
 def _run_installer(tmp_path, prefixes: str) -> subprocess.CompletedProcess[str]:
     """Run the shared recipe far enough to exercise the GSL probe.
 
