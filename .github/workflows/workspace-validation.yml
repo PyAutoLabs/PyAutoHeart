@@ -289,8 +289,6 @@ jobs:
           # installing the published autolens[optional]; the source checkouts
           # below shadow the PyAuto packages via PYTHONPATH.
           pip install "autolens[optional]"
-          # 0.10.2 can deadlock in batched LAPACK; see docs/release_validation.md.
-          pip install "jax>=0.12.0,<0.13" "jaxlib>=0.12.0,<0.13"
           # nufftax backs the interferometer TransformerNUFFT and is NOT pulled
           # transitively by autolens[optional]; without it every interferometer
           # simulator (and its downstream scripts) fails fast. Matches the pin
@@ -323,6 +321,12 @@ jobs:
           # addition to autoarray[optional] is caught by the Brain's
           # `hygiene extras` scan instead, which reads the SOURCE pyproject.
           pip install "tfp-nightly==0.26.0.dev20260713"
+          # Re-pin jax LAST and assert it (PyAutoNerves#215). A published extra
+          # installed later in the step (e.g. autofit[optional]) resolves the RELEASED
+          # autonerves metadata, which capped jax<0.12, and silently downgraded jax
+          # back to 0.11.2, so the old mid-step pin never held. Fail loudly instead.
+          pip install "jax>=0.12.0,<0.13" "jaxlib>=0.12.0,<0.13"
+          python -c "import jax, jaxlib; assert jax.__version__.startswith('0.12.') and jaxlib.__version__.startswith('0.12.'), (jax.__version__, jaxlib.__version__); print('jax', jax.__version__, 'jaxlib', jaxlib.__version__)"
       - name: "Install TestPyPI wheels — NO source on PYTHONPATH [mode=release]"
         if: needs.find_scripts.outputs.mode == 'release'
         env:
@@ -362,9 +366,13 @@ jobs:
           pip install numba
           # Belt-and-braces JAX install — the [optional] -> [jax] chain
           # occasionally silently drops jax from test.pypi resolution.
-          # 0.10.2 can deadlock in batched LAPACK; see docs/release_validation.md.
-          pip install "jax>=0.12.0,<0.13" "jaxlib>=0.12.0,<0.13"
           pip install "nufftax>=0.6.1,<0.7.0"
+          # Re-pin jax LAST and assert it (PyAutoNerves#215). A published extra
+          # installed later in the step (e.g. autofit[optional]) resolves the RELEASED
+          # autonerves metadata, which capped jax<0.12, and silently downgraded jax
+          # back to 0.11.2, so the old mid-step pin never held. Fail loudly instead.
+          pip install "jax>=0.12.0,<0.13" "jaxlib>=0.12.0,<0.13"
+          python -c "import jax, jaxlib; assert jax.__version__.startswith('0.12.') and jaxlib.__version__.startswith('0.12.'), (jax.__version__, jaxlib.__version__); print('jax', jax.__version__, 'jaxlib', jaxlib.__version__)"
       - name: "Run Python scripts [mode=smoke, source-shadowed, smoke profile]"
         if: needs.find_scripts.outputs.mode == 'smoke'
         env:
@@ -604,10 +612,14 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         run: |
           pip install "autolens[optional]"
-          # 0.10.2 can deadlock in batched LAPACK; see docs/release_validation.md.
-          pip install "jax>=0.12.0,<0.13" "jaxlib>=0.12.0,<0.13"
           pip install "nufftax>=0.6.1,<0.7.0"
           pip install jupyter ipynb-py-convert
+          # Re-pin jax LAST and assert it (PyAutoNerves#215). A published extra
+          # installed later in the step (e.g. autofit[optional]) resolves the RELEASED
+          # autonerves metadata, which capped jax<0.12, and silently downgraded jax
+          # back to 0.11.2, so the old mid-step pin never held. Fail loudly instead.
+          pip install "jax>=0.12.0,<0.13" "jaxlib>=0.12.0,<0.13"
+          python -c "import jax, jaxlib; assert jax.__version__.startswith('0.12.') and jaxlib.__version__.startswith('0.12.'), (jax.__version__, jaxlib.__version__); print('jax', jax.__version__, 'jaxlib', jaxlib.__version__)"
       - name: Run notebooks
         if: steps.gate.outputs.run == 'true'
         run: |
