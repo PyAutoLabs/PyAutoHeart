@@ -136,8 +136,16 @@ echo "==> Installing arcticpy runtime dependencies"
 "$PYTHON" -m pip install scipy matplotlib
 
 echo "==> Building and installing arcticpy ${ARCTICPY_VERSION}"
+# --no-cache-dir: the wheel built here links the MACHINE's libgsl by soname, so
+# a copy cached in ~/.cache/pip is only valid on the image that built it. CI
+# caches that directory across runs (smoke-tests.yml) with no image identity in
+# the key; when GitHub moved ubuntu-24.04 (libgsl.so.27) -> ubuntu-26.04
+# (libgsl.so.28) pip restored the old wheel and `import arcticpy` failed with
+# "libgsl.so.27: cannot open shared object file" (PyAutoHeart#330). Always
+# building fresh costs ~15 s and makes a system-library change impossible to
+# mask. Only this install opts out: the others are image-independent wheels.
 "$PYTHON" -m pip install "arcticpy==${ARCTICPY_VERSION}" \
-    --no-build-isolation --no-deps
+    --no-build-isolation --no-deps --no-cache-dir
 
 echo "==> Verifying arcticpy imports"
 # Assert here rather than letting a broken build surface much later as a
