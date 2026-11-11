@@ -26,9 +26,9 @@ copy → paste, on a laptop or a phone.
 <!-- The line below is auto-updated by .github/workflows/heart-health.yml (everything -->
 <!-- between the heart:begin/heart:end markers is replaced with the rendered strip). -->
 <!-- heart:begin -->
-🔴 Monitoring 21/100 · release **RED** · [dashboard →](https://pyautolabs.github.io/PyAutoHeart/)
+🟡 Monitoring 31/100 · release **YELLOW** · [dashboard →](https://pyautolabs.github.io/PyAutoHeart/)
 
-**Blockers:** [autocti_workspace](https://github.com/PyAutoLabs/autocti_workspace): Smoke Tests failure on main ([run](https://api.github.com/repos/PyAutoLabs/autocti_workspace/actions/runs/42883685928))
+**Warnings:** [PyAutoArray](https://github.com/PyAutoLabs/PyAutoArray): open PR 7d old
 <!-- heart:end -->
 
 ## How PyAutoHeart works
