@@ -579,7 +579,7 @@ def test_arcticpy_build_never_reuses_a_pip_cached_wheel():
     The wheel is built on the machine and links its libgsl by soname, so a copy
     cached on one runner image fails to import on the next: the 2026-11 move
     from ubuntu-24.04 (libgsl.so.27) to ubuntu-26.04 (libgsl.so.28) turned
-    autocti_workspace smoke red through exactly that restored wheel.
+    the CTI workspace smoke red through exactly that restored wheel.
     """
     body = smoke.ARCTICPY_INSTALLER.read_text()
     # Join backslash continuations so the check sees the whole pip command.
