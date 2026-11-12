@@ -22,7 +22,6 @@ jobs:
       PYTHONPATH: ''
       JAX_PLATFORMS: cpu
       JAX_PLATFORM_NAME: cpu
-      XLA_FLAGS: --xla_cpu_multi_thread_eigen=false
     steps:
       - uses: actions/checkout@v4
       - name: Prepare endpoint pins from preserved incident manifest
@@ -68,7 +67,7 @@ jobs:
         run: >-
           timeout --kill-after=5s 180 endpoint/bin/python .github/scripts/jax_compatibility.py
           --version "$ENDPOINT" --backend cpu --output evidence/numerics.json
-      - name: Historical FFT witness with retained workaround
+      - name: FFT witness without the eigen workaround (fixed upstream in jax 0.12)
         run: >-
           timeout --kill-after=5s 120 endpoint/bin/python workspace/.github/scripts/xla_fft_pool_reentrancy_repro.py
           > evidence/fft.log 2>&1
