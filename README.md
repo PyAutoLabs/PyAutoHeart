@@ -71,3 +71,5 @@ repo is in [AGENTS.md](AGENTS.md). The organism this repo is the Heart of is
 described once in
 [PyAutoBrain/ORGANISM.md](https://github.com/PyAutoLabs/PyAutoBrain/blob/main/ORGANISM.md)
 and documented in full at <https://pyautoscientist.readthedocs.io>.
+
+<sub><i><a href="https://music.apple.com/us/song/1640464456">we’re still breathin’</a></i></sub>
