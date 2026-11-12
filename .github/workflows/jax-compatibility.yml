@@ -6,7 +6,7 @@ on:
       - .github/workflows/jax-compatibility.yml
       - .github/scripts/jax_compatibility.py
       - .github/scripts/release_diagnostic.py
-      - diagnostics/release-37199991757.json
+      - diagnostics/release-43210505844.json
 permissions:
   contents: read
 jobs:
@@ -16,7 +16,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        jax: ['0.9.2', '0.11.2']
+        # jax>=0.12 floor (PyAutoNerves#215): both releases the floor admits today.
+        jax: ['0.12.0', '0.12.0.1']
     env:
       PYTHONPATH: ''
       JAX_PLATFORMS: cpu
@@ -32,7 +33,7 @@ jobs:
           python - <<'PY'
           import json, os
           from pathlib import Path
-          data = json.loads(Path('diagnostics/release-37199991757.json').read_text())
+          data = json.loads(Path('diagnostics/release-43210505844.json').read_text())
           data['packages'].update(jax=os.environ['ENDPOINT'], jaxlib=os.environ['ENDPOINT'])
           Path('endpoint.json').write_text(json.dumps(data))
           PY
