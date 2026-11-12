@@ -902,6 +902,59 @@ def import_history(
     return out
 
 
+def unit_history(
+    unit_dir: Path | str = UNIT_DIR, since: str = "", cap: int = 90
+) -> dict[str, list[dict[str, Any]]]:
+    """``{repo: [{"date", "python", "tests", "wall_s", "import_s"}, ...]}``.
+
+    The board's trend view of the unit record: suite size and suite wall-clock
+    per library and Python leg, oldest first. Only ``main`` lines count — a
+    feature branch's suite is not the library's suite, and mixing the two
+    would draw a branch's half-written tests as a dip in the trend.
+
+    One point per (python leg, day): the day is when the run happened (``at``),
+    falling back to the line's ``date``; when a day holds several main runs the
+    one recorded last wins, the file being append-only. A value that is not a
+    measurement stays ``None`` and is drawn as missing, never as zero.
+    ``since`` is the current epoch's date, as everywhere else in this record.
+    ``cap`` keeps the last N days per leg.
+    """
+    out: dict[str, list[dict[str, Any]]] = {}
+    root = Path(unit_dir)
+    if not root.is_dir():
+        return out
+    for path in sorted(root.glob("*.jsonl")):
+        repo = path.name[: -len(".jsonl")]
+        records, _ = read_jsonl(path)
+        days: dict[tuple[str, str], dict[str, Any]] = {}
+        for record in records:
+            if record.get("head_branch") != "main" or not _within_epoch(record, since):
+                continue
+            day = str(record.get("at") or "")[:10]
+            if not _is_iso_date(day):
+                day = str(record.get("date") or "")
+            if not _is_iso_date(day):
+                continue
+            python = str(record.get("python") or "")
+            suite = record.get("suite") if isinstance(record.get("suite"), dict) else {}
+            tests = suite.get("tests")
+            days[(python, day)] = {
+                "date": day,
+                "python": python,
+                "tests": tests if isinstance(tests, int) and not isinstance(tests, bool) and tests >= 0 else None,
+                "wall_s": _as_float(suite.get("wall_s")),
+                "import_s": _as_float(record.get("import_s")),
+            }
+        points: list[dict[str, Any]] = []
+        for python in sorted({p for p, _ in days}):
+            leg = sorted((v for (p, _), v in days.items() if p == python),
+                         key=lambda v: v["date"])
+            points.extend(leg[-int(cap):] if cap and int(cap) > 0 else leg)
+        if points:
+            out[repo] = points
+    return out
+
+
 # --- census ------------------------------------------------------------------
 def census(directory: Path | str = TIMINGS_DIR) -> dict[str, Any]:
     """What the record holds — the one-screen answer, and the board's detail.
@@ -1010,6 +1063,11 @@ def _do_append(ns: argparse.Namespace) -> int:
     # slice whether or not this run was handed a rollup for it.)
     if ns.unit_timings:
         payload["appended_today"]["unit"] = appended_unit
+    # The unit trend the board draws, read back AFTER today's append so the
+    # charts end on today. Beside the census, never inside `census()`: that is
+    # the record's key set (and `show`'s output), this is a view for the render.
+    since = (current_epoch(read_epochs(directory / "epochs.jsonl"), today) or {}).get("date") or ""
+    payload["unit_history"] = unit_history(directory / "unit", since=since)
     out_path = Path(ns.census_out) if ns.census_out else _default_census_out()
     try:
         state.atomic_write_json(out_path, payload)
