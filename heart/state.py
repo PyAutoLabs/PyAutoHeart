@@ -133,6 +133,10 @@ def aggregate() -> dict[str, Any]:
         "verify_install": _read_json_or_default(HEART_STATE_DIR / "verify_install.json", {}),
         "url_check": _read_json_or_default(HEART_STATE_DIR / "url_check.json", {}),
         "validation_report": _read_json_or_default(HEART_STATE_DIR / "validation_report.json", {}),
+        # Whether each rehearsed SHA is still an ancestor of its repo's main
+        # (heart/checks/rehearsal_ancestry.py, M2.4): readiness keeps a
+        # rehearsal fresh when main only moved FORWARD from what was built.
+        "rehearsal_ancestry": _read_json_or_default(HEART_STATE_DIR / "rehearsal_ancestry.json", {}),
         # The release push-credential proof is COMMITTED (state/token_push.json,
         # written by token_push_check.yml), not a local cache: every checkout —
         # dev box, the cloud board, the nightly driver — reads the same file.

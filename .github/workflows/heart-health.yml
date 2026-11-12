@@ -159,6 +159,9 @@ jobs:
           # Read validation artifacts before readiness; never dispatch a run.
           PYTHONPATH="$PWD" python -m heart.checks.test_run
           PYTHONPATH="$PWD" python -m heart.checks.cloud_validation
+          # Rehearsed SHA still on main? (M2.4) — after the validation
+          # report is in, before readiness reads it.
+          PYTHONPATH="$PWD" python -m heart.checks.rehearsal_ancestry
           exit 0
 
       - name: Append today's observations to the timing record

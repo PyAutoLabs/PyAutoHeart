@@ -28,14 +28,16 @@ The verdict uses STRICT release gates:
   hard block), script-timing regressions, stale open PRs, stale parked scripts, a
   stale or never-run install verification, **no fresh
   release-validation report for the current source** (absent, stale by age, or
-  whose ``commit_shas`` no longer match the current ``main`` HEADs, or which ran
-  under a profile other than ``release``), and — crucially — any *unknown*
+  whose ``commit_shas`` are no longer ancestors of the current ``main`` HEADs —
+  main moving FORWARD from the rehearsed commits keeps it fresh, since a
+  release publishes exactly those commits (M2.4, ``validation_ahead``) — or
+  which ran under a profile other than ``release``), and — crucially — any *unknown*
   (missing test-run report, a library absent from the snapshot). An unknown is
   never silently treated as green and never escalated to red.
 - **STALE** (an evidence gap, the freshness tier) when nothing is known-bad but
   some evidence is *missing or expired*: a check that was never run, a
-  passing-but-aged report, a rehearsal whose ``commit_shas`` no longer match
-  ``main``, a validation report whose ``validation_outcome`` is ``incomplete``
+  passing-but-aged report, a rehearsal whose ``commit_shas`` are not (or not
+  provably) ancestors of ``main``, a validation report whose ``validation_outcome`` is ``incomplete``
   (nothing failed; the rehearsal evidence is absent), an unknown repo/version
   status. The remedy for a stale reason is to
   **re-run the check**, never to fix code — which is exactly what separates it
@@ -299,6 +301,10 @@ def compute(
     na: list[str] = []
     counts: dict[str, int] = {}
     repository_reasons: list[dict[str, str]] = []
+    # Repos whose main moved FORWARD from the rehearsed commit -> commits ahead
+    # (None when GitHub did not say). Informational: the rehearsal still covers
+    # exactly what a release would publish (M2.4).
+    validation_ahead: dict[str, Any] = {}
 
     def hit(key: str, n: int = 1) -> None:
         counts[key] = counts.get(key, 0) + n
@@ -640,16 +646,43 @@ def compute(
                 else:
                     mismatched.append(lib)
             vr_profile = str(vr.get("profile") or "").strip().lower()
+            # M2.4 (PyAutoHands#337): a release publishes EXACTLY the rehearsed
+            # commits, so main moving FORWARD from them does not stale the
+            # rehearsal. A moved repo stays fresh when the rehearsed SHA is
+            # proven an ancestor of the current HEAD (rehearsal_ancestry
+            # sidecar, both SHAs matching); it is stale when proven NOT an
+            # ancestor (main rewritten / off-main commit) or when unproven.
+            anc_rows = (snapshot.get("rehearsal_ancestry") or {}).get("repos") or {}
+            not_ancestor: list[str] = []
+            unproven: list[str] = []
+            for lib in mismatched:
+                row = anc_rows.get(lib) if isinstance(anc_rows, dict) else None
+                cur = ((repos.get(lib) or {}).get("ci_status") or {}).get("head_sha")
+                if not (isinstance(row, dict)
+                        and _sha_eq(row.get("rehearsed"), commit_shas.get(lib))
+                        and _sha_eq(row.get("head"), cur)
+                        and row.get("status") not in (None, "", "unknown")):
+                    unproven.append(lib)
+                elif row.get("ancestor") is True:
+                    validation_ahead[lib] = row.get("ahead_by")
+                else:
+                    not_ancestor.append(lib)
             if not commit_shas:
                 add_stale("release validation source unconfirmed (no commit_shas)",
                           "validation_unknown")
-            elif mismatched:
+            elif not_ancestor:
                 add_stale(
-                    "release validation stale: source moved since rehearsal ("
-                    + ", ".join(mismatched) + ")",
+                    "release validation stale: rehearsed commit not an ancestor of main ("
+                    + ", ".join(not_ancestor) + ")",
                     "validation_stale_sha",
                 )
-            elif confirmed == 0:
+            elif unproven:
+                add_stale(
+                    "release validation stale: source moved since rehearsal ("
+                    + ", ".join(unproven) + "; ancestry unproven)",
+                    "validation_stale_sha",
+                )
+            elif confirmed == 0 and not validation_ahead:
                 add_stale("release validation source unconfirmed (current HEADs unknown)",
                           "validation_unknown")
             elif unconfirmed:
@@ -797,6 +830,13 @@ def compute(
         # flat lists above are the contract every existing consumer reads.
         "stale_details": [{"text": t, "key": k} for t, k in zip(stale, stale_keys)],
         "na_reasons": na,
+        "validation_ahead": validation_ahead,
+        "validation_note": (
+            "release validation covers the rehearsed commits; main is ahead by "
+            + ", ".join(f"{lib} {n if n is not None else '?'}"
+                        for lib, n in validation_ahead.items())
+            + " commit(s) — a release publishes the rehearsed SHAs (M2.4)"
+        ) if validation_ahead else "",
         "ts": snapshot.get("ts") or datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }
 
