@@ -368,7 +368,10 @@ def test_the_guard_is_a_quiet_no_op_on_a_clean_checkout(tmp_path):
     assert res.returncode == 0 and not (other / "a__script.json").exists()
 
 
-def test_release_fft_workaround_preserves_flags_and_is_scoped_to_release(tmp_path):
+def test_no_eigen_workaround_and_release_leg_leaves_xla_flags_untouched(tmp_path):
+    """jax>=0.12 floor (PyAutoNerves#215, PyAutoHeart#335): the
+    --xla_cpu_multi_thread_eigen=false workaround is gone from both legs, and the
+    release leg passes any inherited XLA_FLAGS through unchanged."""
     import os
     import subprocess
 
@@ -376,17 +379,24 @@ def test_release_fft_workaround_preserves_flags_and_is_scoped_to_release(tmp_pat
     release = next(s for s in steps if s.get("name", "").startswith("Run Python scripts [mode=release"))
     smoke = next(s for s in steps if s.get("name", "").startswith("Run Python scripts [mode=smoke"))
     assert release["if"] == "needs.find_scripts.outputs.mode == 'release'"
-    assert "xla_cpu_multi_thread_eigen" not in smoke["run"]
+    for step in (release, smoke):
+        assert "xla_cpu_multi_thread_eigen" not in step["run"]
     prefix = release["run"].split("pushd workspace", 1)[0]
     for existing in (None, "", "--existing-flag"):
         env = {k: v for k, v in os.environ.items() if k != "XLA_FLAGS"}
         if existing is not None:
             env["XLA_FLAGS"] = existing
         result = subprocess.run(
-            ["bash", "-e", "-c", prefix + '\nprintf "%s" "$XLA_FLAGS"'],
+            ["bash", "-e", "-c", prefix + '\nprintf "%s" "${XLA_FLAGS-UNSET}"'],
             cwd=tmp_path, env=env, capture_output=True, text=True, check=True,
         )
-        assert result.stdout == ((existing + " ") if existing else "") + "--xla_cpu_multi_thread_eigen=false"
+        assert result.stdout == ("UNSET" if existing is None else existing)
+
+
+def test_jax_compatibility_runs_without_the_eigen_workaround():
+    job = _load("jax-compatibility.yml")["jobs"]["compatibility"]
+    assert "XLA_FLAGS" not in job.get("env", {})
+    assert not any("multi_thread_eigen" in str(step.get("run", "")) for step in job["steps"])
 
 
 def test_pipeline_is_selected_for_smoke_and_routes_to_its_checkout(tmp_path):
