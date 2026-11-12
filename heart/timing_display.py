@@ -68,7 +68,7 @@ def change(row, baseline_key="baseline_s"):
     return f"Baseline {duration(baseline)} · change {delta:+.0f}%"
 
 
-def imports(slice_, summary):
+def imports(slice_, summary, history=None):
     slice_ = slice_ if isinstance(slice_, dict) else {}
     measured = rows(slice_.get("imports"))
     ci = bool(measured)
@@ -91,11 +91,12 @@ def imports(slice_, summary):
         rendered.append(f'<article class="timing-card"><h4>{escape(name)}</h4>'
                         f'<div class="timing-metrics">{metric("Current", row.get("seconds"))}</div>'
                         f'<p>{escape(comparison)}</p><p>{escape(status)} · {escape(coverage)}</p>'
-                        f'{source(row, slice_.get("ts") or summary.get("ts"), "CI import probe" if ci else "Local import probe")}</article>')
+                        + (unit_trend(history, row.get("repo"), row.get("python"), "import_s") if ci and row.get("repo") else "")
+                        + f'{source(row, slice_.get("ts") or summary.get("ts"), "CI import probe" if ci else "Local import probe")}</article>')
     return plain, cards(rendered, "imports")
 
 
-def suites(slice_):
+def suites(slice_, history=None):
     slice_ = slice_ if isinstance(slice_, dict) else {}
     legs = sorted(rows(slice_.get("repos")), key=lambda r: -(seconds(r.get("wall_s")) or 0))
     comparisons = {(r.get("repo"), r.get("python"), r.get("nodeid")): r for r in rows(slice_.get("tests"))}
@@ -129,30 +130,38 @@ def suites(slice_):
         rendered.append(f'<article class="timing-card"><h4>{escape(name)}</h4>'
                         f'<div class="timing-metrics">{metric("Suite wall-clock", leg.get("wall_s"))}</div>'
                         f'<p>{escape(counts)}</p>' + (f'<p>{escape(cache_text)}</p>' if cache_text else '') +
+                        unit_trend(history, leg.get("repo"), leg.get("python"), "wall_s") +
+                        unit_trend(history, leg.get("repo"), leg.get("python"), "tests") +
                         '<p>Slowest tests by duration · slowness alone is not a regression.</p>' + top +
                         source(leg, slice_.get("ts"), "CI suite; parallel Python legs are shown separately") + '</article>')
     return plain, cards(rendered, "suite legs")
 
 
-def chart(history, key):
-    points = []
-    for day in sorted(rows(history), key=lambda r: str(r.get("date") or "")):
-        try:
-            date = datetime.date.fromisoformat(str(day.get("date")))
-        except ValueError:
-            continue
-        gates = day.get("gates") if isinstance(day.get("gates"), dict) else {}
-        row = gates.get(key) if isinstance(gates.get(key), dict) else {}
-        points.append((date, seconds(row.get("p50_s"))))
+def count(value):
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return "unavailable"
+    return f"{value:,}"
+
+
+def plot(points, label, fmt=duration, *, gaps=True, values="Daily median values"):
+    """An SVG trend of ``[(date, value-or-None), ...]`` with its text twin.
+
+    ``gaps=True`` breaks the line at a missing day (a gate measured daily: a
+    hole is an unavailable measurement). ``gaps=False`` joins the measured
+    points, for a series that is only observed on days something ran.
+    """
+    points = sorted(points, key=lambda p: p[0])
     valid = [(d, v) for d, v in points if v is not None]
     if not valid:
         return '<p>No measured daily history yet.</p>'
+    if not gaps:
+        points = valid
     low, high = min(v for _, v in valid), max(v for _, v in valid)
     start, end = points[0][0], points[-1][0]
     span = max((end - start).days, 1)
     marks, segment, last = [], [], None
     for day, value in points:
-        if value is None or (last and (day - last).days > 1):
+        if value is None or (gaps and last and (day - last).days > 1):
             if segment:
                 marks.append('<polyline points="' + ' '.join(segment) + '"/>')
                 segment = []
@@ -161,16 +170,106 @@ def chart(history, key):
             continue
         x, y = 10 + 300 * (day - start).days / span, 75 - 60 * (value - low) / max(high - low, 1)
         segment.append(f"{x:.1f},{y:.1f}")
-        marks.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3"><title>{day}: {duration(value)}</title></circle>')
+        marks.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3"><title>{day}: {fmt(value)}</title></circle>')
     if segment:
         marks.append('<polyline points="' + ' '.join(segment) + '"/>')
-    label = f"{key}: daily median seconds, {start} to {end}; {len(valid)} measured days; gaps are unavailable"
-    table = '<ul>' + ''.join(f'<li>{d}: {duration(v)}</li>' for d, v in points) + '</ul>'
+    table = '<ul>' + ''.join(f'<li>{d}: {fmt(v)}</li>' for d, v in points) + '</ul>'
     return (f'<figure class="timing-chart"><figcaption>{escape(label)}</figcaption>'
-            f'<div class="chart-range">Range {duration(low)} – {duration(high)}</div>'
+            f'<div class="chart-range">Range {fmt(low)} – {fmt(high)}</div>'
             f'<svg viewBox="0 0 320 90" role="img" aria-label="{escape(label)}"><title>{escape(label)}</title>'
             + ''.join(marks) + f'</svg><div class="chart-dates"><span>{start}</span><span>{end}</span></div>'
-            + disclosure("Daily median values (text)", table) + '</figure>')
+            + disclosure(f"{values} (text)", table) + '</figure>')
+
+
+def _day(value):
+    try:
+        return datetime.date.fromisoformat(str(value))
+    except ValueError:
+        return None
+
+
+def chart(history, key):
+    points = []
+    for day in sorted(rows(history), key=lambda r: str(r.get("date") or "")):
+        date = _day(day.get("date"))
+        if date is None:
+            continue
+        gates = day.get("gates") if isinstance(day.get("gates"), dict) else {}
+        row = gates.get(key) if isinstance(gates.get(key), dict) else {}
+        points.append((date, seconds(row.get("p50_s"))))
+    valid = [p for p in points if p[1] is not None]
+    if not valid:
+        return '<p>No measured daily history yet.</p>'
+    label = (f"{key}: daily median seconds, {points[0][0]} to {points[-1][0]}; "
+             f"{len(valid)} measured days; gaps are unavailable")
+    return plot(points, label)
+
+
+def unit_trend(history, repo, python, field):
+    """One library leg's main-branch trend from the committed unit record.
+
+    ``history`` is ``heart.timings.unit_history``'s ``{repo: [points]}``.
+    ``field`` is ``tests``, ``wall_s`` or ``import_s``.
+    """
+    if not isinstance(history, dict):
+        return ""  # no record handed to this render (a dev-box board): say nothing
+    points = []
+    for row in rows(history.get(repo)):
+        if str(row.get("python") or "") != str(python or ""):
+            continue
+        date = _day(row.get("date"))
+        if date is None:
+            continue
+        value = row.get(field)
+        value = (value if count(value) != "unavailable" else None) if field == "tests" else seconds(value)
+        points.append((date, value))
+    measured = sum(v is not None for _, v in points)
+    if not measured:
+        return '<p>No main-branch history in the timing record yet.</p>'
+    what = {"tests": "tests collected", "wall_s": "suite wall-clock seconds",
+            "import_s": "import seconds"}.get(field, field)
+    label = (f"{repo} · Python {python}: {what} on main, {points[0][0]} to {points[-1][0]}; "
+             f"{measured} days with a main run; days without one are joined")
+    return plot(points, label, count if field == "tests" else duration, gaps=False,
+                values="Values per main run day")
+
+
+def organism_total(history):
+    """The organism's unit-test count over time: ``(plain line, card html)``.
+
+    Per library and day, the largest count across its Python legs (a skipped
+    leg must not read as fewer tests); a library with no run that day carries
+    its last count forward. Days before every recorded library has a count are
+    left out, so the total never jumps when a library first appears.
+    """
+    history = history if isinstance(history, dict) else {}
+    per_repo = {}
+    for repo, points in history.items():
+        for row in rows(points):
+            date, tests = _day(row.get("date")), row.get("tests")
+            if date is None or count(tests) == "unavailable":
+                continue
+            day = per_repo.setdefault(repo, {})
+            day[date] = max(day.get(date, 0), tests)
+    if not per_repo:
+        return None, ""
+    latest, points = {}, []
+    for date in sorted({d for days in per_repo.values() for d in days}):
+        for repo, days in per_repo.items():
+            if date in days:
+                latest[repo] = days[date]
+        if len(latest) == len(per_repo):
+            points.append((date, sum(latest.values())))
+    total = sum(latest.values())
+    plain = f"Organism total: {total:,} unit tests across {len(per_repo)} libraries (latest main run of each)"
+    label = (f"Organism unit tests on main, {points[0][0]} to {points[-1][0]}; "
+             f"each library's latest count carried forward") if points else ""
+    html_ = (f'<article class="timing-card"><h4>Organism total · unit tests</h4>'
+             f'<div class="timing-metrics"><span>Tests <strong class="duration">{count(total)}</strong></span></div>'
+             f'<p>{escape(len(per_repo))} libraries · latest main run of each · from the committed timing record</p>'
+             + (plot(points, label, count, gaps=False, values="Totals per day") if points else
+                '<p>No day yet on which every library has a count.</p>') + '</article>')
+    return plain, f'<div class="timings">{html_}</div>'
 
 
 def gates(ct):

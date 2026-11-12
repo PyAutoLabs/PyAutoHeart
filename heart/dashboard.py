@@ -442,6 +442,18 @@ def _as_int(v: Any, default: int = 0) -> int:
         return default
 
 
+def _unit_history(snapshot: dict) -> dict | None:
+    """The unit record's main-branch trend (``heart.timings.unit_history``).
+
+    The daily job's ``timings append`` writes it beside the census, after
+    today's lines land. ``None`` when this render was handed no record (a
+    dev-box board), so the cards say nothing rather than "no history".
+    """
+    record = snapshot.get("timings_record")
+    history = record.get("unit_history") if isinstance(record, dict) else None
+    return history if isinstance(history, dict) else None
+
+
 def _as_float(v: Any, default: float | None = None) -> float | None:
     """A float, or ``default``. ``bool`` is not a number here, nor is junk."""
     if isinstance(v, bool):
@@ -859,7 +871,8 @@ def build_board(
                 summary += f" · {building} baseline building"
             if unavailable:
                 summary += f" · {unavailable} unavailable"
-            details, timing_html = timing_display.imports(snapshot.get("unit_timings"), imp)
+            details, timing_html = timing_display.imports(snapshot.get("unit_timings"), imp,
+                                                           _unit_history(snapshot))
             sections.append(Section("import_time", "Import timing", st, summary, details,
                                     timing_html=timing_html))
 
@@ -887,12 +900,18 @@ def build_board(
                    if e.get('run_speed_factor', 1.0) != 1.0 else "")
                 for e in (ut.get("red") or [])[:5]
             ]
-            suite_details, timing_html = timing_display.suites(snapshot.get("unit_timings"))
+            history = _unit_history(snapshot)
+            suite_details, timing_html = timing_display.suites(snapshot.get("unit_timings"), history)
             if details and timing_html:
                 timing_html = ('<p>Measured regressions</p><ul>' +
                                ''.join(f'<li>{_html.escape(d)}</li>' for d in details) +
                                '</ul>' + timing_html)
             details += suite_details
+            # The organism's whole unit suite in one row, with its trend.
+            total_line, total_html = timing_display.organism_total(history)
+            if total_line:
+                details.append(total_line)
+                timing_html = total_html + (timing_html or "")
             sections.append(Section("unit_test_timing", "Unit-test timing", st, summary, details,
                                     timing_html=timing_html))
 
