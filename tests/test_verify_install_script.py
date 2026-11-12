@@ -668,3 +668,63 @@ def test_sidecar_warn_row_keeps_ready_true_and_readiness_not_red(tmp_path):
     verdict = readiness.compute({"ts": sidecar["ts"], "verify_install": sidecar})
     assert not any("install" in reason for reason in verdict["red_reasons"])
     assert not any("install" in reason for reason in verdict["yellow_reasons"])
+
+
+def _setup_driver_source():
+    body = SCRIPT.read_text()
+    start = body.index("cat > /tmp/F_driver_setup.py <<'PYEOF'\n") + len(
+        "cat > /tmp/F_driver_setup.py <<'PYEOF'\n"
+    )
+    return body[start : body.index("PYEOF\n", start)]
+
+
+def _run_setup_driver(tmp_path, setup_body):
+    """Run check F's real setup-cell driver against a fake autonerves.setup_colab."""
+    import os
+    import sys
+
+    pkgs = tmp_path / "pkgs"
+    (pkgs / "google" / "colab").mkdir(parents=True)
+    (pkgs / "google" / "__init__.py").write_text("")
+    (pkgs / "google" / "colab" / "__init__.py").write_text("")
+    (pkgs / "autonerves").mkdir()
+    (pkgs / "autonerves" / "__init__.py").write_text("")
+    (pkgs / "autonerves" / "setup_colab.py").write_text(
+        "class ColabRestartRequired(RuntimeError):\n    pass\n\n"
+        "def setup(*args, **kwargs):\n" + setup_body
+    )
+    driver = tmp_path / "driver.py"
+    # The cell's `pip install autonerves --no-deps` is replaced by a no-op.
+    driver.write_text(
+        _setup_driver_source().replace(
+            'subprocess.check_call(\n        [sys.executable, "-m", "pip", "install", "autonerves", "--no-deps"]\n    )',
+            "pass",
+        )
+    )
+    ws = tmp_path / "ws"
+    env = {**os.environ, "PYTHONPATH": str(pkgs), "COLAB_SIM_WORKSPACE_DIR": str(ws)}
+    return subprocess.run(
+        [sys.executable, str(driver)], env=env, capture_output=True, text=True
+    )
+
+
+def test_check_f_driver_exits_4_when_the_bootstrap_asks_for_a_restart(tmp_path):
+    """PyAutoNerves#217: a restart request is what a user meets on Colab; the
+    shell re-runs the cell in a fresh process instead of failing check F."""
+    res = _run_setup_driver(tmp_path, "    raise ColabRestartRequired('restart please')\n")
+    assert res.returncode == 4, res.stdout + res.stderr
+    assert "RESTART REQUESTED" in res.stdout
+
+
+def test_check_f_driver_still_fails_on_any_other_error(tmp_path):
+    res = _run_setup_driver(tmp_path, "    raise ValueError('broken bootstrap')\n")
+    assert res.returncode not in (0, 4)
+    assert "broken bootstrap" in res.stderr
+
+
+def test_check_f_reruns_the_cell_once_after_a_restart_request():
+    body = SCRIPT.read_text()
+    block = body[body.index('if [ "$setup_rc" -eq 4 ]; then') :]
+    block = block[: block.index("\n    fi\n")]
+    assert block.count("python /tmp/F_driver_setup.py") == 1
+    assert '[ "$setup_rc" -eq 4 ] && setup_rc=41' in block

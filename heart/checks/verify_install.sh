@@ -926,7 +926,16 @@ if not hasattr(_setup_colab, "setup"):
     )
     sys.exit(3)
 
-_setup_colab.setup("autolens", raise_error_if_not_gpu=False, workspace_dir=WS_DIR)
+try:
+    _setup_colab.setup("autolens", raise_error_if_not_gpu=False, workspace_dir=WS_DIR)
+except Exception as exc:
+    # A user restarts the runtime and re-runs the cell (PyAutoNerves#217); the
+    # shell below does the same in a fresh process. Matched by name so older
+    # autonerves releases without the class are unaffected.
+    if type(exc).__name__ == "ColabRestartRequired":
+        print(f"RESTART REQUESTED: {exc}")
+        sys.exit(4)
+    raise
 
 # --- assertions: clone happened, cwd moved into the workspace ---
 assert os.getcwd() == WS_DIR, f"cwd is {os.getcwd()}, expected {WS_DIR}"
@@ -937,6 +946,15 @@ PYEOF
     local setup_rc=0
     COLAB_SIM_WORKSPACE_DIR="$ws_dir" python /tmp/F_driver_setup.py |& tee /tmp/F_driver.log
     setup_rc=${PIPESTATUS[0]}
+    # Exit 4 = the bootstrap upgraded a package this process had already loaded
+    # and asked for a runtime restart. Do what a user does: run the cell once
+    # more in a fresh process. A second request (or any failure) is a FAIL.
+    if [ "$setup_rc" -eq 4 ]; then
+        step "setup cell asked for a runtime restart; re-running it in a fresh process"
+        COLAB_SIM_WORKSPACE_DIR="$ws_dir" python /tmp/F_driver_setup.py |& tee -a /tmp/F_driver.log
+        setup_rc=${PIPESTATUS[0]}
+        [ "$setup_rc" -eq 4 ] && setup_rc=41
+    fi
 
     if [ "$setup_rc" -eq 3 ]; then
         RESULTS+=("F|SKIP|installed autonerves predates setup_colab registry (next release)")
