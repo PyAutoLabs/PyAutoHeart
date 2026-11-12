@@ -330,23 +330,41 @@ def test_an_untouched_organs_red_ci_does_not_block():
     assert v["verdict"] == "green"
 
 
-def _two_runs(tests_on_head, tests_concl="failure"):
-    return {"ci_status": {"group": "organism", "conclusion": "failure", "workflows": {
-        "Organ Tests": {"conclusion": tests_concl, "status": "completed",
-                        "on_head": tests_on_head, "created_at": "2026-11-12T09:00:00Z"},
-        "Organ Lint": {"conclusion": "success", "status": "completed",
-                       "on_head": True, "created_at": "2026-11-12T10:00:00Z"}}}}
+def _drift(lifecycle, spawn):
+    """Two declared CI workflows, neither on the HEAD; spawn's run is newer."""
+    return {"ci_status": {"group": "organism", "conclusion": spawn, "workflows": {
+        "Lifecycle Drift": {"conclusion": lifecycle, "status": "completed",
+                            "on_head": False, "created_at": "2026-11-12T10:00:00Z"},
+        "Spawn Drift": {"conclusion": spawn, "status": "completed",
+                        "on_head": False, "created_at": "2026-11-12T11:00:00Z"}}}}
 
 
-def test_an_organ_judged_on_its_ci_runs_on_head():
-    ciw = {ORGAN: ["Organ Tests", "Organ Lint"]}
-    # A failing CI run on an older commit is not main's state ...
-    assert dev(snapshot(**{ORGAN: _two_runs(False)}), [ORGAN], ci_workflows=ciw)["verdict"] == "green"
-    # ... a failing CI run on the HEAD is.
-    assert dev(snapshot(**{ORGAN: _two_runs(True)}), [ORGAN], ci_workflows=ciw)["verdict"] == "red"
-    # With no CI run on HEAD, the newest CI run decides.
-    snap = snapshot(**{ORGAN: _organ("failure", on_head=False)})
-    assert dev(snap, [ORGAN])["verdict"] == "red"
+DRIFT_CIW = {ORGAN: ["Lifecycle Drift", "Spawn Drift"]}
+
+
+def test_each_declared_workflows_latest_run_is_judged_a_newer_green_never_hides_a_red():
+    """Must-fix: a red Lifecycle Drift at 10:00 hidden by a green Spawn Drift
+    at 11:00 used to read GREEN."""
+    v = dev(snapshot(**{ORGAN: _drift("failure", "success")}), [ORGAN], ci_workflows=DRIFT_CIW)
+    assert v["verdict"] == "red"
+    assert v["red_reasons"] == [f"{ORGAN}: Lifecycle Drift failure on main"]
+    ok = dev(snapshot(**{ORGAN: _drift("success", "success")}), [ORGAN], ci_workflows=DRIFT_CIW)
+    assert ok["verdict"] == "green"
+    pending = dev(snapshot(**{ORGAN: _drift("", "success")}), [ORGAN], ci_workflows=DRIFT_CIW)
+    assert pending["verdict"] == "stale"
+    assert pending["stale_reasons"] == [f"{ORGAN}: Lifecycle Drift on main has no conclusion yet"]
+
+
+def test_a_declared_workflow_missing_from_the_ci_status_page_is_stale_not_skipped():
+    """Must-fix: e.g. a gate that has not run within the 30-run page."""
+    ciw = {ORGAN: ["Lifecycle Drift", "Spawn Drift", "Tenant Firewall Gate"]}
+    v = dev(snapshot(**{ORGAN: _drift("success", "success")}), [ORGAN], ci_workflows=ciw)
+    assert v["verdict"] == "stale" and v["pass"] is False
+    assert v["stale_reasons"] == [f"{ORGAN}: Tenant Firewall Gate has no recorded run on "
+                                  "main (not in the CI status page) — cannot be judged"]
+    # A red elsewhere still outranks the gap.
+    v = dev(snapshot(**{ORGAN: _drift("success", "failure")}), [ORGAN], ci_workflows=ciw)
+    assert v["verdict"] == "red"
 
 
 def test_an_ops_workflow_never_blocks_but_is_shown():
@@ -377,13 +395,13 @@ def test_declared_ci_with_no_recorded_run_is_stale():
     snap = snapshot(**{ORGAN: _organ("success")})
     v = dev(snap, [ORGAN], ci_workflows={ORGAN: ["Other Tests"]})
     assert v["verdict"] == "stale"
-    assert v["stale_reasons"] == [f"{ORGAN}: no run of its CI (Other Tests) recorded"]
+    assert v["stale_reasons"][0].startswith(f"{ORGAN}: Other Tests has no recorded run on main")
 
 
 def test_an_organ_with_ci_unfinished_or_unobserved_is_stale():
     v = dev(snapshot(**{ORGAN: _organ("", status="in_progress")}), [ORGAN])
     assert v["verdict"] == "stale"
-    assert v["stale_reasons"] == [f"{ORGAN}: CI on main has no conclusion yet"]
+    assert v["stale_reasons"] == [f"{ORGAN}: Organ Tests on main has no conclusion yet"]
     v = dev(snapshot(), [ORGAN])  # polled, but absent from the snapshot
     assert v["verdict"] == "stale"
     assert v["stale_reasons"] == [f"{ORGAN}: CI status on main not observed"]

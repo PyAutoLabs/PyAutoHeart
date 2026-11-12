@@ -1084,8 +1084,8 @@ def _in_scope_ci(
     over — no conclusion yet, aged evidence — and gives every other group
     (organs, build workflow, developer workspaces) the same treatment in full.
     For an advisory group only the repo's declared CI workflows
-    (``ci_workflows``) count: on the main HEAD, any failing → red, any
-    unfinished → stale; with none on HEAD, the newest CI run decides. Every
+    (``ci_workflows``) count, each judged on its latest run: any failing →
+    red; any unfinished, or with no recorded run, → stale. Every
     other workflow (ops: boards, sweeps, schedules; never a ``release_scope``
     one) failing on HEAD is returned in ``shown``, never blocking. An advisory
     repo with no declaration is STALE. Returns ``(red, stale, shown)``."""
@@ -1131,28 +1131,22 @@ def _in_scope_ci(
                     shown.append({"severity": "red",
                                   "text": f"{name}: {wf} {e.get('conclusion')} on main "
                                           "(ops workflow — not CI, not blocking)"})
-            if not declared:
-                pass  # declared as having no CI: nothing to judge
-            else:
-                wfs = {wf: e for wf, e in every.items() if wf in declared}
-                on_head = {wf: e for wf, e in wfs.items() if e.get("on_head")}
-                failing = sorted(f"{wf} {e.get('conclusion')}" for wf, e in on_head.items()
-                                 if e.get("conclusion") in FAILURE_CONCLUSIONS)
-                if failing:
-                    red.append(f"{name}: {', '.join(failing)} on main")
-                elif any(_no_conclusion(e.get("conclusion")) for e in on_head.values()):
-                    stale.append(f"{name}: CI on main has no conclusion yet")
-                elif not on_head:
-                    newest = max(wfs.values(), key=lambda e: str(e.get("created_at", "")),
-                                 default=None)
-                    c = (newest or {}).get("conclusion")
-                    if newest is None:
-                        stale.append(f"{name}: no run of its CI "
-                                     f"({', '.join(sorted(declared))}) recorded")
-                    elif c in FAILURE_CONCLUSIONS:
-                        red.append(f"{name}: CI {c} on main")
-                    elif c != "success":
-                        stale.append(f"{name}: CI on main has no conclusion yet")
+            # The LATEST run of EACH declared workflow is judged (ci_status
+            # keeps one entry per workflow — its newest run on main): any red
+            # blocks, any missing or unfinished one is STALE. One workflow's
+            # newer green never hides another's red.
+            failing: list[str] = []
+            for wf in sorted(declared):
+                e = every.get(wf)
+                if e is None:
+                    stale.append(f"{name}: {wf} has no recorded run on main "
+                                 "(not in the CI status page) — cannot be judged")
+                elif e.get("conclusion") in FAILURE_CONCLUSIONS:
+                    failing.append(f"{wf} {e.get('conclusion')}")
+                elif e.get("conclusion") != "success":
+                    stale.append(f"{name}: {wf} on main has no conclusion yet")
+            if failing:
+                red.append(f"{name}: {', '.join(failing)} on main")
         # The evidence's own collection time, where the sidecar carries one;
         # the snapshot's aggregation ts is judged separately by the caller.
         if ci and ci.get("ts"):
