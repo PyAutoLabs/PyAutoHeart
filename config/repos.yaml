@@ -149,6 +149,27 @@ version_skew:
 # scope and never enforces it at a development ship, so they never count as
 # the repo's own CI there. Matched by workflow display name (`name:`).
 dev_ship:
+  # A polled repo's OWN CI, for the groups with no required_workflows
+  # (organs, build workflow, developer workspaces): the workflows that gate
+  # its pull requests — its test / lint check. Seeded 2026-11-12 from the
+  # required-check survey (Science/scratch/ecosystem_review_2026-11/
+  # m2_rulesets/survey.md) and the pull_request-triggered workflows of each
+  # repo, minus dashboard refreshes. Only these block a development ship;
+  # every other workflow on the repo (boards, sweeps, scheduled ops) is shown,
+  # never blocking. `[]` = the repo has no CI to judge. A polled advisory repo
+  # with NO entry reads STALE ("no CI workflows declared") until one is added.
+  ci_workflows:
+    PyAutoBrain: [Brain Tests]
+    PyAutoHeart: [Heart Tests]
+    PyAutoHands: [Hands Tests]
+    PyAutoMind: [Tenant Firewall Gate, Lifecycle Drift, Spawn Drift]
+    PyAutoEars: [Ears tests]
+    PyAutoMemory: [validate]
+    PyAutoEyes: [lint]
+    PyAutoPulse: [lint]
+    PyAutoInsight: [lint]
+    autofit_workspace_developer: []
+    autolens_workspace_developer: []
   release_scope_workflows:
     - Release Integrate
     - Workspace Smoke

@@ -28,6 +28,8 @@ import datetime
 import json
 import subprocess
 import sys
+import time
+from concurrent.futures import ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import Any, Callable
 
@@ -39,12 +41,18 @@ CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "repos.yaml"
 SIDECAR = "rehearsal_ancestry.json"
 #: Compare statuses under which the base (rehearsed) commit is an ancestor of head.
 ANCESTOR_STATUSES = frozenset({"ahead", "identical"})
+#: Per-call gh timeout, and the total wall-clock budget for all compare calls
+#: (they run in parallel). A call still out at the budget is recorded as
+#: unknown — readiness reads that as unproven, i.e. STALE, never as fresh.
+CALL_TIMEOUT_S = 15
+TOTAL_BUDGET_S = 20.0
 
 
 def gh_api(path: str) -> dict:
     """The gh seam: ``gh api <path>`` as a dict, ``{}`` on any failure."""
     try:
-        result = subprocess.run(["gh", "api", path], capture_output=True, text=True, timeout=30)
+        result = subprocess.run(["gh", "api", path], capture_output=True, text=True,
+                                timeout=CALL_TIMEOUT_S)
         data = json.loads(result.stdout) if result.returncode == 0 else {}
         return data if isinstance(data, dict) else {}
     except (OSError, ValueError, subprocess.TimeoutExpired):
@@ -81,14 +89,17 @@ def ancestry(owner: str, repo: str, rehearsed: str, head: str,
 
 
 def collect(snapshot: dict, owners: dict[str, str], api: Callable[[str], dict],
-            now: datetime.datetime | None = None) -> dict[str, Any]:
+            now: datetime.datetime | None = None,
+            budget_s: float = TOTAL_BUDGET_S) -> dict[str, Any]:
     """The sidecar for ``snapshot``: one row per library whose rehearsed SHA
-    differs from its recorded ``main`` HEAD. Libraries that match need no row."""
+    differs from its recorded ``main`` HEAD. Libraries that match need no row.
+    The compare calls run in parallel under one total ``budget_s``; a call not
+    back in time is a row with status ``unknown`` (error ``timeout``)."""
     now = now or datetime.datetime.now(datetime.timezone.utc)
     report = snapshot.get("validation_report") or {}
     shas = report.get("commit_shas") if isinstance(report, dict) else None
     repos = snapshot.get("repos") or {}
-    rows: dict[str, Any] = {}
+    todo: dict[str, tuple[str, str, str]] = {}
     for lib, owner in owners.items():
         want = str((shas or {}).get(lib) or "")
         head = str((((repos.get(lib) or {}).get("ci_status")) or {}).get("head_sha") or "")
@@ -97,18 +108,52 @@ def collect(snapshot: dict, owners: dict[str, str], api: Callable[[str], dict],
         n = min(len(want), len(head))
         if n >= 7 and want[:n].lower() == head[:n].lower():
             continue  # rehearsed == HEAD: nothing to prove
-        rows[lib] = ancestry(owner, lib, want, head, api)
+        todo[lib] = (owner, want, head)
+    rows: dict[str, Any] = {}
+    if todo:
+        pool = ThreadPoolExecutor(max_workers=len(todo))
+        futures = {lib: pool.submit(ancestry, o, lib, w, h, api)
+                   for lib, (o, w, h) in todo.items()}
+        wait(futures.values(), timeout=budget_s)
+        for lib, fut in futures.items():
+            owner, want, head = todo[lib]
+            if fut.done() and fut.exception() is None:
+                rows[lib] = fut.result()
+            else:
+                rows[lib] = {"rehearsed": want, "head": head, "status": "unknown",
+                             "ancestor": False,
+                             "error": "timeout" if not fut.done() else "compare failed"}
+        pool.shutdown(wait=False, cancel_futures=True)
     return {"checked_at": now.isoformat(), "report_ts": (report or {}).get("ts"),
             "repos": rows}
 
 
+def read_inputs(state_dir: Path | None = None) -> dict[str, Any]:
+    """The two inputs, read straight from this tick's sidecars — the
+    validation report and each library's ci_status — WITHOUT aggregating
+    (the tick's own aggregate, at its end, folds this check's sidecar in)."""
+    base = state_dir or state.HEART_STATE_DIR
+    per_repo = base / "per-repo"
+
+    def read(path: Path) -> dict:
+        try:
+            data = json.loads(path.read_text())
+            return data if isinstance(data, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    repos = {}
+    for f in sorted(per_repo.glob("*.ci_status.json")) if per_repo.is_dir() else ():
+        repos[f.name.split(".")[0]] = {"ci_status": read(f)}
+    return {"validation_report": read(base / "validation_report.json"), "repos": repos}
+
+
 def main(argv: list[str] | None = None) -> int:
-    # Fold this tick's fresh ci_status + validation_report sidecars first (the
-    # tick re-aggregates at its end anyway), so the HEADs compared are current.
-    snapshot = state.aggregate()
-    sidecar = collect(snapshot, library_owners(), gh_api)
+    started = time.monotonic()
+    sidecar = collect(read_inputs(), library_owners(), gh_api)
     state.atomic_write_json(state.HEART_STATE_DIR / SIDECAR, sidecar)
-    print(f"rehearsal_ancestry: {len(sidecar['repos'])} moved repo(s) checked")
+    print(f"rehearsal_ancestry: {len(sidecar['repos'])} moved repo(s) checked "
+          f"in {time.monotonic() - started:.1f}s")
     return 0
 
 

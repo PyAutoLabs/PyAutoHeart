@@ -140,3 +140,43 @@ def test_live_owner_map_is_the_release_gate_libraries():
 def test_sidecar_carries_its_collection_time():
     now = datetime.datetime(2026, 11, 12, tzinfo=datetime.timezone.utc)
     assert ra.collect(snapshot(), OWNERS, fake_api({}), now=now)["checked_at"] == now.isoformat()
+
+
+def test_compare_calls_run_under_one_total_budget_and_timeouts_are_stale():
+    """Review finding: bound total gh time; a call not back in time is unknown."""
+    import threading
+    import time
+    release = threading.Event()
+
+    def slow_api(path):
+        release.wait(5)
+        return {"status": "ahead", "ahead_by": 1}
+
+    heads = {"LibOne": "c" * 40, "LibTwo": "d" * 40}
+    t0 = time.monotonic()
+    side = ra.collect(snapshot(heads), OWNERS, slow_api, budget_s=0.2)
+    elapsed = time.monotonic() - t0
+    release.set()
+    assert elapsed < 2  # both calls shared one 0.2 s budget, in parallel
+    assert {r["error"] for r in side["repos"].values()} == {"timeout"}
+    assert compute(snapshot(heads, side))["verdict"] == "stale"
+
+
+def test_main_writes_only_its_own_sidecar_and_never_aggregates(tmp_path, monkeypatch):
+    import json
+    import heart.state as state_mod
+    (tmp_path / "per-repo").mkdir()
+    (tmp_path / "per-repo" / "LibOne.ci_status.json").write_text(
+        json.dumps({"head_sha": "c" * 40}))
+    (tmp_path / "validation_report.json").write_text(
+        json.dumps({"commit_shas": {"LibOne": "a" * 40}}))
+    monkeypatch.setattr(state_mod, "HEART_STATE_DIR", tmp_path)
+    monkeypatch.setattr(state_mod, "aggregate",
+                        lambda: (_ for _ in ()).throw(AssertionError("aggregated")))
+    monkeypatch.setattr(ra, "library_owners", lambda *a, **k: {"LibOne": "some-org"})
+    monkeypatch.setattr(ra, "gh_api", lambda path: {"status": "ahead", "ahead_by": 4})
+    assert ra.main([]) == 0
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        "per-repo", "rehearsal_ancestry.json", "validation_report.json"]
+    side = json.loads((tmp_path / "rehearsal_ancestry.json").read_text())
+    assert side["repos"]["LibOne"]["ahead_by"] == 4

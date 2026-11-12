@@ -1315,3 +1315,15 @@ def test_live_release_scope_workflows_cover_the_release_gate_workflows():
     rs = readiness.load_release_scope_workflows()
     assert {"Release Integrate", "Workspace Smoke", "Python Version Matrix",
             "Nightly Release"} <= rs
+
+
+def test_live_every_polled_advisory_repo_declares_its_ci_workflows():
+    """An undeclared advisory repo reads STALE at every ship; keep the
+    declaration complete for the polled set, and naming only polled repos."""
+    groups = readiness.load_repo_groups()
+    ciw = readiness.load_ci_workflows()
+    gated = {"libraries"} | set(readiness.GATED_WORKSPACE_GROUPS)
+    advisory = {n for n, g in groups.items() if g not in gated}
+    assert advisory == set(ciw)
+    rs = readiness.load_release_scope_workflows()
+    assert not any(set(w) & rs for w in ciw.values())

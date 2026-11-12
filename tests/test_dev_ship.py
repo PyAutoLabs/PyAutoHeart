@@ -54,8 +54,13 @@ def snapshot(**repos):
     return {"ts": TS, "repos": body}
 
 
+# Each advisory repo's own CI (config/repos.yaml dev_ship.ci_workflows).
+CIW = {ORGAN: ["Organ Tests"], BUILD: ["Organ Tests"], DEV_WS: ["Organ Tests"]}
+
+
 def dev(snap, repos, **kw):
     kw.setdefault("now", NOW)
+    kw.setdefault("ci_workflows", CIW)
     return readiness.dev_ship(snap, repos, libraries=LIBS, required_workflows=REQ_WF,
                               dependencies=DEPS, groups=GROUPS, **kw)
 
@@ -325,20 +330,54 @@ def test_an_untouched_organs_red_ci_does_not_block():
     assert v["verdict"] == "green"
 
 
-def test_an_organ_judged_on_its_head_runs_not_an_old_red_run():
-    def organ(old_red_on_head):
-        return {"ci_status": {"group": "organism", "conclusion": "failure", "workflows": {
-            "Organ Lint": {"conclusion": "failure", "status": "completed",
-                           "on_head": old_red_on_head, "created_at": "2026-11-12T09:00:00Z"},
-            "Organ Tests": {"conclusion": "success", "status": "completed",
-                            "on_head": True, "created_at": "2026-11-12T10:00:00Z"}}}}
-    # A failing run on an older commit is not main's state ...
-    assert dev(snapshot(**{ORGAN: organ(False)}), [ORGAN])["verdict"] == "green"
-    # ... a failing run on the HEAD is.
-    assert dev(snapshot(**{ORGAN: organ(True)}), [ORGAN])["verdict"] == "red"
-    # With no run on HEAD, the newest run decides.
+def _two_runs(tests_on_head, tests_concl="failure"):
+    return {"ci_status": {"group": "organism", "conclusion": "failure", "workflows": {
+        "Organ Tests": {"conclusion": tests_concl, "status": "completed",
+                        "on_head": tests_on_head, "created_at": "2026-11-12T09:00:00Z"},
+        "Organ Lint": {"conclusion": "success", "status": "completed",
+                       "on_head": True, "created_at": "2026-11-12T10:00:00Z"}}}}
+
+
+def test_an_organ_judged_on_its_ci_runs_on_head():
+    ciw = {ORGAN: ["Organ Tests", "Organ Lint"]}
+    # A failing CI run on an older commit is not main's state ...
+    assert dev(snapshot(**{ORGAN: _two_runs(False)}), [ORGAN], ci_workflows=ciw)["verdict"] == "green"
+    # ... a failing CI run on the HEAD is.
+    assert dev(snapshot(**{ORGAN: _two_runs(True)}), [ORGAN], ci_workflows=ciw)["verdict"] == "red"
+    # With no CI run on HEAD, the newest CI run decides.
     snap = snapshot(**{ORGAN: _organ("failure", on_head=False)})
     assert dev(snap, [ORGAN])["verdict"] == "red"
+
+
+def test_an_ops_workflow_never_blocks_but_is_shown():
+    """Review finding: a scheduled board/sweep failing must not block a ship."""
+    def organ(on_head):
+        return {"ci_status": {"group": "organism", "conclusion": "failure", "workflows": {
+            "Organ Tests": {"conclusion": "success", "status": "completed",
+                            "on_head": on_head, "created_at": "2026-11-12T08:00:00Z"},
+            "Organ Board": {"conclusion": "failure", "status": "completed",
+                            "on_head": on_head, "created_at": "2026-11-12T11:00:00Z"}}}}
+    on = dev(snapshot(**{ORGAN: organ(True)}), [ORGAN])
+    assert on["verdict"] == "green"
+    assert {"severity": "red", "text": f"{ORGAN}: Organ Board failure on main "
+            "(ops workflow — not CI, not blocking)"} in on["shown_reasons"]
+    # Nothing on HEAD: the newest CI run decides, not the newer ops run.
+    assert dev(snapshot(**{ORGAN: organ(False)}), [ORGAN])["verdict"] == "green"
+
+
+def test_an_advisory_repo_without_declared_ci_is_stale_and_empty_means_no_ci():
+    snap = snapshot(**{ORGAN: _organ("success")})
+    v = dev(snap, [ORGAN], ci_workflows={})
+    assert v["verdict"] == "stale"
+    assert v["stale_reasons"][0].startswith(f"{ORGAN}: no CI workflows declared")
+    assert dev(snap, [ORGAN], ci_workflows={ORGAN: []})["verdict"] == "green"
+
+
+def test_declared_ci_with_no_recorded_run_is_stale():
+    snap = snapshot(**{ORGAN: _organ("success")})
+    v = dev(snap, [ORGAN], ci_workflows={ORGAN: ["Other Tests"]})
+    assert v["verdict"] == "stale"
+    assert v["stale_reasons"] == [f"{ORGAN}: no run of its CI (Other Tests) recorded"]
 
 
 def test_an_organ_with_ci_unfinished_or_unobserved_is_stale():
@@ -447,7 +486,12 @@ def test_release_scope_workflows_in_an_organ_never_count_as_its_own_ci():
                         "created_at": "2026-11-12T10:00:00Z"}}}
     snap = snapshot(**{ORGAN: {"ci_status": ci}})
     assert dev(snap, [ORGAN], release_scope=["Release Integrate"])["verdict"] == "green"
-    assert dev(snap, [ORGAN], release_scope=[])["verdict"] == "red"
+    # Even if someone declared it as CI, release scope is still the ruling's
+    # "shown, not enforced" — but declaration is explicit, so it would count.
+    assert dev(snap, [ORGAN], release_scope=[],
+               ci_workflows={ORGAN: ["Organ Tests", "Release Integrate"]})["verdict"] == "red"
+    v = dev(snap, [ORGAN], release_scope=["Release Integrate"])
+    assert not any("Release Integrate" in r["text"] for r in v["shown_reasons"])
     # With nothing on HEAD, the newest non-release run decides, not the rollup.
     for e in ci["workflows"].values():
         e["on_head"] = False

@@ -947,6 +947,15 @@ def load_release_scope_workflows(config_path: Path | str = CONFIG_PATH) -> froze
     return frozenset(str(w) for w in wfs)
 
 
+def load_ci_workflows(config_path: Path | str = CONFIG_PATH) -> dict[str, list[str]]:
+    """``dev_ship.ci_workflows`` — repo -> the workflows that are its own CI
+    (advisory groups only; libraries and gated workspaces use
+    ``required_workflows``). Absent repo ⇒ no declaration (STALE at a ship)."""
+    cfg = yaml.safe_load(Path(config_path).read_text()) or {}
+    raw = (cfg.get("dev_ship") or {}).get("ci_workflows") or {}
+    return {str(k): [str(w) for w in (v or [])] for k, v in raw.items()}
+
+
 def dependants_of(repos: Sequence[str], dependencies: dict[str, list[str]]) -> set[str]:
     """Everything downstream of ``repos`` in the graph, transitively (the
     repos themselves excluded unless they sit downstream of one another)."""
@@ -1066,19 +1075,25 @@ def _in_scope_ci(
     gate_libs: set[str], req_wf: dict[str, list[str]],
     now: datetime.datetime, max_age_hours: float,
     release_scope: frozenset[str] = frozenset(),
-) -> tuple[list[str], list[str]]:
+    ci_workflows: dict[str, list[str]] | None = None,
+) -> tuple[list[str], list[str], list[dict[str, str]]]:
     """``main`` CI of every in-scope repo, read from the snapshot: (red, stale).
 
     Release-gate libraries and gated workspaces already carry their red / error
     / absent reasons from ``compute``; this adds what the release gate passes
     over — no conclusion yet, aged evidence — and gives every other group
     (organs, build workflow, developer workspaces) the same treatment in full.
-    For an advisory group the runs ON the main HEAD are judged, minus the
-    ``release_scope`` workflows: any failing → red, any unfinished → stale;
-    with none on HEAD, the newest such run's conclusion."""
+    For an advisory group only the repo's declared CI workflows
+    (``ci_workflows``) count: on the main HEAD, any failing → red, any
+    unfinished → stale; with none on HEAD, the newest CI run decides. Every
+    other workflow (ops: boards, sweeps, schedules; never a ``release_scope``
+    one) failing on HEAD is returned in ``shown``, never blocking. An advisory
+    repo with no declaration is STALE. Returns ``(red, stale, shown)``."""
     repos = snapshot.get("repos") or {}
+    ci_workflows = ci_workflows or {}
     red: list[str] = []
     stale: list[str] = []
+    shown: list[dict[str, str]] = []
     for name in enforced:
         group = groups.get(name)
         if group is None:
@@ -1102,28 +1117,42 @@ def _in_scope_ci(
                         stale.append(f"{name}: {wf} on main has no conclusion yet")
             elif _no_conclusion(ci.get("conclusion")):
                 stale.append(f"{name}: CI on main has no conclusion yet")
+        elif name not in ci_workflows:
+            stale.append(f"{name}: no CI workflows declared (config/repos.yaml "
+                         "dev_ship.ci_workflows) — its main CI cannot be judged")
         else:
+            declared = set(ci_workflows[name])
             raw = ci.get("workflows")
-            wfs = {wf: e for wf, e in (raw.items() if isinstance(raw, dict) else ())
-                   if isinstance(e, dict) and wf not in release_scope}
-            on_head = {wf: e for wf, e in wfs.items() if e.get("on_head")}
-            failing = sorted(f"{wf} {e.get('conclusion')}" for wf, e in on_head.items()
-                             if e.get("conclusion") in FAILURE_CONCLUSIONS)
-            if failing:
-                red.append(f"{name}: {', '.join(failing)} on main")
-            elif any(_no_conclusion(e.get("conclusion")) for e in on_head.values()):
-                stale.append(f"{name}: CI on main has no conclusion yet")
-            elif not on_head:
-                if isinstance(raw, dict):
-                    newest = max(wfs.values(), key=lambda e: str(e.get("created_at", "")),
-                                 default={})
-                    c = newest.get("conclusion")
-                else:
-                    c = ci.get("conclusion")
-                if c in FAILURE_CONCLUSIONS:
-                    red.append(f"{name}: CI {c} on main")
-                elif c != "success":
+            every = {wf: e for wf, e in (raw.items() if isinstance(raw, dict) else ())
+                     if isinstance(e, dict)}
+            for wf, e in sorted(every.items()):
+                if (wf not in declared and wf not in release_scope and e.get("on_head")
+                        and e.get("conclusion") in FAILURE_CONCLUSIONS):
+                    shown.append({"severity": "red",
+                                  "text": f"{name}: {wf} {e.get('conclusion')} on main "
+                                          "(ops workflow — not CI, not blocking)"})
+            if not declared:
+                pass  # declared as having no CI: nothing to judge
+            else:
+                wfs = {wf: e for wf, e in every.items() if wf in declared}
+                on_head = {wf: e for wf, e in wfs.items() if e.get("on_head")}
+                failing = sorted(f"{wf} {e.get('conclusion')}" for wf, e in on_head.items()
+                                 if e.get("conclusion") in FAILURE_CONCLUSIONS)
+                if failing:
+                    red.append(f"{name}: {', '.join(failing)} on main")
+                elif any(_no_conclusion(e.get("conclusion")) for e in on_head.values()):
                     stale.append(f"{name}: CI on main has no conclusion yet")
+                elif not on_head:
+                    newest = max(wfs.values(), key=lambda e: str(e.get("created_at", "")),
+                                 default=None)
+                    c = (newest or {}).get("conclusion")
+                    if newest is None:
+                        stale.append(f"{name}: no run of its CI "
+                                     f"({', '.join(sorted(declared))}) recorded")
+                    elif c in FAILURE_CONCLUSIONS:
+                        red.append(f"{name}: CI {c} on main")
+                    elif c != "success":
+                        stale.append(f"{name}: CI on main has no conclusion yet")
         # The evidence's own collection time, where the sidecar carries one;
         # the snapshot's aggregation ts is judged separately by the caller.
         if ci and ci.get("ts"):
@@ -1133,7 +1162,7 @@ def _in_scope_ci(
             elif age > max_age_hours:
                 stale.append(f"{name}: CI evidence {age:.1f} h old, over the "
                              f"{max_age_hours:g} h maximum — re-check, or park")
-    return red, stale
+    return red, stale, shown
 
 
 def dev_ship(
@@ -1148,6 +1177,7 @@ def dev_ship(
     groups: dict[str, str] | None = None,
     universe: Sequence[str] | None = None,
     release_scope: Sequence[str] | None = None,
+    ci_workflows: dict[str, list[str]] | None = None,
     source: str | None = None,
 ) -> dict[str, Any]:
     """The development-ship verdict for a branch touching ``repos``.
@@ -1180,10 +1210,13 @@ def dev_ship(
 
     rs = (frozenset(release_scope) if release_scope is not None
           else load_release_scope_workflows() if groups_given is None else frozenset())
-    ci_red, ci_stale = _in_scope_ci(snapshot, scope["enforced"], groups, set(libs),
-                                   req_wf, now, max_age_hours, rs)
+    ciw = (ci_workflows if ci_workflows is not None
+           else load_ci_workflows() if groups_given is None else {})
+    ci_red, ci_stale, ci_shown = _in_scope_ci(snapshot, scope["enforced"], groups, set(libs),
+                                             req_wf, now, max_age_hours, rs, ciw)
     red += ci_red
     stale += ci_stale
+    shown += ci_shown
 
     age = feed_age_hours(snapshot.get("ts"), now)
     if age is None:
