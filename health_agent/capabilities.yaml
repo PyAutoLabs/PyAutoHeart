@@ -54,7 +54,10 @@ gate:
       (config/repos.yaml dependencies:); every other reason is shown in
       shown_reasons, not blocking. Evidence older than 6 h, or of unknown age,
       is STALE; only GREEN passes; STALE means re-check, or park. Release
-      gating is unchanged.
+      gating is unchanged. It judges the dev box's LOCAL
+      ~/.pyauto-heart/state.json (named in `source`, aged in
+      feed_age_hours); the heart-health.yml event triggers refresh the
+      published cloud feed instead.
 
 # Continuous checks — cheap, run every <30s tick (heart/tick.sh).
 continuous_checks:

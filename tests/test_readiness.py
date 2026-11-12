@@ -1293,3 +1293,25 @@ def test_missing_dependency_graph_fails_loudly(tmp_path):
     cfg.write_text("repos: {}\n")
     with pytest.raises(ValueError):
         readiness.load_dependencies(cfg)
+
+
+def test_live_excluded_repos_are_known_but_read_not_polled():
+    import yaml
+    excluded = yaml.safe_load(readiness.CONFIG_PATH.read_text())["excluded"]
+    groups = readiness.load_repo_groups()
+    known = set(readiness.load_known_repo_names())
+    assert set(excluded) <= known
+    s = readiness.dev_scope(excluded[:2], readiness.load_dependencies(),
+                            known=list(groups), universe=sorted(known))
+    assert s["not_polled"] == excluded[:2]
+
+
+def test_live_typo_in_a_repo_name_is_a_usage_error():
+    with pytest.raises(ValueError, match="PyAutoFitt"):
+        readiness.dev_ship(make_snapshot(), ["PyAutoFitt"])
+
+
+def test_live_release_scope_workflows_cover_the_release_gate_workflows():
+    rs = readiness.load_release_scope_workflows()
+    assert {"Release Integrate", "Workspace Smoke", "Python Version Matrix",
+            "Nightly Release"} <= rs

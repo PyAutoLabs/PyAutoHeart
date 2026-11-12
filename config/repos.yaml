@@ -140,6 +140,26 @@ version_skew:
   euclid_strong_lens_modeling_pipeline: {library: PyAutoLens, package: autolens}
   autolens_assistant: {library: PyAutoLens, package: autolens}
 
+# Development-ship policy (heart/readiness.py `dev_ship`, PyAutoHeart#340).
+# A touched repo's own `main` CI blocks a development ship whatever its group;
+# for a group with no required workflows (organs, build workflow, developer
+# workspaces) that means the runs on its main HEAD. These workflows live in
+# such repos but answer the RELEASE question (rehearsal, full-surface sweeps,
+# release execution, the release push credential) — the ruling shows release
+# scope and never enforces it at a development ship, so they never count as
+# the repo's own CI there. Matched by workflow display name (`name:`).
+dev_ship:
+  release_scope_workflows:
+    - Release Integrate
+    - Workspace Smoke
+    - Workspace Validation
+    - Release Diagnostic (not validation)
+    - JAX compatibility endpoints (not release validation)
+    - Token Push Check
+    - Python Version Matrix
+    - PyAuto Release
+    - Nightly Release
+
 # Library dependency graph: <library> -> the libraries it imports directly.
 # Read strictly by heart/readiness.py's development-ship scope (`readiness
 # --dev --repos A,B`, PyAutoHeart#340): a branch is blocked by red CI on `main`
@@ -213,6 +233,22 @@ smoke:
 excluded:
   - autolens_assistant    # public-facing template
   - autolens_profiling    # profiling project
+  - PyAutoReduce          # standalone library (own lib-tests.yml caller); not polled — a dev ship touching it reads STALE
+  # Body-map repos (PyAutoMind/repos.yaml) Heart does not poll. Named so a
+  # development ship touching one reads STALE ("not polled by Heart") rather
+  # than failing as an unknown name; poll one to give its branches a verdict.
+  - PyAutoBroca
+  - PyAutoCortex
+  - PyAutoDNA
+  - PyAutoGut
+  - PyAutoScientist
+  - ECLIPSE_lens_catalogue
+  - autocti_assistant
+  - autofit_assistant
+  - autogalaxy_assistant
+  - euclid_assistant
+  - autoreduce_workspace
+  - pyautolabs.github.io
   - autolens_inference    # inference benchmark project (search/inference runs; results tracked)
   - autolens_visualization  # lens figure gallery project (PNGs + manifest tracked; re-rendered on release)
   - autogalaxy_visualization  # galaxy figure gallery project (PNGs + manifest tracked; re-rendered on release)

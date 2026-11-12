@@ -19,7 +19,9 @@ yellow/red (`heart/readiness.py` docstring is the canonical definition).
 Releases still require GREEN. A development ship asks the scoped gate,
 `pyauto-heart readiness --dev --repos A,B --json`: only CI on `main` of the
 touched repos and their dependants blocks, every other reason is shown, a
-feed older than 6 h is STALE, and STALE never passes (PyAutoHeart#340).
+feed older than 6 h is STALE, and STALE never passes (PyAutoHeart#340). It
+judges the dev box's local `~/.pyauto-heart/state.json`; the event triggers
+refresh the published cloud feed, not that file.
 
 For the release-**validation** rehearsal specifically (build-and-exercise the
 exact source about to ship, before promoting to PyPI — see

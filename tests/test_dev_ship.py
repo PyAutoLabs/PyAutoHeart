@@ -24,8 +24,11 @@ WS, OTHER_WS = "demo_workspace", "other_workspace"
 LIBS = [CORE, MID, TOP, SIDE]
 # CORE <- MID <- TOP ; SIDE stands alone.
 DEPS = {MID: [CORE], TOP: [CORE, MID]}
+ORGAN, BUILD, DEV_WS = "ToolRepo", "BuildRepo", "dev_workspace"
 GROUPS = {**{lib: "libraries" for lib in LIBS}, WS: "workspaces", OTHER_WS: "workspaces",
-          "ToolRepo": "organism"}
+          ORGAN: "organism", BUILD: "build_workflow", DEV_WS: "workspaces_developer"}
+# Named in the policy file but not polled (an `excluded:` entry, say).
+UNIVERSE = [*GROUPS, "UnpolledLib"]
 REQ_WF = {"workspaces": ["Smoke Tests"]}
 
 TS = "2026-11-12T12:00:00+00:00"
@@ -127,10 +130,16 @@ def test_release_scope_and_checkout_reasons_never_block_a_dev_ship():
     assert len(v["shown_reasons"]) + len(v["reasons"]) == len(full["reasons"])
 
 
-def test_a_touched_repo_heart_does_not_poll_is_listed_not_judged():
-    v = dev(snapshot(), ["NotARepo"])
-    assert v["verdict"] == "green"
-    assert v["scope"]["not_polled"] == ["NotARepo"]
+def test_a_touched_repo_heart_does_not_poll_is_stale_never_green():
+    v = dev(snapshot(), ["UnpolledLib", MID], universe=UNIVERSE)
+    assert v["verdict"] == "stale" and v["pass"] is False
+    assert v["scope"]["not_polled"] == ["UnpolledLib"]
+    assert "not polled by Heart: UnpolledLib" in v["stale_reasons"]
+
+
+def test_a_name_the_policy_never_mentions_is_a_usage_error():
+    with pytest.raises(ValueError, match="CoreLibb"):
+        dev(snapshot(), ["CoreLibb"], universe=UNIVERSE)
 
 
 def test_no_touched_repos_is_stale_never_green():
@@ -244,6 +253,7 @@ def _cli(monkeypatch, snap):
     monkeypatch.setattr(readiness.state, "load", lambda: snap)
     monkeypatch.setattr(readiness, "load_dependencies", lambda *a, **k: DEPS)
     monkeypatch.setattr(readiness, "load_repo_groups", lambda *a, **k: GROUPS)
+    monkeypatch.setattr(readiness, "load_known_repo_names", lambda *a, **k: UNIVERSE)
     monkeypatch.setattr(readiness, "load_release_gate_names", lambda *a, **k: LIBS)
     monkeypatch.setattr(readiness, "load_required_workflows", lambda *a, **k: REQ_WF)
 
@@ -288,3 +298,157 @@ def test_cli_unscoped_call_still_prints_the_release_verdict(monkeypatch, capsys)
     monkeypatch.setattr(readiness, "load_verdict", lambda: release)
     assert readiness.main(["--json"]) == 0
     assert json.loads(capsys.readouterr().out) == release
+
+
+# --- review findings (PyAutoHeart#340 review, 2026-11-12) --------------------
+
+def _organ(conclusion="success", status="completed", on_head=True, rolled=None, ts=None):
+    ci = {"group": "organism", "conclusion": rolled if rolled is not None else conclusion,
+          "workflows": {"Organ Tests": {"conclusion": conclusion, "status": status,
+                                        "on_head": on_head}}}
+    if ts:
+        ci["ts"] = ts
+    return {"ci_status": ci}
+
+
+@pytest.mark.parametrize("repo", [ORGAN, BUILD, DEV_WS])
+def test_red_main_ci_on_a_touched_repo_of_any_group_blocks(repo):
+    """Finding 1: compute never gates organ / build-workflow / developer-
+    workspace CI, but red CI on main of a touched one is the branch's."""
+    v = dev(snapshot(**{repo: _organ("failure")}), [repo])
+    assert v["verdict"] == "red" and v["pass"] is False
+    assert v["red_reasons"] == [f"{repo}: Organ Tests failure on main"]
+
+
+def test_an_untouched_organs_red_ci_does_not_block():
+    v = dev(snapshot(**{ORGAN: _organ("failure")}), [MID])
+    assert v["verdict"] == "green"
+
+
+def test_an_organ_judged_on_its_head_runs_not_an_old_red_run():
+    def organ(old_red_on_head):
+        return {"ci_status": {"group": "organism", "conclusion": "failure", "workflows": {
+            "Organ Lint": {"conclusion": "failure", "status": "completed",
+                           "on_head": old_red_on_head, "created_at": "2026-11-12T09:00:00Z"},
+            "Organ Tests": {"conclusion": "success", "status": "completed",
+                            "on_head": True, "created_at": "2026-11-12T10:00:00Z"}}}}
+    # A failing run on an older commit is not main's state ...
+    assert dev(snapshot(**{ORGAN: organ(False)}), [ORGAN])["verdict"] == "green"
+    # ... a failing run on the HEAD is.
+    assert dev(snapshot(**{ORGAN: organ(True)}), [ORGAN])["verdict"] == "red"
+    # With no run on HEAD, the newest run decides.
+    snap = snapshot(**{ORGAN: _organ("failure", on_head=False)})
+    assert dev(snap, [ORGAN])["verdict"] == "red"
+
+
+def test_an_organ_with_ci_unfinished_or_unobserved_is_stale():
+    v = dev(snapshot(**{ORGAN: _organ("", status="in_progress")}), [ORGAN])
+    assert v["verdict"] == "stale"
+    assert v["stale_reasons"] == [f"{ORGAN}: CI on main has no conclusion yet"]
+    v = dev(snapshot(), [ORGAN])  # polled, but absent from the snapshot
+    assert v["verdict"] == "stale"
+    assert v["stale_reasons"] == [f"{ORGAN}: CI status on main not observed"]
+
+
+def test_a_future_snapshot_beyond_clock_skew_is_stale_not_fresh():
+    """Finding 3: a negative age used to clamp to 0 and read as fresh."""
+    now = datetime.datetime.fromisoformat(TS)
+    assert readiness.feed_age_hours(TS, now - datetime.timedelta(minutes=4)) == 0.0
+    assert readiness.feed_age_hours(TS, now - datetime.timedelta(minutes=6)) is None
+    assert dev(snapshot(), [MID], now=now - datetime.timedelta(minutes=4))["verdict"] == "green"
+    v = dev(snapshot(), [MID], now=now - datetime.timedelta(hours=1))
+    assert v["verdict"] == "stale" and v["feed_age_hours"] is None
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), -1, 0, 6.5, "x"])
+def test_max_feed_age_must_be_finite_positive_and_at_most_six(bad):
+    """Finding 4."""
+    with pytest.raises(ValueError):
+        readiness.check_max_age_hours(bad)
+    with pytest.raises(ValueError):
+        dev(snapshot(), [MID], max_age_hours=bad)
+
+
+def test_max_feed_age_accepts_up_to_the_ceiling():
+    assert readiness.check_max_age_hours("6") == 6.0
+    assert readiness.check_max_age_hours(0.5) == 0.5
+
+
+@pytest.mark.parametrize("bad", ["nan", "inf", "-2", "0", "12"])
+def test_cli_rejects_a_bad_max_feed_age(monkeypatch, bad):
+    _cli(monkeypatch, snapshot())
+    with pytest.raises(SystemExit) as exc:
+        readiness.main(["--repos", MID, "--max-feed-age-hours", bad])
+    assert exc.value.code == 2
+
+
+def test_cli_unknown_repo_name_is_a_usage_error(monkeypatch):
+    _cli(monkeypatch, snapshot())
+    with pytest.raises(SystemExit) as exc:
+        readiness.main(["--repos", "MidLibb", "--json"])
+    assert exc.value.code == 2
+
+
+def test_in_scope_library_with_no_conclusion_is_stale():
+    """Finding 5: a library mid-run (conclusion empty) used to read GREEN."""
+    lib = _lib("")
+    lib["ci_status"]["status"] = "in_progress"
+    v = dev(snapshot(**{MID: lib}), [MID])
+    assert v["verdict"] == "stale" and v["pass"] is False
+    assert v["stale_reasons"] == [f"{MID}: CI on main has no conclusion yet (in_progress)"]
+
+
+def test_in_scope_workspace_required_workflow_with_no_conclusion_is_stale():
+    ws = _ws()
+    ws["ci_status"]["workflows"]["Smoke Tests"]["conclusion"] = None
+    v = dev(snapshot(**{WS: ws}), [WS])
+    assert v["verdict"] == "stale"
+    assert v["stale_reasons"] == [f"{WS}: Smoke Tests on main has no conclusion yet"]
+
+
+def test_in_scope_evidence_is_aged_by_its_own_collection_time():
+    """Finding 5: a fresh aggregation over an old sidecar is not fresh evidence."""
+    old = (NOW - datetime.timedelta(hours=8)).isoformat()
+    lib = _lib()
+    lib["ci_status"]["ts"] = old
+    v = dev(snapshot(**{MID: lib}), [MID])  # snapshot itself is 1 h old
+    assert v["verdict"] == "stale"
+    assert v["stale_reasons"][0].startswith(f"{MID}: CI evidence 8.0 h old")
+    lib["ci_status"]["ts"] = (NOW - datetime.timedelta(hours=2)).isoformat()
+    assert dev(snapshot(**{MID: lib}), [MID])["verdict"] == "green"
+    # Out-of-scope aged evidence does not block.
+    side = _lib()
+    side["ci_status"]["ts"] = old
+    assert dev(snapshot(**{SIDE: side}), [MID])["verdict"] == "green"
+
+
+def test_the_cli_names_the_local_snapshot_it_judged_and_its_age(monkeypatch, capsys):
+    """Finding 6: the reader must know it is the dev box's local state.json,
+    not the published cloud feed the event triggers refresh."""
+    snap = snapshot()
+    snap["ts"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    _cli(monkeypatch, snap)
+    readiness.main(["--repos", MID, "--no-color"])
+    out = capsys.readouterr().out
+    assert f"judged: local snapshot {readiness.state.HEART_STATE_FILE}, age 0.0 h" in out
+    readiness.main(["--repos", MID, "--json"])
+    j = json.loads(capsys.readouterr().out)
+    assert j["source"] == f"local snapshot {readiness.state.HEART_STATE_FILE}"
+    assert j["feed_age_hours"] == pytest.approx(0.0, abs=0.01)
+
+
+def test_release_scope_workflows_in_an_organ_never_count_as_its_own_ci():
+    """Release Integrate failing on an organ's main HEAD is the release
+    question (shown in the release verdict), not the organ's own CI."""
+    ci = {"group": "organism", "conclusion": "failure", "workflows": {
+        "Release Integrate": {"conclusion": "failure", "status": "completed", "on_head": True,
+                              "created_at": "2026-11-12T11:00:00Z"},
+        "Organ Tests": {"conclusion": "success", "status": "completed", "on_head": True,
+                        "created_at": "2026-11-12T10:00:00Z"}}}
+    snap = snapshot(**{ORGAN: {"ci_status": ci}})
+    assert dev(snap, [ORGAN], release_scope=["Release Integrate"])["verdict"] == "green"
+    assert dev(snap, [ORGAN], release_scope=[])["verdict"] == "red"
+    # With nothing on HEAD, the newest non-release run decides, not the rollup.
+    for e in ci["workflows"].values():
+        e["on_head"] = False
+    assert dev(snap, [ORGAN], release_scope=["Release Integrate"])["verdict"] == "green"

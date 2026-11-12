@@ -211,8 +211,13 @@ only when this verdict is green.
 only on CI on main of the repos the branch touches and of their dependants
 (config/repos.yaml dependencies:), shows every other reason without
 blocking, and treats evidence older than 6 h as STALE. Only GREEN passes
-("pass": true); STALE means re-check, or park. --repos implies --dev. The
-plain call above is unchanged.
+("pass": true); STALE means re-check, or park. Any group's main CI counts
+for a touched repo; an unpolled repo is STALE; an unknown name is a usage
+error. --max-feed-age-hours must be positive and at most 6. --repos implies
+--dev. It judges the LOCAL \$HEART_STATE_DIR/state.json (refresh with tick)
+and prints that source and its age; the heart-health.yml event triggers
+refresh the published cloud feed, not this file. The plain call above is
+unchanged.
 EOF
 }
 cmd_readiness() {
