@@ -1254,3 +1254,42 @@ def test_token_push_refusal_dominates_staleness():
     v = compute(make_snapshot(token_push=tp))
     assert v["verdict"] == "red"
     assert not any("push credential check stale" in r for r in v["stale_reasons"])
+
+
+# --- the development-ship scope reads the live dependency graph (#340) -------
+
+def test_live_dependency_graph_gives_each_library_its_downstream_dependants():
+    deps = readiness.load_dependencies()
+    assert readiness.dependants_of(["PyAutoNerves"], deps) == set(LIBS) - {"PyAutoNerves"}
+    assert readiness.dependants_of(["PyAutoFit"], deps) == {"PyAutoGalaxy", "PyAutoLens", "PyAutoCTI"}
+    assert readiness.dependants_of(["PyAutoArray"], deps) == {"PyAutoGalaxy", "PyAutoLens", "PyAutoCTI"}
+    assert readiness.dependants_of(["PyAutoGalaxy"], deps) == {"PyAutoLens"}
+    assert readiness.dependants_of(["PyAutoLens"], deps) == set()
+    assert readiness.dependants_of(["PyAutoCTI"], deps) == set()
+
+
+def test_live_dependency_graph_names_only_polled_libraries():
+    deps = readiness.load_dependencies()
+    libs = set(readiness.load_library_names())
+    assert set(deps) <= libs
+    assert {u for ups in deps.values() for u in ups} <= libs
+
+
+def test_live_dev_ship_for_a_library_branch_blocks_on_a_dependants_ci_only():
+    snap = make_snapshot()
+    snap["repos"]["PyAutoGalaxy"]["ci_status"]["conclusion"] = "failure"
+    snap["repos"]["PyAutoLens"]["repo_state"]["behind"] = 3   # checkout state: shown
+    now = readiness._parse_ts(snap["ts"])
+    fit = readiness.dev_ship(snap, ["PyAutoFit"], now=now, libraries=LIBS)
+    assert fit["verdict"] == "red"
+    assert fit["red_reasons"] == ["PyAutoGalaxy: CI failure"]
+    lens = readiness.dev_ship(snap, ["PyAutoLens"], now=now, libraries=LIBS)
+    assert lens["verdict"] == "green"
+    assert {"severity": "red", "text": "PyAutoLens: 3 commit(s) behind origin"} in lens["shown_reasons"]
+
+
+def test_missing_dependency_graph_fails_loudly(tmp_path):
+    cfg = tmp_path / "repos.yaml"
+    cfg.write_text("repos: {}\n")
+    with pytest.raises(ValueError):
+        readiness.load_dependencies(cfg)

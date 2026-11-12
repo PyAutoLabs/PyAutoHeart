@@ -140,6 +140,21 @@ version_skew:
   euclid_strong_lens_modeling_pipeline: {library: PyAutoLens, package: autolens}
   autolens_assistant: {library: PyAutoLens, package: autolens}
 
+# Library dependency graph: <library> -> the libraries it imports directly.
+# Read strictly by heart/readiness.py's development-ship scope (`readiness
+# --dev --repos A,B`, PyAutoHeart#340): a branch is blocked by red CI on `main`
+# of the repos it touches AND of their dependants — the libraries downstream of
+# them in this graph, transitively — and by nothing else. Mirrors the deps map
+# in .github/workflows/lib-tests.yml (the install chain each library's own CI
+# uses). A library with no entry imports no other library. Release gating does
+# not read this block.
+dependencies:
+  PyAutoFit: [PyAutoNerves]
+  PyAutoArray: [PyAutoNerves]
+  PyAutoGalaxy: [PyAutoNerves, PyAutoFit, PyAutoArray]
+  PyAutoLens: [PyAutoNerves, PyAutoFit, PyAutoArray, PyAutoGalaxy]
+  PyAutoCTI: [PyAutoNerves, PyAutoFit, PyAutoArray]
+
 # Smoke-suite table: the workspaces the local smoke runner (heart/smoke.py)
 # can prepare and run — each key names its workspace checkout directory and the
 # library install chain — plus the repo -> import-package map the preflight

@@ -45,6 +45,16 @@ gate:
     HEADs and whose profile == release. Absent/stale/SHA-mismatch/wrong-profile
     → YELLOW; a failed validation stage → RED. This is the M2 hard gate: no
     release rehearsal for the current source can no longer be GREEN.
+  dev_ship_gate:
+    command: "pyauto-heart readiness --dev --repos A,B --json"
+    returns: "{ gate: dev-ship, verdict: green|stale|red, pass, scope{touched,dependants,enforced,not_polled}, red_reasons[], stale_reasons[], shown_reasons[], organism_verdict, feed_age_hours, max_feed_age_hours, remedy }"
+    rule: >-
+      PyAutoHeart#340 (human ruling 2026-11-12). A development ship blocks only
+      on CI on `main` of the repos the branch touches and of their dependants
+      (config/repos.yaml dependencies:); every other reason is shown in
+      shown_reasons, not blocking. Evidence older than 6 h, or of unknown age,
+      is STALE; only GREEN passes; STALE means re-check, or park. Release
+      gating is unchanged.
 
 # Continuous checks — cheap, run every <30s tick (heart/tick.sh).
 continuous_checks:

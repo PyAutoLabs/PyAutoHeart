@@ -153,3 +153,52 @@ def test_cloud_reads_validation_before_aggregation():
     assert 'python -m heart.checks.test_run' in body
     assert 'python -m heart.checks.cloud_validation' in body
     assert _step_index(job, 'Run cloud-safe checks') < _step_index(job, 'Aggregate snapshot')
+
+
+# --- event triggers refresh the feed (PyAutoHeart#340) ----------------------
+
+def _triggers(name):
+    # PyYAML parses the bare `on:` key as boolean True.
+    return yaml.safe_load((WORKFLOWS / name).read_text())[True]
+
+
+def test_the_daily_cron_stays_as_the_backstop():
+    on = _triggers("heart-health.yml")
+    assert on["schedule"] == [{"cron": "0 5 * * *"}]
+    assert "workflow_dispatch" in on
+
+
+def test_a_heart_refresh_dispatch_and_a_release_rehearsal_refresh_the_feed():
+    on = _triggers("heart-health.yml")
+    assert on["repository_dispatch"] == {"types": ["heart-refresh"]}
+    assert on["workflow_run"]["workflows"] == ["Release Integrate"]
+    assert on["workflow_run"]["types"] == ["completed"]
+    # The watched workflow exists under that exact display name.
+    names = {yaml.safe_load(p.read_text()).get("name") for p in WORKFLOWS.glob("*.yml")}
+    assert "Release Integrate" in names
+
+
+def test_bursts_of_events_coalesce_rather_than_cancel_a_publish():
+    data, _ = _job()
+    assert data["concurrency"]["cancel-in-progress"] is False
+
+
+def test_library_ci_on_main_sends_the_heart_refresh_event():
+    """The sender lives in the reusable library gate every library calls, so a
+    library merge refreshes the feed with no edit in the library repos."""
+    jobs = yaml.safe_load((WORKFLOWS / "lib-tests.yml").read_text())["jobs"]
+    job = jobs["heart-refresh"]
+    assert set(job["needs"]) == {"unittest", "unittest-nojax"}
+    cond = job["if"]
+    assert "always()" in cond
+    assert "github.event_name == 'push'" in cond
+    assert "github.ref == 'refs/heads/main'" in cond
+    # Never reds the library's required check.
+    assert job["continue-on-error"] is True
+    mint = next(s for s in job["steps"] if s.get("id") == "app_token")
+    assert mint["with"]["permission-contents"] == "write"
+    send = job["steps"][-1]["run"]
+    assert "/PyAutoHeart/dispatches" in send
+    assert "event_type=heart-refresh" in send
+    # The event type sent is the one heart-health.yml listens for.
+    assert "heart-refresh" in _triggers("heart-health.yml")["repository_dispatch"]["types"]

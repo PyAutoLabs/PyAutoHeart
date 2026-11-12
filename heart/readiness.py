@@ -64,11 +64,26 @@ still counts in full, and gaps in the **required** evidence set (library
 exactly as they always did. The workspace script surface is not weakened by
 scoping out the local ``test_run`` cache: the release-validation report *is*
 that surface at release fidelity, and required-workflow conclusions gate the
-workspaces' ``main``. The **dev-ship gate** (PyAutoBrain ``AUTONOMY.md`` leg 4)
-treats STALE as passing: an evidence gap is organism-scope, not branch-scope,
-and the other three legs gate the branch itself. This is what makes GREEN
-reachable in steady state and keeps YELLOW meaning "something is actually
-wrong" instead of training ack-fatigue.
+workspaces' ``main``. Keeping evidence gaps in their own tier is what makes
+GREEN reachable in steady state and keeps YELLOW meaning "something is
+actually wrong" instead of training ack-fatigue.
+
+**The development-ship gate** (``--dev --repos A,B``; ``dev_ship``; human
+ruling 2026-11-12, PyAutoHeart#340) answers a different question from the
+release gate — "may this branch ship?", not "may ``main`` be published?":
+
+- *Scope.* A development ship is blocked only by CI on ``main`` of the repos
+  the branch touches and of their dependants (the libraries downstream of
+  them in ``config/repos.yaml``'s ``dependencies`` graph). Every other reason
+  — release validation, install verification, version floors, organ
+  workflows, the dev box's checkout state — is still shown, in
+  ``shown_reasons``, but does not block.
+- *Feed age.* Evidence older than ``DEV_MAX_FEED_AGE_HOURS`` (6 h), or of
+  unknown age, is STALE: re-check, or park. **STALE never passes** this gate;
+  only GREEN does (``pass``). This replaces the earlier rule under which the
+  dev-ship gate treated an organism-wide STALE as a pass.
+- *Release gating is unchanged:* ``compute`` and the plain ``readiness`` call
+  read exactly as before.
 
 Red dominates yellow, which dominates stale, structurally: reasons are
 collected into separate lists and
@@ -302,6 +317,8 @@ def compute(
         body = repos.get(lib)
         if not isinstance(body, dict) or not body:
             add_stale(f"{lib}: status unknown", "lib_unknown")
+            repository_reasons.append({"repo": lib, "key": "lib_unknown",
+                                       "text": stale[-1], "severity": "stale"})
             continue
         ci = body.get("ci_status", {}) or {}
         conclusion = ci.get("conclusion")
@@ -789,6 +806,238 @@ def load_verdict() -> dict[str, Any]:
     return compute(state.load() or {})
 
 
+# --- the development-ship gate (PyAutoHeart#340) ----------------------------
+#
+# See the module docstring, "The development-ship gate". The release verdict
+# above is computed in full and then *partitioned*: the reasons this gate
+# enforces block, every other reason is carried in ``shown_reasons``. Nothing
+# here re-derives a reason, so the two gates can never disagree about a fact —
+# only about whether it is the branch's business.
+
+#: Evidence older than this many hours is STALE at a development ship.
+DEV_MAX_FEED_AGE_HOURS = 6.0
+
+#: The reason keys a development ship enforces, all of them CI on ``main`` of
+#: one named repo (``repository_reasons[].key``): red CI on a library or a
+#: gated workspace, or a library whose CI could not be read at all (stale).
+DEV_ENFORCED_KEYS = frozenset({"lib_ci", "ws_ci", "lib_ci_unavailable", "lib_unknown"})
+
+
+def load_dependencies(config_path: Path | str = CONFIG_PATH) -> dict[str, list[str]]:
+    """``dependencies:`` from the policy file — library -> libraries it imports.
+
+    Strict: the dev-ship scope is built from it, and a silently missing graph
+    would shrink every scope to the touched repos alone (dependants unblocked),
+    so an absent or malformed block fails loudly."""
+    cfg = yaml.safe_load(Path(config_path).read_text()) or {}
+    deps = cfg.get("dependencies")
+    if not isinstance(deps, dict) or not deps:
+        raise ValueError(f"no dependencies graph in {config_path}")
+    out: dict[str, list[str]] = {}
+    for lib, ups in deps.items():
+        if not isinstance(ups, list):
+            raise ValueError(f"dependencies.{lib} must be a list in {config_path}")
+        out[str(lib)] = [str(u) for u in ups]
+    return out
+
+
+def load_repo_groups(config_path: Path | str = CONFIG_PATH) -> dict[str, str]:
+    """Every polled repo -> its group (``repos.<group>[].name``)."""
+    cfg = yaml.safe_load(Path(config_path).read_text()) or {}
+    return {
+        r["name"]: group
+        for group, entries in (cfg.get("repos") or {}).items()
+        for r in entries or []
+        if isinstance(r, dict) and r.get("name")
+    }
+
+
+def dependants_of(repos: Sequence[str], dependencies: dict[str, list[str]]) -> set[str]:
+    """Everything downstream of ``repos`` in the graph, transitively (the
+    repos themselves excluded unless they sit downstream of one another)."""
+    down: dict[str, set[str]] = {}
+    for lib, ups in dependencies.items():
+        for up in ups:
+            down.setdefault(up, set()).add(lib)
+    seen: set[str] = set()
+    frontier = list(repos)
+    while frontier:
+        for d in down.get(frontier.pop(), ()):
+            if d not in seen:
+                seen.add(d)
+                frontier.append(d)
+    return seen
+
+
+def dev_scope(
+    repos: Sequence[str],
+    dependencies: dict[str, list[str]],
+    known: Sequence[str] = (),
+) -> dict[str, list[str]]:
+    """The repos a development ship answers for.
+
+    ``repos`` is what the caller states the branch touches (comma-separated
+    entries are split). Names match the policy's spelling case-insensitively
+    and are reported in it; a name Heart does not know is kept as given and
+    listed under ``not_polled`` — Heart holds no evidence about it, so it can
+    neither block nor be called green on Heart's word."""
+    canon = {n.lower(): n for n in (*known, *dependencies,
+                                   *(u for ups in dependencies.values() for u in ups))}
+    touched: list[str] = []
+    for raw in repos:
+        for part in str(raw).split(","):
+            name = part.strip()
+            if name:
+                name = canon.get(name.lower(), name)
+                if name not in touched:
+                    touched.append(name)
+    dependants = sorted(dependants_of(touched, dependencies) - set(touched))
+    known_l = {n.lower() for n in known}
+    return {
+        "touched": touched,
+        "dependants": dependants,
+        "enforced": [*touched, *dependants],
+        "not_polled": [t for t in touched if known and t.lower() not in known_l],
+    }
+
+
+def split_dev_reasons(
+    verdict: dict[str, Any], enforced: Sequence[str]
+) -> tuple[list[str], list[str], list[dict[str, str]]]:
+    """Partition a release verdict for a development ship.
+
+    Returns ``(blocking_red, blocking_stale, shown)``: the enforced reasons
+    (``DEV_ENFORCED_KEYS`` on an in-scope repo) by tier, and every other reason
+    of the verdict as ``{"severity", "text"}`` — shown, never dropped."""
+    scope = {str(r).lower() for r in enforced}
+    blocking = [
+        r for r in verdict.get("repository_reasons") or []
+        if isinstance(r, dict) and r.get("key") in DEV_ENFORCED_KEYS
+        and str(r.get("repo", "")).lower() in scope
+    ]
+    red = [str(r.get("text")) for r in blocking if r.get("severity") == "red"]
+    stale = [str(r.get("text")) for r in blocking if r.get("severity") == "stale"]
+    taken = set(red) | set(stale)
+    shown = [
+        {"severity": sev, "text": str(t)}
+        for sev, key in (("red", "red_reasons"), ("yellow", "yellow_reasons"),
+                         ("stale", "stale_reasons"))
+        for t in verdict.get(key) or []
+        if str(t) not in taken
+    ]
+    return red, stale, shown
+
+
+def feed_age_hours(ts: Any, now: datetime.datetime) -> float | None:
+    """Hours since the snapshot ``ts``; None when it is absent or unparseable."""
+    t = _parse_ts(ts)
+    if t is None:
+        return None
+    return max(0.0, (now - t).total_seconds() / 3600.0)
+
+
+def dev_ship(
+    snapshot: dict | None,
+    repos: Sequence[str],
+    *,
+    now: datetime.datetime | None = None,
+    max_age_hours: float = DEV_MAX_FEED_AGE_HOURS,
+    libraries: Sequence[str] | None = None,
+    required_workflows: dict[str, list[str]] | None = None,
+    dependencies: dict[str, list[str]] | None = None,
+    groups: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """The development-ship verdict for a branch touching ``repos``.
+
+    Pure apart from the policy-file reads its defaults make. GREEN is the only
+    pass; RED is red CI on ``main`` in scope; STALE is in-scope CI evidence
+    missing, or a snapshot older than ``max_age_hours`` (or of unknown age) —
+    re-check, or park. An in-scope RED outranks an aged snapshot: the last
+    known result was adverse, exactly as the release tiers treat it."""
+    snapshot = snapshot or {}
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    full = compute(snapshot, libraries=libraries, required_workflows=required_workflows)
+    deps = dependencies if dependencies is not None else load_dependencies()
+    groups = groups if groups is not None else load_repo_groups()
+    scope = dev_scope(repos, deps, known=list(groups))
+    red, stale, shown = split_dev_reasons(full, scope["enforced"])
+
+    if not scope["touched"]:
+        stale.append("no touched repos stated — the dev-ship scope is unknown")
+
+    # In-scope gated workspaces the snapshot cannot speak for. The release
+    # gate passes over an unobserved workspace silently; here it is the
+    # branch's own evidence, so a gap is STALE, never green.
+    repo_bodies = snapshot.get("repos") or {}
+    for name in scope["enforced"]:
+        if groups.get(name) not in GATED_WORKSPACE_GROUPS:
+            continue
+        body = repo_bodies.get(name)
+        ci = body.get("ci_status") if isinstance(body, dict) else None
+        if not isinstance(ci, dict) or not ci:
+            stale.append(f"{name}: CI status on main not observed")
+        elif ci.get("error"):
+            stale.append(f"{name}: CI status unavailable ({ci['error']})")
+
+    age = feed_age_hours(snapshot.get("ts"), now)
+    if age is None:
+        stale.append("Heart feed age unknown (snapshot carries no ts) — re-check, or park")
+    elif age > max_age_hours:
+        stale.append(f"Heart feed {age:.1f} h old, over the {max_age_hours:g} h "
+                     "maximum — re-check, or park")
+
+    verdict = "red" if red else ("stale" if stale else "green")
+    return {
+        "gate": "dev-ship",
+        "verdict": verdict,
+        "pass": verdict == "green",
+        "remedy": {"red": "fix the failing in-scope CI on main, or park",
+                   "stale": "re-check (refresh the Heart feed, then ask again), or park",
+                   "green": ""}[verdict],
+        "scope": scope,
+        "red_reasons": red,
+        "yellow_reasons": [],
+        "stale_reasons": stale,
+        "reasons": red + stale,
+        "shown_reasons": shown,
+        "organism_verdict": full["verdict"],
+        "feed_ts": snapshot.get("ts"),
+        "feed_age_hours": None if age is None else round(age, 2),
+        "max_feed_age_hours": max_age_hours,
+        "ts": now.isoformat(),
+    }
+
+
+def render_dev(verdict: dict[str, Any]) -> list[str]:
+    """The human reading of a ``dev_ship`` verdict."""
+    v = str(verdict.get("verdict", "?"))
+    colour = {"green": c_ok, "red": c_fail}.get(v, c_warn)
+    glyph = {"green": glyph_ok, "red": glyph_fail}.get(v, glyph_warn)
+    scope = verdict.get("scope") or {}
+    head = ", ".join(scope.get("touched") or []) or "?"
+    if scope.get("dependants"):
+        head += f" (+ dependants {', '.join(scope['dependants'])})"
+    lines = [c_bold(f"DEV SHIP  {head}"),
+             f"  {glyph()} {colour(v.upper())}  "
+             + ("passes" if verdict.get("pass") else f"blocks — {verdict.get('remedy')}")]
+    for t in verdict.get("red_reasons") or []:
+        lines.append(f"    {c_fail('red  ')} {t}")
+    for t in verdict.get("stale_reasons") or []:
+        lines.append(f"    {c_warn('stale')} {t}")
+    age = verdict.get("feed_age_hours")
+    lines.append(c_meta(f"  feed age {'unknown' if age is None else f'{age:.1f} h'} "
+                        f"(max {verdict.get('max_feed_age_hours'):g} h)"))
+    if scope.get("not_polled"):
+        lines.append(c_meta(f"  not polled by Heart: {', '.join(scope['not_polled'])}"))
+    shown = verdict.get("shown_reasons") or []
+    if shown:
+        lines.append(c_info(f"  shown, not blocking (organism verdict "
+                            f"{str(verdict.get('organism_verdict', '?')).upper()}):"))
+        for r in shown:
+            lines.append(f"    {r['severity']:<6} {r['text']}")
+    return lines
+
+
 def render_block(verdict: dict[str, Any], quiet: bool = False) -> list[str]:
     """The coloured RELEASE READINESS header block.
 
@@ -813,9 +1062,47 @@ def main(argv: list[str] | None = None) -> int:
              "na_reasons for the scheduled-nightly gate (design §5); default "
              "is unchanged dev-box behaviour",
     )
+    ap.add_argument(
+        "--dev",
+        action="store_true",
+        help="the development-ship gate: block only on CI on main of --repos "
+             "and their dependants; every other reason is shown, not "
+             "blocking; STALE never passes (implied by --repos)",
+    )
+    ap.add_argument(
+        "--repos",
+        action="append",
+        default=[],
+        metavar="REPO[,REPO...]",
+        help="the repos the branch touches (repeatable or comma-separated)",
+    )
+    ap.add_argument(
+        "--max-feed-age-hours",
+        type=float,
+        default=DEV_MAX_FEED_AGE_HOURS,
+        help=f"dev gate: evidence older than this is STALE (default {DEV_MAX_FEED_AGE_HOURS:g})",
+    )
     ns = ap.parse_args(argv)
     if ns.no_color:
         os.environ["NO_COLOR"] = "1"
+
+    if ns.dev or ns.repos:
+        repos = [p.strip() for r in ns.repos for p in r.split(",") if p.strip()]
+        if not repos:
+            ap.error("--dev needs --repos: the repos this branch touches")
+        if ns.profile != "default":
+            ap.error("--dev reads the dev-box snapshot; it takes no --profile")
+        # Always a live compute over the current snapshot, never persisted:
+        # release_ready.json stays the release verdict its consumers expect.
+        dev = dev_ship(state.load() or {}, repos, max_age_hours=ns.max_feed_age_hours)
+        if ns.json:
+            json.dump(dev, sys.stdout, indent=2, sort_keys=True)
+            sys.stdout.write("\n")
+            return 0
+        lines = render_dev(dev)
+        for line in lines[:2] if ns.quiet else lines:
+            print(line)
+        return 0
 
     if ns.profile != "default":
         # Profile verdicts are always a live compute and are never persisted:

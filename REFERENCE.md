@@ -113,12 +113,22 @@ back to grey after 48 h (`DEVBOX_FRESH_SECONDS`).
   script-timing regressions, stale open PRs / parked scripts, skew BEHIND.
 - **STALE** — evidence missing or expired with nothing known-bad; the remedy is
   re-running a check, never fixing code. Evidence whose last known result was
-  adverse stays yellow/red. Releases require GREEN; the dev-ship gate treats
-  STALE as passing (an evidence gap is organism-scope, not branch-scope).
+  adverse stays yellow/red. Releases require GREEN.
 - **GREEN** — none of the above.
 
 `red > yellow > stale > green`. The `score` (0–100) is advisory/sortable only —
 the colour is the gate. Persisted to `~/.pyauto-heart/release_ready.json`.
+
+### The development-ship gate (`readiness --dev --repos A,B`)
+
+`dev_ship(snapshot, repos)` answers "may this branch ship?" (PyAutoHeart#340,
+human ruling 2026-11-12). It computes the release verdict above and partitions
+it: only CI on `main` of the touched repos and of their dependants (the
+`dependencies:` graph in `config/repos.yaml`) blocks; every other reason is
+carried in `shown_reasons`. Evidence older than 6 h (`--max-feed-age-hours`),
+or of unknown age, is STALE. Only GREEN passes (`"pass": true`); STALE means
+re-check, or park. The plain `readiness` call — the release gate — is
+unchanged. Never persisted.
 
 ## The release freeze window (`freeze`)
 

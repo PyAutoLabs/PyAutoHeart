@@ -39,8 +39,28 @@ on:
   schedule:
     # Daily 05:00 UTC — one hour ahead of PyAutoMind's morning_health message
     # (06:00 UTC), which reads this run's verdict (moved from 06:00 for that).
+    # Since PyAutoHeart#340 this is the BACKSTOP; the events below refresh the
+    # feed when its evidence actually moves.
     - cron: "0 5 * * *"
   workflow_dispatch:
+  # EVENT TRIGGERS (PyAutoHeart#340, human ruling 2026-11-12: "event triggers
+  # refresh the feed"). A development ship treats evidence older than 6 h as
+  # STALE (heart/readiness.py `dev_ship`), so the feed must move when its
+  # evidence moves, not once a day:
+  #   * repository_dispatch `heart-refresh` — sent by the reusable library
+  #     gate (lib-tests.yml, job `heart-refresh`) when a library's CI finishes
+  #     on `main`, i.e. after every library merge. Any other sender (the
+  #     release workflow) uses the same event type.
+  #   * workflow_run on Release Integrate — the release-validation rehearsal
+  #     lands new release evidence in this repo.
+  # Bursts coalesce: the concurrency group below keeps one run in flight and
+  # at most one queued, so ten merges in a minute cost two runs, not ten.
+  # Both events run on the default branch, so they publish like the cron.
+  repository_dispatch:
+    types: [heart-refresh]
+  workflow_run:
+    workflows: ["Release Integrate"]
+    types: [completed]
 
 # contents: write  → commit the README badge/block into Heart's OWN README
 # issues:   write  → the [heart-health] tracking issue

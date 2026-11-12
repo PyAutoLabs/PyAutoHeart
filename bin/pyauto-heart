@@ -190,7 +190,8 @@ cmd_status() {
 }
 
 help_readiness() { cat <<EOF
-pyauto-heart readiness [--json] [--quiet] [--no-color]
+pyauto-heart readiness [--json] [--quiet] [--no-color] [--profile release-ci]
+pyauto-heart readiness --dev --repos REPO[,REPO...] [--max-feed-age-hours H] [--json]
 
 Print the composite release-readiness verdict (green / yellow / red + a
 0–100 score and the reasons behind it), computed from the cached state on
@@ -205,6 +206,13 @@ YELLOW = caution (timing regressions, stale PRs/parked scripts, a workspace
 This is the authoritative release gate: PyAutoHands is a pure executor and
 runs no readiness checks of its own. The release agent dispatches release.yml
 only when this verdict is green.
+
+--dev --repos A,B is the DEVELOPMENT-SHIP gate (PyAutoHeart#340): it blocks
+only on CI on main of the repos the branch touches and of their dependants
+(config/repos.yaml dependencies:), shows every other reason without
+blocking, and treats evidence older than 6 h as STALE. Only GREEN passes
+("pass": true); STALE means re-check, or park. --repos implies --dev. The
+plain call above is unchanged.
 EOF
 }
 cmd_readiness() {
