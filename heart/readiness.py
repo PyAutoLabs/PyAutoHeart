@@ -22,7 +22,9 @@ The verdict uses STRICT release gates:
   gate fails closed on evidence it cannot classify. Also RED: the release push
   credential (``heart/checks/token_push.py``, the ``pyautolabs-bot`` App's
   ``git push --dry-run``) was refused by any library; a missing, partial or
-  older-than-48 h proof is STALE.
+  older-than-48 h proof is STALE. Also RED: an expired or refused Stage 3
+  quarantine entry (``heart/quarantine.py``, PyAutoHeart#344); an ACTIVE one
+  is YELLOW with the list — a quarantined script is skipped, never green.
 - **YELLOW** (caution) for soft signals: workspace-validation not passing (the
   workspace scripts/notebooks carry standing debt, so this is advisory — never a
   hard block), script-timing regressions, stale open PRs, stale parked scripts, a
@@ -84,6 +86,14 @@ release gate — "may this branch ship?", not "may ``main`` be published?":
   release-gated ones; a run with no conclusion yet is STALE. A touched repo
   Heart does not poll is STALE ("not polled by Heart"); a name the policy file
   never mentions is a usage error.
+- *Not Heart-gated* (human ruling 2026-11-13, PyAutoHeart#343). A touched
+  repo on ``config/repos.yaml``'s ``not_heart_gated`` list (unpolled repos
+  whose PR checks are the gate: profiling, inference, assistants,
+  visualization, Scientist, Broca, Cortex) is *gate-deferred*: not STALE, not
+  blocking, listed in ``gate_deferred`` and shown as "not Heart-gated: PR
+  checks decide". The merge paths enforce the rest — at least one completed
+  check on the PR head, all green. When every touched repo is deferred, Heart
+  holds no evidence the verdict uses, so the snapshot's age is not judged.
 - *Feed age.* Evidence older than ``DEV_MAX_FEED_AGE_HOURS`` (6 h, also the
   ceiling a caller may set), of unknown age, or dated more than 5 min in the
   future, is STALE: re-check, or park. Each in-scope CI sidecar is aged by its
@@ -122,6 +132,7 @@ from typing import Any, Sequence
 
 import yaml
 
+from heart import quarantine as _quarantine
 from heart import state, validate
 from heart.checks.ci_status import FAILURE_CONCLUSIONS, load_required_workflows
 from heart.checks.test_run import counts_measured as tr_counts_measured
@@ -183,6 +194,9 @@ _WEIGHTS: dict[str, tuple[int, int]] = {
     "token_push_refused": (40, 40),
     "token_push_unknown": (10, 10),
     "token_push_stale": (10, 10),
+    "quarantine_active": (5, 15),
+    "quarantine_expired": (40, 40),
+    "quarantine_refused": (40, 40),
 }
 
 
@@ -276,8 +290,12 @@ def compute(
     libraries: Sequence[str] | None = None,
     required_workflows: dict[str, list[str]] | None = None,
     profile: str = "default",
+    quarantine: list[Any] | None = None,
 ) -> dict[str, Any]:
-    """Pure verdict function. Never raises on missing/partial data."""
+    """Pure verdict function. Never raises on missing/partial data.
+
+    ``quarantine`` is the Stage 3 quarantine's raw entries (default: the
+    repo-tracked ``config/stage3_quarantine.yaml``, PyAutoHeart#344)."""
     snapshot = snapshot or {}
     libs = list(libraries) if libraries is not None else load_release_gate_names()
     req_wf = required_workflows if required_workflows is not None else load_required_workflows()
@@ -713,6 +731,53 @@ def compute(
     else:
         add_stale("no release validation for current source", "validation_absent")
 
+    # --- Stage 3 quarantine (PyAutoHeart#344; ruling 2026-11-12) ---
+    # An ACTIVE entry is YELLOW with the list: its script was skipped, and a
+    # skipped script can never make the verdict GREEN. An EXPIRED or refused
+    # entry is RED — the script gates again. A file that cannot be read is RED
+    # too: an unreadable policy is never an empty one.
+    try:
+        q_entries = quarantine if quarantine is not None else _quarantine.load()
+        q_red, q_yellow = _quarantine.readiness_reasons(q_entries, ref.date())
+        q_active = _quarantine.classify(q_entries, ref.date())["active"]
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        q_red, q_yellow = [f"Stage 3 quarantine file unreadable: {exc}"], []
+        q_active = []
+    # What the ingested rehearsal ACTUALLY skipped. The live file alone is not
+    # enough: once an entry is removed or expires, a rehearsal that never ran
+    # its script would read GREEN (and M2.4 ancestry keeps it fresh). Each
+    # skipped script is at least YELLOW; RED when its entry is no longer active
+    # — only a fresh rehearsal that ran the script clears it.
+    live = {(str(r["entry"].get("workspace")), str(r["entry"].get("script")))
+            for r in q_active}
+    vr_q = (vr.get("quarantined") if isinstance(vr, dict) else None) or []
+    for row in (r for r in vr_q if isinstance(r, dict)):
+        e = row.get("quarantine_entry") if isinstance(row.get("quarantine_entry"), dict) else {}
+        key = (str(e.get("workspace")), str(e.get("script")))
+        label = (f"{key[0]}/{key[1]}" if e.get("script")
+                 else f"{row.get('project')}: {row.get('script')}")
+        if key in live:
+            q_yellow.append(f"Stage 3 rehearsal skipped {label} (quarantined, "
+                            f"{row.get('quarantined') or e.get('bug')})")
+        else:
+            q_red.append(f"Stage 3 rehearsal skipped {label}, but its quarantine "
+                         "is no longer active — re-run the rehearsal so it runs")
+    for t in q_red:
+        red.append(t)
+        hit("quarantine_expired" if ("EXPIRED" in t or "no longer active" in t)
+            else "quarantine_refused")
+    for t in q_yellow:
+        yellow.append(t)
+        hit("quarantine_active")
+    # A pass on Stage 3's one retry is recorded as flaky (shown, not a tier).
+    stage3_flaky = [f for f in ((vr or {}).get("flaky") or []) if isinstance(f, dict)] \
+        if isinstance(vr, dict) else []
+    # Shown on every surface, never a tier: the retry is the ruling's, and a
+    # flaky pass is a pass — but a human reading the verdict must see it.
+    flaky_reasons = [f"flaky: passed on retry — {f.get('project')}: {f.get('script')}"
+                     + (f" (first: {f.get('first_error')})" if f.get("first_error") else "")
+                     for f in stage3_flaky]
+
     # --- release push credential (RED on a refused push, STALE if unproven) ---
     # heart/checks/token_push.py: the pyautolabs-bot App's `git push --dry-run`
     # to each release library. A refusal means the release's tag push would
@@ -830,6 +895,9 @@ def compute(
         # flat lists above are the contract every existing consumer reads.
         "stale_details": [{"text": t, "key": k} for t, k in zip(stale, stale_keys)],
         "na_reasons": na,
+        "stage3_quarantine": q_yellow,
+        "stage3_flaky": stage3_flaky,
+        "flaky_reasons": flaky_reasons,
         "validation_ahead": validation_ahead,
         "validation_note": (
             "release validation covers the rehearsed commits; main is ahead by "
@@ -889,6 +957,9 @@ DEV_CLOCK_SKEW_HOURS = 5.0 / 60.0
 #: ``main`` of one named repo (``repository_reasons[].key``).
 DEV_ENFORCED_KEYS = frozenset({"lib_ci", "ws_ci", "lib_ci_unavailable", "lib_unknown"})
 
+#: The shown reason for a gate-deferred repo (PyAutoHeart#343).
+GATE_DEFERRED_REASON = "not Heart-gated: PR checks decide"
+
 
 def load_dependencies(config_path: Path | str = CONFIG_PATH) -> dict[str, list[str]]:
     """``dependencies:`` from the policy file — library -> libraries it imports.
@@ -938,6 +1009,25 @@ def load_known_repo_names(config_path: Path | str = CONFIG_PATH) -> list[str]:
     return sorted(names)
 
 
+def load_not_heart_gated(config_path: Path | str = CONFIG_PATH) -> list[str]:
+    """``not_heart_gated:`` — unpolled repos whose PR checks are the gate
+    (PyAutoHeart#343). Strict: a name that Heart polls cannot also be deferred
+    (its main CI is the evidence), and every name must be in ``excluded:`` —
+    a misfiled name raises rather than silently ungating a polled repo."""
+    cfg = yaml.safe_load(Path(config_path).read_text()) or {}
+    raw = cfg.get("not_heart_gated") or []
+    if not isinstance(raw, list):
+        raise ValueError(f"not_heart_gated must be a list in {config_path}")
+    names = [str(x) for x in raw]
+    polled = set(load_repo_groups(config_path))
+    excluded = {str(x) for x in cfg.get("excluded") or [] if isinstance(x, str)}
+    bad = [n for n in names if n in polled or n not in excluded]
+    if bad:
+        raise ValueError("not_heart_gated names must be unpolled repos listed in "
+                         f"excluded: {', '.join(bad)} ({config_path})")
+    return names
+
+
 def load_release_scope_workflows(config_path: Path | str = CONFIG_PATH) -> frozenset[str]:
     """``dev_ship.release_scope_workflows`` — workflow names that never count
     as a repo's own ``main`` CI at a development ship. Absent ⇒ none (every
@@ -978,6 +1068,7 @@ def dev_scope(
     dependencies: dict[str, list[str]],
     known: Sequence[str] = (),
     universe: Sequence[str] | None = None,
+    not_gated: Sequence[str] = (),
 ) -> dict[str, list[str]]:
     """The repos a development ship answers for.
 
@@ -987,8 +1078,10 @@ def dev_scope(
     it is listed under ``not_polled`` — Heart holds no evidence about it, so
     ``dev_ship`` reads it STALE, never green. With ``universe`` (every name the
     policy file mentions), a name outside it raises ``ValueError``: a typo is a
-    usage error, not a repo."""
-    pool = (*(universe or ()), *known, *dependencies,
+    usage error, not a repo. A touched repo in ``not_gated`` (and not polled)
+    is ``gate_deferred``: Heart does not judge it, its PR checks do, so it is
+    neither ``not_polled`` nor ``enforced``."""
+    pool = (*(universe or ()), *known, *not_gated, *dependencies,
             *(u for ups in dependencies.values() for u in ups))
     canon = {n.lower(): n for n in pool}
     touched: list[str] = []
@@ -1003,13 +1096,17 @@ def dev_scope(
         unknown = [t for t in touched if t.lower() not in {n.lower() for n in pool}]
         if unknown:
             raise ValueError("not a repo named in config/repos.yaml: " + ", ".join(unknown))
-    dependants = sorted(dependants_of(touched, dependencies) - set(touched))
     known_l = {n.lower() for n in known}
+    deferred_l = {n.lower() for n in not_gated} - known_l
+    deferred = [t for t in touched if t.lower() in deferred_l]
+    judged = [t for t in touched if t not in deferred]
+    dependants = sorted(dependants_of(judged, dependencies) - set(touched))
     return {
         "touched": touched,
         "dependants": dependants,
-        "enforced": [*touched, *dependants],
-        "not_polled": [t for t in touched if known and t.lower() not in known_l],
+        "enforced": [*judged, *dependants],
+        "not_polled": [t for t in judged if known and t.lower() not in known_l],
+        "gate_deferred": deferred,
     }
 
 
@@ -1033,7 +1130,7 @@ def split_dev_reasons(
     shown = [
         {"severity": sev, "text": str(t)}
         for sev, key in (("red", "red_reasons"), ("yellow", "yellow_reasons"),
-                         ("stale", "stale_reasons"))
+                         ("stale", "stale_reasons"), ("flaky", "flaky_reasons"))
         for t in verdict.get(key) or []
         if str(t) not in taken
     ]
@@ -1172,6 +1269,7 @@ def dev_ship(
     universe: Sequence[str] | None = None,
     release_scope: Sequence[str] | None = None,
     ci_workflows: dict[str, list[str]] | None = None,
+    not_gated: Sequence[str] | None = None,
     source: str | None = None,
 ) -> dict[str, Any]:
     """The development-ship verdict for a branch touching ``repos``.
@@ -1180,7 +1278,9 @@ def dev_ship(
     pass; RED is red CI on ``main`` in scope; STALE is in-scope CI evidence
     missing, unfinished or aged, a touched repo Heart does not poll, or a
     snapshot older than ``max_age_hours`` (or of unknown age) — re-check, or
-    park. An in-scope RED outranks staleness: the last known result was
+    park. A touched repo on the ``not_heart_gated`` list is gate-deferred:
+    listed and shown, never STALE or blocking (PyAutoHeart#343); its PR
+    checks decide at merge. An in-scope RED outranks staleness: the last known result was
     adverse, exactly as the release tiers treat it. Raises ``ValueError`` for
     a name the policy file never mentions or an invalid maximum age."""
     snapshot = snapshot or {}
@@ -1194,8 +1294,13 @@ def dev_ship(
     groups = groups if groups is not None else load_repo_groups()
     if universe is None and groups_given is None:
         universe = load_known_repo_names()  # live policy: a typo is a usage error
-    scope = dev_scope(repos, deps, known=list(groups), universe=universe)
+    ng = (list(not_gated) if not_gated is not None
+          else load_not_heart_gated() if groups_given is None else [])
+    scope = dev_scope(repos, deps, known=list(groups), universe=universe, not_gated=ng)
     red, stale, shown = split_dev_reasons(full, scope["enforced"])
+    for name in scope["gate_deferred"]:
+        shown.append({"severity": "deferred",
+                      "text": f"{name}: {GATE_DEFERRED_REASON}"})
 
     if not scope["touched"]:
         stale.append("no touched repos stated — the dev-ship scope is unknown")
@@ -1213,10 +1318,13 @@ def dev_ship(
     shown += ci_shown
 
     age = feed_age_hours(snapshot.get("ts"), now)
-    if age is None:
+    # Every touched repo deferred: no Heart evidence enters the verdict, so the
+    # snapshot's age cannot make it stale (its age is still reported).
+    heart_judged = bool(scope["enforced"]) or not scope["touched"]
+    if heart_judged and age is None:
         stale.append("Heart snapshot age unknown (no ts, or dated in the future) "
                      "— re-check, or park")
-    elif age > max_age_hours:
+    elif heart_judged and age > max_age_hours:
         stale.append(f"Heart snapshot {age:.1f} h old, over the {max_age_hours:g} h "
                      "maximum — re-check, or park")
 
@@ -1229,6 +1337,7 @@ def dev_ship(
                    "stale": "re-check (refresh the evidence, then ask again), or park",
                    "green": ""}[verdict],
         "scope": scope,
+        "gate_deferred": list(scope["gate_deferred"]),
         "red_reasons": red,
         "yellow_reasons": [],
         "stale_reasons": stale,
@@ -1252,6 +1361,8 @@ def render_dev(verdict: dict[str, Any]) -> list[str]:
     head = ", ".join(scope.get("touched") or []) or "?"
     if scope.get("dependants"):
         head += f" (+ dependants {', '.join(scope['dependants'])})"
+    if scope.get("gate_deferred"):
+        head += f" (gate-deferred {', '.join(scope['gate_deferred'])})"
     age = verdict.get("feed_age_hours")
     lines = [c_bold(f"DEV SHIP  {head}"),
              f"  {glyph()} {colour(v.upper())}  "

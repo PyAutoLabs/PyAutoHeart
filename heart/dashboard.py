@@ -1906,6 +1906,11 @@ def render_readiness_block(verdict: dict[str, Any], *, quiet: bool = False) -> l
     if shown < limit:
         for s in stales[: limit - shown]:
             lines.append("  " + c_info(f"? {s}"))
+    # Stage 3 passes that needed the one retry (PyAutoHeart#344): not a tier,
+    # but always on the board — recorded, never hidden.
+    if not quiet:
+        for f in verdict.get("flaky_reasons") or []:
+            lines.append("  " + c_meta(f"~ {f}"))
     # A terminal reading STALE gets the door out of it, not just the diagnosis:
     # `fix stale` prints each gap's command and the one plan that clears them
     # all. Suppressed in quiet mode — that line is a shell prompt, not a board.

@@ -395,6 +395,26 @@ jobs:
           python3 "$(pwd)/../PyAutoHands/autohands/run_python.py" \
             "$SHARD_PROJECT" "$@" \
             --report-dir test-results
+      - name: "Checkout PyAutoHeart (Stage 3 quarantine) [mode=release]"
+        if: needs.find_scripts.outputs.mode == 'release'
+        uses: actions/checkout@v4
+        with:
+          repository: PyAutoLabs/PyAutoHeart
+          path: PyAutoHeart
+      - name: "Resolve the Stage 3 quarantine for this workspace [mode=release]"
+        # PyAutoHeart#344 (human ruling 2026-11-12): Heart owns the quarantine
+        # (config/stage3_quarantine.yaml) and its rules — filed bug task, at most
+        # 7 days, at most 3 active. Only the ACTIVE entries for this workspace
+        # reach the runner; an expired or refused entry is not skipped, so its
+        # script runs again. Readiness shows YELLOW while any entry is active.
+        if: needs.find_scripts.outputs.mode == 'release'
+        env:
+          WS_REPO: ${{ steps.ws.outputs.repo }}
+        run: |
+          python3 -m pip install -q "PyYAML>=6.0"
+          PYTHONPATH="$GITHUB_WORKSPACE/PyAutoHeart" python3 -m heart.quarantine skip-list \
+            --workspace "$WS_REPO" --out "$GITHUB_WORKSPACE/stage3_quarantine.json"
+          cat "$GITHUB_WORKSPACE/stage3_quarantine.json"
       - name: "Run Python scripts [mode=release, wheels, release profile, no source on PYTHONPATH]"
         if: needs.find_scripts.outputs.mode == 'release'
         env:
@@ -448,10 +468,23 @@ jobs:
           else
             set -- "scripts/$SHARD_DIRECTORY"
           fi
-          python3 "$(pwd)/../PyAutoHands/autohands/run_python.py" \
+          # Stage 3's one retry and quarantine (PyAutoHeart#344): a FAILED
+          # script is re-run once and a pass on the retry is recorded as flaky;
+          # a quarantined script is skipped and recorded. Release mode only.
+          # Passed only to a PyAutoHands runner that has them (merge order):
+          # without them nothing is skipped or retried — the fail-closed side.
+          RUNNER="$(pwd)/../PyAutoHands/autohands/run_python.py"
+          stage3=()
+          if grep -q -- "--retry-failed" "$RUNNER"; then
+            stage3=(--retry-failed --quarantine "$GITHUB_WORKSPACE/stage3_quarantine.json")
+          else
+            echo "::warning::PyAutoHands runner has no Stage 3 retry/quarantine yet — neither applied"
+          fi
+          python3 "$RUNNER" \
             "$SHARD_PROJECT" "$@" \
             --report-dir test-results \
-            --env-config "$ENV_CONFIG"
+            --env-config "$ENV_CONFIG" \
+            "${stage3[@]}"
       - name: Upload script results
         # The name's leg suffix is the shard's directory, or `ordered` for an
         # ordered entry (script_matrix.py --ordered), whose directory is "." —

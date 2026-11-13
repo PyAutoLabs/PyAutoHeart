@@ -284,6 +284,36 @@ excluded:
   - z_vault               # archived material
   - scripts               # utility scripts (not a checkout)
 
+# Not Heart-gated (human ruling, M2 gate 2026-11-13, PyAutoHeart#343). Repos
+# Heart does not poll whose PR checks are the gate: a development ship touching
+# one reads gate-deferred — not STALE, not blocking, shown as "not Heart-gated:
+# PR checks decide" — and the merge paths (the /prm judgement and the batch
+# watcher's close-out) require at least one completed check on the PR head,
+# all of them green. A repo with no CI therefore stays a human merge. Every
+# name here must also be in `excluded:` (a polled repo is judged by its main
+# CI, never deferred). Categories ruled: profiling, inference, assistants,
+# visualization, Scientist, Broca, Cortex — resolved to names from the body
+# map (PyAutoMind/repos.yaml). Deliberately NOT here: pyautolabs.github.io
+# (no CI), PyAutoDNA, PyAutoGut, PyAutoReduce, ECLIPSE_lens_catalogue,
+# autoreduce_workspace — those still read STALE ("not polled by Heart").
+not_heart_gated:
+  - autolens_profiling
+  - autofit_profiling
+  - autolens_inference
+  - autofit_inference
+  - autocti_assistant
+  - autofit_assistant
+  - autogalaxy_assistant
+  - autolens_assistant
+  - euclid_assistant
+  - autolens_visualization
+  - autogalaxy_visualization
+  - autofit_visualization
+  - autocti_visualization
+  - PyAutoScientist
+  - PyAutoBroca
+  - PyAutoCortex
+
 # Regenerated artifacts that perpetually show as dirty in `git status`.
 # A porcelain path matching any of these globs (or any untracked directory)
 # is counted as "generated noise" — informational, NOT actionable — and is

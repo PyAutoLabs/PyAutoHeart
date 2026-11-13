@@ -514,3 +514,54 @@ def test_release_scope_workflows_in_an_organ_never_count_as_its_own_ci():
     for e in ci["workflows"].values():
         e["on_head"] = False
     assert dev(snap, [ORGAN], release_scope=["Release Integrate"])["verdict"] == "green"
+
+
+# --- not Heart-gated: gate-deferred (PyAutoHeart#343, ruling 2026-11-13) -----
+
+DEFERRED = "bench_profiling"   # an unpolled repo whose PR checks are the gate
+UNIVERSE_NG = [*UNIVERSE, DEFERRED]
+
+
+def test_witness_343_not_heart_gated_repo_reads_green_gate_deferred_and_shown():
+    """Witness: a branch touching a not-Heart-gated repo reads GREEN,
+    gate-deferred and shown, when the in-scope polled repos are green."""
+    v = dev(snapshot(), [DEFERRED, MID], universe=UNIVERSE_NG, not_gated=[DEFERRED])
+    assert v["verdict"] == "green" and v["pass"] is True
+    assert v["gate_deferred"] == [DEFERRED]
+    assert v["scope"]["gate_deferred"] == [DEFERRED]
+    assert v["scope"]["not_polled"] == []
+    assert DEFERRED not in v["scope"]["enforced"]
+    assert v["stale_reasons"] == [] and v["red_reasons"] == []
+    assert {"severity": "deferred",
+            "text": f"{DEFERRED}: not Heart-gated: PR checks decide"} in v["shown_reasons"]
+    text = "\n".join(readiness.render_dev(v))
+    assert f"gate-deferred {DEFERRED}" in text and "PR checks decide" in text
+
+
+def test_gate_deferred_never_hides_an_in_scope_red_or_stale():
+    v = dev(snapshot(**{MID: _lib("failure")}), [DEFERRED, MID],
+            universe=UNIVERSE_NG, not_gated=[DEFERRED])
+    assert v["verdict"] == "red" and v["gate_deferred"] == [DEFERRED]
+    v = dev(snapshot(), [DEFERRED, "UnpolledLib"], universe=UNIVERSE_NG, not_gated=[DEFERRED])
+    assert v["verdict"] == "stale"
+    assert "not polled by Heart: UnpolledLib" in v["stale_reasons"]
+
+
+def test_without_the_list_an_unpolled_repo_still_reads_stale():
+    v = dev(snapshot(), [DEFERRED], universe=UNIVERSE_NG)
+    assert v["verdict"] == "stale" and v["gate_deferred"] == []
+    assert f"not polled by Heart: {DEFERRED}" in v["stale_reasons"]
+
+
+def test_a_polled_repo_on_the_list_is_still_judged_by_its_main_ci():
+    v = dev(snapshot(**{MID: _lib("failure")}), [MID], not_gated=[MID])
+    assert v["verdict"] == "red" and v["gate_deferred"] == []
+
+
+def test_an_all_deferred_scope_does_not_judge_the_snapshot_age():
+    old = dict(snapshot(), ts="2026-11-01T00:00:00+00:00")
+    v = dev(old, [DEFERRED], universe=UNIVERSE_NG, not_gated=[DEFERRED])
+    assert v["verdict"] == "green" and v["feed_age_hours"] > 6
+    # One Heart-judged repo in scope brings the age back into the verdict.
+    assert dev(old, [DEFERRED, MID], universe=UNIVERSE_NG,
+               not_gated=[DEFERRED])["verdict"] == "stale"
