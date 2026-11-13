@@ -128,7 +128,11 @@ it: only CI on `main` of the touched repos and of their dependants (the
 carried in `shown_reasons`. In-scope `main` CI is read for a repo of any
 group (organs and developer workspaces included); a run with no conclusion
 yet is STALE. A touched repo Heart does not poll is STALE ("not polled by
-Heart"); a name `config/repos.yaml` never mentions is a usage error. Evidence
+Heart") — unless it is on `config/repos.yaml`'s `not_heart_gated:` list
+(PyAutoHeart#343, ruling 2026-11-13): then it is *gate-deferred*, listed in
+`gate_deferred`, shown as "not Heart-gated: PR checks decide", and never STALE
+or blocking; the merge paths require at least one completed PR check, all
+green. A name `config/repos.yaml` never mentions is a usage error. Evidence
 older than 6 h (`--max-feed-age-hours`, positive, at most 6), of unknown age,
 or dated more than 5 min ahead, is STALE; each CI sidecar is aged by its own
 `ts`, the snapshot by its aggregation `ts`. Only GREEN passes

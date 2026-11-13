@@ -1327,3 +1327,28 @@ def test_live_every_polled_advisory_repo_declares_its_ci_workflows():
     assert advisory == set(ciw)
     rs = readiness.load_release_scope_workflows()
     assert not any(set(w) & rs for w in ciw.values())
+
+
+def test_live_not_heart_gated_names_are_unpolled_excluded_repos():
+    """PyAutoHeart#343: the ruled categories resolved to names; every one is
+    unpolled and in `excluded:`, and the list is a strict subset of it (a
+    repo with no CI stays out — the merge guard would park it anyway)."""
+    import yaml
+    excluded = set(yaml.safe_load(readiness.CONFIG_PATH.read_text())["excluded"])
+    ng = readiness.load_not_heart_gated()
+    assert len(ng) >= 7 and set(ng) < excluded
+    assert not set(ng) & set(readiness.load_repo_groups())
+    v = readiness.dev_ship(make_snapshot(), [ng[0]])
+    assert v["gate_deferred"] == [ng[0]]
+    assert not any("not polled" in r for r in v["stale_reasons"])
+
+
+def test_not_heart_gated_refuses_a_polled_or_unexcluded_name(tmp_path):
+    cfg = tmp_path / "repos.yaml"
+    cfg.write_text("repos:\n  libraries:\n    - {name: LibA, owner: o}\n"
+                   "excluded: [Bench]\nnot_heart_gated: [LibA]\n")
+    with pytest.raises(ValueError, match="LibA"):
+        readiness.load_not_heart_gated(cfg)
+    cfg.write_text("repos: {}\nexcluded: [Bench]\nnot_heart_gated: [Other]\n")
+    with pytest.raises(ValueError, match="Other"):
+        readiness.load_not_heart_gated(cfg)
