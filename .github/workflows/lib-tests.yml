@@ -610,3 +610,47 @@ jobs:
             {
               "text": "${{ github.repository }}/${{ github.ref_name }} (no-jax leg) build result: ${{ job.status }}\n${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             }
+
+  # EVENT TRIGGER for the Heart feed (PyAutoHeart#340). When a library's CI
+  # finishes on `main` — after a merge — ask PyAutoHeart's heart-health.yml for
+  # a fresh board, so a development ship never reads a day-old verdict about
+  # the library that just moved. The ship gate treats a feed older than 6 h as
+  # STALE (heart/readiness.py `dev_ship`); this is the trigger that keeps the
+  # feed young.
+  #
+  # Harmless by construction:
+  #   * runs only on a push to `main`, never on a PR or a branch;
+  #   * `always()` — a red run moves the feed as much as a green one;
+  #   * `continue-on-error` — a failed mint or dispatch never reds the
+  #     library's required check (the caller's run conclusion is untouched);
+  #   * it dispatches one `heart-refresh` event and nothing else: Heart's own
+  #     concurrency group coalesces bursts.
+  # The App token is the org App the Heart already uses (heart-health.yml),
+  # scoped to the one Heart repo; the caller passes it with `secrets: inherit`.
+  heart-refresh:
+    name: Refresh the Heart feed
+    needs: [unittest, unittest-nojax]
+    if: ${{ always() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Mint App token (the Heart repo, contents write for dispatch)
+        id: app_token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: PyAutoHeart
+          permission-contents: write
+
+      - name: Dispatch heart-refresh to heart-health.yml
+        env:
+          GH_TOKEN: ${{ steps.app_token.outputs.token }}
+        run: |
+          gh api "repos/${{ github.repository_owner }}/PyAutoHeart/dispatches" \
+            -f event_type=heart-refresh \
+            -f "client_payload[source]=${{ github.repository }}" \
+            -f "client_payload[sha]=${{ github.sha }}" \
+            -f "client_payload[reason]=library CI finished on main"
+          echo "heart-refresh dispatched for ${{ github.repository }}@${{ github.sha }}"

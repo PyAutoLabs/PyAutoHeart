@@ -52,6 +52,12 @@ PYTHONPATH="$HEART_HOME" python3 -m heart.checks.test_run || heart_log WARN "$(c
 # local ingest.
 PYTHONPATH="$HEART_HOME" python3 -m heart.checks.release_run || heart_log WARN "$(c_warn 'release_run failed')"
 
+# Python: is each rehearsed SHA still an ancestor of its main? (M2.4 — a
+# release publishes exactly the rehearsed commits, so main moving FORWARD does
+# not stale the rehearsal.) One `gh api .../compare` per library whose main
+# moved since the rehearsal; none when nothing moved.
+PYTHONPATH="$HEART_HOME" python3 -m heart.checks.rehearsal_ancestry || heart_log WARN "$(c_warn 'rehearsal_ancestry failed')"
+
 # Python: workspace-vs-library version skew (cheap file reads; no heavy imports).
 PYTHONPATH="$HEART_HOME" python3 -m heart.checks.version_skew || heart_log WARN "$(c_warn 'version_skew failed')"
 

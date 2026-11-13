@@ -113,12 +113,34 @@ back to grey after 48 h (`DEVBOX_FRESH_SECONDS`).
   script-timing regressions, stale open PRs / parked scripts, skew BEHIND.
 - **STALE** — evidence missing or expired with nothing known-bad; the remedy is
   re-running a check, never fixing code. Evidence whose last known result was
-  adverse stays yellow/red. Releases require GREEN; the dev-ship gate treats
-  STALE as passing (an evidence gap is organism-scope, not branch-scope).
+  adverse stays yellow/red. Releases require GREEN.
 - **GREEN** — none of the above.
 
 `red > yellow > stale > green`. The `score` (0–100) is advisory/sortable only —
 the colour is the gate. Persisted to `~/.pyauto-heart/release_ready.json`.
+
+### The development-ship gate (`readiness --dev --repos A,B`)
+
+`dev_ship(snapshot, repos)` answers "may this branch ship?" (PyAutoHeart#340,
+human ruling 2026-11-12). It computes the release verdict above and partitions
+it: only CI on `main` of the touched repos and of their dependants (the
+`dependencies:` graph in `config/repos.yaml`) blocks; every other reason is
+carried in `shown_reasons`. In-scope `main` CI is read for a repo of any
+group (organs and developer workspaces included); a run with no conclusion
+yet is STALE. A touched repo Heart does not poll is STALE ("not polled by
+Heart"); a name `config/repos.yaml` never mentions is a usage error. Evidence
+older than 6 h (`--max-feed-age-hours`, positive, at most 6), of unknown age,
+or dated more than 5 min ahead, is STALE; each CI sidecar is aged by its own
+`ts`, the snapshot by its aggregation `ts`. Only GREEN passes
+(`"pass": true`); STALE means re-check, or park. The plain `readiness` call —
+the release gate — is unchanged. Never persisted.
+
+**What it reads.** The dev box's local `$HEART_STATE_DIR/state.json` (default
+`~/.pyauto-heart/state.json`, written by `tick` / `watch`); the verdict's
+`source` and `feed_age_hours` say so. The event triggers in `heart-health.yml`
+(`repository_dispatch: heart-refresh` from library CI on `main`, Release
+Integrate completing) refresh the **published cloud feed** on Pages, which the
+Brain's door reads — not this local snapshot. Refresh it locally with `tick`.
 
 ## The release freeze window (`freeze`)
 

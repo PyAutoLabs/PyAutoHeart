@@ -1254,3 +1254,76 @@ def test_token_push_refusal_dominates_staleness():
     v = compute(make_snapshot(token_push=tp))
     assert v["verdict"] == "red"
     assert not any("push credential check stale" in r for r in v["stale_reasons"])
+
+
+# --- the development-ship scope reads the live dependency graph (#340) -------
+
+def test_live_dependency_graph_gives_each_library_its_downstream_dependants():
+    deps = readiness.load_dependencies()
+    assert readiness.dependants_of(["PyAutoNerves"], deps) == set(LIBS) - {"PyAutoNerves"}
+    assert readiness.dependants_of(["PyAutoFit"], deps) == {"PyAutoGalaxy", "PyAutoLens", "PyAutoCTI"}
+    assert readiness.dependants_of(["PyAutoArray"], deps) == {"PyAutoGalaxy", "PyAutoLens", "PyAutoCTI"}
+    assert readiness.dependants_of(["PyAutoGalaxy"], deps) == {"PyAutoLens"}
+    assert readiness.dependants_of(["PyAutoLens"], deps) == set()
+    assert readiness.dependants_of(["PyAutoCTI"], deps) == set()
+
+
+def test_live_dependency_graph_names_only_polled_libraries():
+    deps = readiness.load_dependencies()
+    libs = set(readiness.load_library_names())
+    assert set(deps) <= libs
+    assert {u for ups in deps.values() for u in ups} <= libs
+
+
+def test_live_dev_ship_for_a_library_branch_blocks_on_a_dependants_ci_only():
+    snap = make_snapshot()
+    snap["repos"]["PyAutoGalaxy"]["ci_status"]["conclusion"] = "failure"
+    snap["repos"]["PyAutoLens"]["repo_state"]["behind"] = 3   # checkout state: shown
+    now = readiness._parse_ts(snap["ts"])
+    fit = readiness.dev_ship(snap, ["PyAutoFit"], now=now, libraries=LIBS)
+    assert fit["verdict"] == "red"
+    assert fit["red_reasons"] == ["PyAutoGalaxy: CI failure"]
+    lens = readiness.dev_ship(snap, ["PyAutoLens"], now=now, libraries=LIBS)
+    assert lens["verdict"] == "green"
+    assert {"severity": "red", "text": "PyAutoLens: 3 commit(s) behind origin"} in lens["shown_reasons"]
+
+
+def test_missing_dependency_graph_fails_loudly(tmp_path):
+    cfg = tmp_path / "repos.yaml"
+    cfg.write_text("repos: {}\n")
+    with pytest.raises(ValueError):
+        readiness.load_dependencies(cfg)
+
+
+def test_live_excluded_repos_are_known_but_read_not_polled():
+    import yaml
+    excluded = yaml.safe_load(readiness.CONFIG_PATH.read_text())["excluded"]
+    groups = readiness.load_repo_groups()
+    known = set(readiness.load_known_repo_names())
+    assert set(excluded) <= known
+    s = readiness.dev_scope(excluded[:2], readiness.load_dependencies(),
+                            known=list(groups), universe=sorted(known))
+    assert s["not_polled"] == excluded[:2]
+
+
+def test_live_typo_in_a_repo_name_is_a_usage_error():
+    with pytest.raises(ValueError, match="PyAutoFitt"):
+        readiness.dev_ship(make_snapshot(), ["PyAutoFitt"])
+
+
+def test_live_release_scope_workflows_cover_the_release_gate_workflows():
+    rs = readiness.load_release_scope_workflows()
+    assert {"Release Integrate", "Workspace Smoke", "Python Version Matrix",
+            "Nightly Release"} <= rs
+
+
+def test_live_every_polled_advisory_repo_declares_its_ci_workflows():
+    """An undeclared advisory repo reads STALE at every ship; keep the
+    declaration complete for the polled set, and naming only polled repos."""
+    groups = readiness.load_repo_groups()
+    ciw = readiness.load_ci_workflows()
+    gated = {"libraries"} | set(readiness.GATED_WORKSPACE_GROUPS)
+    advisory = {n for n, g in groups.items() if g not in gated}
+    assert advisory == set(ciw)
+    rs = readiness.load_release_scope_workflows()
+    assert not any(set(w) & rs for w in ciw.values())

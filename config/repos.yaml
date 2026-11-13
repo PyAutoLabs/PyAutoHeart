@@ -140,6 +140,62 @@ version_skew:
   euclid_strong_lens_modeling_pipeline: {library: PyAutoLens, package: autolens}
   autolens_assistant: {library: PyAutoLens, package: autolens}
 
+# Development-ship policy (heart/readiness.py `dev_ship`, PyAutoHeart#340).
+# A touched repo's own `main` CI blocks a development ship whatever its group;
+# for a group with no required workflows (organs, build workflow, developer
+# workspaces) that means the runs on its main HEAD. These workflows live in
+# such repos but answer the RELEASE question (rehearsal, full-surface sweeps,
+# release execution, the release push credential) — the ruling shows release
+# scope and never enforces it at a development ship, so they never count as
+# the repo's own CI there. Matched by workflow display name (`name:`).
+dev_ship:
+  # A polled repo's OWN CI, for the groups with no required_workflows
+  # (organs, build workflow, developer workspaces): the workflows that gate
+  # its pull requests — its test / lint check. Seeded 2026-11-12 from the
+  # required-check survey (Science/scratch/ecosystem_review_2026-11/
+  # m2_rulesets/survey.md) and the pull_request-triggered workflows of each
+  # repo, minus dashboard refreshes. Only these block a development ship;
+  # every other workflow on the repo (boards, sweeps, scheduled ops) is shown,
+  # never blocking. `[]` = the repo has no CI to judge. A polled advisory repo
+  # with NO entry reads STALE ("no CI workflows declared") until one is added.
+  ci_workflows:
+    PyAutoBrain: [Brain Tests]
+    PyAutoHeart: [Heart Tests]
+    PyAutoHands: [Hands Tests]
+    PyAutoMind: [Tenant Firewall Gate, Lifecycle Drift, Spawn Drift]
+    PyAutoEars: [Ears tests]
+    PyAutoMemory: [validate]
+    PyAutoEyes: [lint]
+    PyAutoPulse: [lint]
+    PyAutoInsight: [lint]
+    autofit_workspace_developer: []
+    autolens_workspace_developer: []
+  release_scope_workflows:
+    - Release Integrate
+    - Workspace Smoke
+    - Workspace Validation
+    - Release Diagnostic (not validation)
+    - JAX compatibility endpoints (not release validation)
+    - Token Push Check
+    - Python Version Matrix
+    - PyAuto Release
+    - Nightly Release
+
+# Library dependency graph: <library> -> the libraries it imports directly.
+# Read strictly by heart/readiness.py's development-ship scope (`readiness
+# --dev --repos A,B`, PyAutoHeart#340): a branch is blocked by red CI on `main`
+# of the repos it touches AND of their dependants — the libraries downstream of
+# them in this graph, transitively — and by nothing else. Mirrors the deps map
+# in .github/workflows/lib-tests.yml (the install chain each library's own CI
+# uses). A library with no entry imports no other library. Release gating does
+# not read this block.
+dependencies:
+  PyAutoFit: [PyAutoNerves]
+  PyAutoArray: [PyAutoNerves]
+  PyAutoGalaxy: [PyAutoNerves, PyAutoFit, PyAutoArray]
+  PyAutoLens: [PyAutoNerves, PyAutoFit, PyAutoArray, PyAutoGalaxy]
+  PyAutoCTI: [PyAutoNerves, PyAutoFit, PyAutoArray]
+
 # Smoke-suite table: the workspaces the local smoke runner (heart/smoke.py)
 # can prepare and run — each key names its workspace checkout directory and the
 # library install chain — plus the repo -> import-package map the preflight
@@ -198,6 +254,22 @@ smoke:
 excluded:
   - autolens_assistant    # public-facing template
   - autolens_profiling    # profiling project
+  - PyAutoReduce          # standalone library (own lib-tests.yml caller); not polled — a dev ship touching it reads STALE
+  # Body-map repos (PyAutoMind/repos.yaml) Heart does not poll. Named so a
+  # development ship touching one reads STALE ("not polled by Heart") rather
+  # than failing as an unknown name; poll one to give its branches a verdict.
+  - PyAutoBroca
+  - PyAutoCortex
+  - PyAutoDNA
+  - PyAutoGut
+  - PyAutoScientist
+  - ECLIPSE_lens_catalogue
+  - autocti_assistant
+  - autofit_assistant
+  - autogalaxy_assistant
+  - euclid_assistant
+  - autoreduce_workspace
+  - pyautolabs.github.io
   - autolens_inference    # inference benchmark project (search/inference runs; results tracked)
   - autolens_visualization  # lens figure gallery project (PNGs + manifest tracked; re-rendered on release)
   - autogalaxy_visualization  # galaxy figure gallery project (PNGs + manifest tracked; re-rendered on release)

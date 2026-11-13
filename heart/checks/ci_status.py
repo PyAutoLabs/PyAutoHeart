@@ -64,9 +64,10 @@ import argparse
 import datetime
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 HEART_HOME = Path(__file__).resolve().parents[2]
 CONFIG_PATH = HEART_HOME / "config" / "repos.yaml"
@@ -365,6 +366,101 @@ def build_sidecar(
     }
 
 
+# --- declared-CI backfill (PyAutoHeart#340) ---------------------------------
+#
+# The runs page above is the newest 30 runs on main. A repo whose OWN CI is
+# declared in config/repos.yaml `dev_ship.ci_workflows` (an organ, say) can
+# have a declared workflow fall off that page behind busy ops workflows; the
+# development-ship gate would then have no run to judge. For each declared
+# workflow absent from the page we fetch its latest main run directly —
+# `actions/workflows/<id>/runs?branch=main&per_page=1` — resolving the id from
+# the name via `actions/workflows` once and caching it. Bounded: one extra call
+# per missing declared workflow per tick (plus the listing, only on a cache
+# miss), each under BACKFILL_TIMEOUT_S. A failed fetch leaves the workflow
+# absent, which readiness reads as STALE. The rolled-up conclusion is computed
+# BEFORE the backfill, so the release-facing rollup is unchanged.
+
+#: Per-call bound for the backfill's gh calls (the tick's ls-remote bound).
+BACKFILL_TIMEOUT_S = int(os.environ.get("HEART_LS_REMOTE_TIMEOUT", "10"))
+
+
+def gh_api(path: str) -> Any:
+    """The gh seam: parsed ``gh api <path>`` output, or None on any failure."""
+    try:
+        result = subprocess.run(["gh", "api", path], capture_output=True, text=True,
+                                timeout=BACKFILL_TIMEOUT_S)
+        return json.loads(result.stdout) if result.returncode == 0 else None
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return None
+
+
+def load_declared_ci(name: str, config_path: Path | str = CONFIG_PATH) -> list[str]:
+    """``dev_ship.ci_workflows[name]`` — the repo's declared own CI ([] if none)."""
+    try:
+        import yaml
+
+        cfg = yaml.safe_load(Path(config_path).read_text()) or {}
+        return [str(w) for w in ((cfg.get("dev_ship") or {}).get("ci_workflows") or {})
+                .get(name) or []]
+    except Exception:
+        return []
+
+
+def _read_cache(path: Path | None) -> dict[str, Any]:
+    try:
+        data = json.loads(path.read_text()) if path and path.is_file() else {}
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def backfill_declared(
+    sidecar: dict[str, Any],
+    owner: str,
+    declared: list[str],
+    api: Callable[[str], Any],
+    cache_path: Path | None = None,
+) -> list[str]:
+    """Add the latest main run of each declared workflow missing from
+    ``sidecar["workflows"]`` (entries flagged ``backfilled``). Returns the
+    declared workflows still missing (fetch failed). Mutates ``sidecar``."""
+    name = sidecar.get("name") or ""
+    workflows = sidecar.setdefault("workflows", {})
+    missing = [wf for wf in declared if wf not in workflows]
+    if not missing or not owner or not name:
+        return missing
+    ids = _read_cache(cache_path)
+    if any(wf not in ids for wf in missing):
+        listing = api(f"repos/{owner}/{name}/actions/workflows?per_page=100")
+        for w in (listing or {}).get("workflows") or [] if isinstance(listing, dict) else []:
+            if isinstance(w, dict) and w.get("name") and w.get("id"):
+                ids[str(w["name"])] = w["id"]
+        if cache_path is not None and ids:
+            try:
+                cache_path.parent.mkdir(parents=True, exist_ok=True)
+                tmp = cache_path.with_suffix(".tmp")
+                tmp.write_text(json.dumps(ids, sort_keys=True))
+                tmp.replace(cache_path)
+            except OSError:
+                pass
+    still: list[str] = []
+    head_sha = sidecar.get("head_sha") or ""
+    for wf in missing:
+        wid = ids.get(wf)
+        payload = api(f"repos/{owner}/{name}/actions/workflows/{wid}/runs"
+                      "?branch=main&per_page=1&exclude_pull_requests=true") if wid else None
+        runs = normalize_runs(payload) if isinstance(payload, dict) else []
+        if not runs:
+            still.append(wf)
+            continue
+        entry = _wf_entry(runs[0], head_sha)
+        entry["backfilled"] = True
+        workflows[wf] = entry
+    if still:
+        sidecar["backfill_missing"] = still
+    return still
+
+
 def summary_line(sidecar: dict[str, Any]) -> str:
     """Coloured one-line summary for the daemon log."""
     from heart.heart_color import (
@@ -424,6 +520,8 @@ def main(argv: list[str] | None = None) -> int:
         default="",
         help="reason the runs fetch failed; recorded instead of a bogus pending state",
     )
+    ap.add_argument("--owner", default="",
+                    help="GitHub owner, for the declared-CI backfill (#340)")
     ap.add_argument(
         "--cloud-runs",
         default="",
@@ -456,10 +554,16 @@ def main(argv: list[str] | None = None) -> int:
             # one readable string rather than a silently unchanged error.
             error = f"{error} ({reason})"
 
-    sidecar = write_and_summarise(
-        ns.name, ns.group, runs, ns.head_sha, ns.ts, Path(ns.out),
-        error=error, source=source,
-    )
+    sidecar = build_sidecar(ns.name, ns.group, runs, ns.head_sha, ns.ts,
+                            error=error, source=source)
+    sys.path.insert(0, str(HEART_HOME))
+    from heart import state
+
+    declared = load_declared_ci(ns.name)
+    if declared and not error and source == "gh":
+        backfill_declared(sidecar, ns.owner, declared, gh_api,
+                          state.HEART_STATE_DIR / "ci_workflow_ids" / f"{ns.name}.json")
+    state.atomic_write_json(Path(ns.out), sidecar)
     print(summary_line(sidecar))
     return 0
 
