@@ -185,3 +185,66 @@ def test_live_quarantine_file_passes_its_own_check():
     entries = quarantine.load(quarantine.HEART_HOME / "config" / "stage3_quarantine.yaml")
     today = datetime.datetime.now(datetime.timezone.utc).date()
     assert quarantine.classify(entries, today)["refused"] == []
+
+
+# --- review fixes ---------------------------------------------------------------
+
+def _skipped_row(e):
+    return {"project": "demo", "script": f"/runner/workspace/{e['script']}",
+            "quarantined": e["bug"],
+            "quarantine_entry": {k: e[k] for k in ("workspace", "script", "bug", "expires")}}
+
+
+def _snap_skipped(e):
+    snap = make_snapshot()
+    snap["validation_report"]["quarantined"] = [_skipped_row(e)]
+    return snap
+
+
+def test_a_rehearsal_that_skipped_a_script_never_reads_green_once_the_entry_is_gone():
+    """Review MUST-FIX: the report's own `quarantined` list is judged. With the
+    entry removed (or expired) the rehearsal never ran the script: RED, until a
+    fresh rehearsal runs it."""
+    e = entry()
+    v = compute(_snap_skipped(e), entries=[])                   # entry removed
+    assert v["verdict"] == "red"
+    assert any(f"skipped {WS}/scripts/demo/s1.py, but its quarantine is no longer active"
+               in r for r in v["red_reasons"])
+    expired = entry(filed="2026-05-20", expires="2026-05-27")
+    v = compute(_snap_skipped(expired), entries=[expired])       # entry expired
+    assert v["verdict"] == "red"
+    assert any("no longer active" in r for r in v["red_reasons"])
+
+
+def test_a_rehearsal_skip_under_a_live_entry_is_yellow_and_named():
+    e = entry()
+    v = compute(_snap_skipped(e), entries=[e])
+    assert v["verdict"] == "yellow"
+    assert f"Stage 3 rehearsal skipped {WS}/scripts/demo/s1.py (quarantined, DemoLib#12)" \
+        in v["yellow_reasons"]
+
+
+def test_the_stage_report_carries_the_entry_that_skipped_the_script():
+    e = entry()
+    agg = {"ready": True, "summary": {"passed": 1, "skipped": 1}, "failures": [],
+           "quarantined": [{"project": "demo", "file": "/w/" + e["script"],
+                            "status": "skipped", "quarantined": e["bug"],
+                            "quarantine_entry": _skipped_row(e)["quarantine_entry"]}]}
+    stage = validate.to_stage_report(agg, profile="release")
+    assert stage["quarantined"][0]["quarantine_entry"]["workspace"] == WS
+
+
+def test_flaky_passes_are_shown_in_the_verdict_and_rendered():
+    """Review item 2: a flaky pass reaches the human, not only the JSON."""
+    snap = make_snapshot()
+    snap["validation_report"]["flaky"] = [{"project": "demo", "script": "scripts/demo/s1.py",
+                                           "first_error": "ConnectionError: transient"}]
+    v = compute(snap)
+    assert v["verdict"] == "green"
+    assert v["flaky_reasons"] == ["flaky: passed on retry — demo: scripts/demo/s1.py "
+                                  "(first: ConnectionError: transient)"]
+    text = "\n".join(readiness.render_block(v))
+    assert "flaky: passed on retry" in text
+    d = readiness.dev_ship(snap, [LIBS[0]], libraries=LIBS, now=datetime.datetime(
+        2026, 6, 1, 1, tzinfo=datetime.timezone.utc))
+    assert any(r["severity"] == "flaky" for r in d["shown_reasons"])

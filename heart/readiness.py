@@ -739,17 +739,44 @@ def compute(
     try:
         q_entries = quarantine if quarantine is not None else _quarantine.load()
         q_red, q_yellow = _quarantine.readiness_reasons(q_entries, ref.date())
+        q_active = _quarantine.classify(q_entries, ref.date())["active"]
     except (OSError, ValueError, yaml.YAMLError) as exc:
         q_red, q_yellow = [f"Stage 3 quarantine file unreadable: {exc}"], []
+        q_active = []
+    # What the ingested rehearsal ACTUALLY skipped. The live file alone is not
+    # enough: once an entry is removed or expires, a rehearsal that never ran
+    # its script would read GREEN (and M2.4 ancestry keeps it fresh). Each
+    # skipped script is at least YELLOW; RED when its entry is no longer active
+    # — only a fresh rehearsal that ran the script clears it.
+    live = {(str(r["entry"].get("workspace")), str(r["entry"].get("script")))
+            for r in q_active}
+    vr_q = (vr.get("quarantined") if isinstance(vr, dict) else None) or []
+    for row in (r for r in vr_q if isinstance(r, dict)):
+        e = row.get("quarantine_entry") if isinstance(row.get("quarantine_entry"), dict) else {}
+        key = (str(e.get("workspace")), str(e.get("script")))
+        label = (f"{key[0]}/{key[1]}" if e.get("script")
+                 else f"{row.get('project')}: {row.get('script')}")
+        if key in live:
+            q_yellow.append(f"Stage 3 rehearsal skipped {label} (quarantined, "
+                            f"{row.get('quarantined') or e.get('bug')})")
+        else:
+            q_red.append(f"Stage 3 rehearsal skipped {label}, but its quarantine "
+                         "is no longer active — re-run the rehearsal so it runs")
     for t in q_red:
         red.append(t)
-        hit("quarantine_expired" if "EXPIRED" in t else "quarantine_refused")
+        hit("quarantine_expired" if ("EXPIRED" in t or "no longer active" in t)
+            else "quarantine_refused")
     for t in q_yellow:
         yellow.append(t)
         hit("quarantine_active")
     # A pass on Stage 3's one retry is recorded as flaky (shown, not a tier).
     stage3_flaky = [f for f in ((vr or {}).get("flaky") or []) if isinstance(f, dict)] \
         if isinstance(vr, dict) else []
+    # Shown on every surface, never a tier: the retry is the ruling's, and a
+    # flaky pass is a pass — but a human reading the verdict must see it.
+    flaky_reasons = [f"flaky: passed on retry — {f.get('project')}: {f.get('script')}"
+                     + (f" (first: {f.get('first_error')})" if f.get("first_error") else "")
+                     for f in stage3_flaky]
 
     # --- release push credential (RED on a refused push, STALE if unproven) ---
     # heart/checks/token_push.py: the pyautolabs-bot App's `git push --dry-run`
@@ -870,6 +897,7 @@ def compute(
         "na_reasons": na,
         "stage3_quarantine": q_yellow,
         "stage3_flaky": stage3_flaky,
+        "flaky_reasons": flaky_reasons,
         "validation_ahead": validation_ahead,
         "validation_note": (
             "release validation covers the rehearsed commits; main is ahead by "
@@ -1102,7 +1130,7 @@ def split_dev_reasons(
     shown = [
         {"severity": sev, "text": str(t)}
         for sev, key in (("red", "red_reasons"), ("yellow", "yellow_reasons"),
-                         ("stale", "stale_reasons"))
+                         ("stale", "stale_reasons"), ("flaky", "flaky_reasons"))
         for t in verdict.get(key) or []
         if str(t) not in taken
     ]

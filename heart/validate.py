@@ -815,10 +815,11 @@ def to_stage_report(
     # Stage 3's retry and quarantine (PyAutoHeart#344), in the stage report's
     # own vocabulary: a flaky pass keeps its first error; a quarantined skip
     # keeps the bug ref of the entry that skipped it.
-    for key, extra in (("flaky", "first_error"), ("quarantined", "quarantined")):
+    for key, extras in (("flaky", ("first_error",)),
+                        ("quarantined", ("quarantined", "quarantine_entry"))):
         rows = aggregate.get(key)
         report[key] = [{"project": r.get("project"), "script": r.get("file"),
-                        extra: r.get(extra)}
+                        **{x: r.get(x) for x in extras}}
                        for r in (rows if isinstance(rows, list) else []) if isinstance(r, dict)]
     vi = normalize_verify_install(verify_install)
     if vi is not None:
