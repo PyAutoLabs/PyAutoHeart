@@ -571,3 +571,19 @@ def test_download_gate_is_a_no_op_without_scripts_and_honours_workspace_dir(tmp_
     (other / "bad.py").write_text("from urllib.request import urlretrieve\nurlretrieve('u', 'p')\n")
     res = _run_discard(step, tmp_path, env={"WORKSPACE_DIR": "elsewhere"})
     assert res.returncode == 1 and "scripts/bad.py:2" in res.stdout
+
+
+def test_stage3_release_leg_resolves_the_quarantine_and_retries_once():
+    """PyAutoHeart#344: only mode=release resolves Heart's quarantine for the
+    shard's workspace and asks the runner for its one retry; the smoke leg
+    (the PR/continuous channel) gets neither."""
+    job = _load("workspace-validation.yml")["jobs"]["run_scripts"]
+    resolve = _step(job, "Resolve the Stage 3 quarantine")
+    assert resolve["if"] == "needs.find_scripts.outputs.mode == 'release'"
+    assert "heart.quarantine skip-list" in resolve["run"]
+    assert "steps.ws.outputs.repo" in resolve["env"]["WS_REPO"]
+    release = _step(job, "Run Python scripts [mode=release")
+    assert "--retry-failed" in release["run"]
+    assert '--quarantine "$GITHUB_WORKSPACE/stage3_quarantine.json"' in release["run"]
+    smoke = _step(job, "Run Python scripts [mode=smoke")
+    assert "--retry-failed" not in smoke["run"] and "--quarantine" not in smoke["run"]

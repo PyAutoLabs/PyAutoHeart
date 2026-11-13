@@ -234,6 +234,11 @@ class _Accumulator:
         self.totals: dict[str, int] = {k: 0 for k in _COUNT_KEYS}
         self.per_project: dict[str, dict[str, int]] = {}
         self.failures: list[dict[str, Any]] = []
+        # Stage 3's one retry and quarantine (PyAutoHeart#344): scripts that
+        # passed only on the retry, and scripts skipped by an active entry.
+        # Recorded, never a pass/fail input.
+        self.flaky: list[dict[str, Any]] = []
+        self.quarantined: list[dict[str, Any]] = []
         self.run_urls: dict[str, str] = {}
         # The verify_install sidecar a stage artifact carried, if any. Kept out
         # of validation_report.json (it is not part of that schema) — `run()`
@@ -306,8 +311,15 @@ class _Accumulator:
         for f in data.get("failures", []) or []:
             if isinstance(f, dict):
                 self.failures.append(f)
+        self._add_stage3_notes(data)
         self.add_commit_shas(data.get("commit_shas"))
         self.add_verify_install(data.get("verify_install"))
+
+    def _add_stage3_notes(self, data: dict[str, Any]) -> None:
+        for key, target in (("flaky", self.flaky), ("quarantined", self.quarantined)):
+            for f in data.get(key) or []:
+                if isinstance(f, dict):
+                    target.append(f)
 
     def add_verify_install(self, sidecar: Any) -> None:
         """Keep the newest verify_install block seen across ingested artifacts.
@@ -375,6 +387,7 @@ class _Accumulator:
             for f in data.get("failures", []) or []:
                 if isinstance(f, dict):
                     self.failures.append(f)
+            self._add_stage3_notes(data)
         for k, v in (data.get("run_urls") or {}).items():
             self.run_urls.setdefault(str(k), str(v))
         # --- the base's own verdict --------------------------------------
@@ -650,6 +663,8 @@ def _distill(acc: _Accumulator, now: datetime.datetime | None = None) -> dict[st
         "totals": acc.totals,
         "per_project": acc.per_project,
         "failures": acc.failures,
+        "flaky": acc.flaky,
+        "quarantined": acc.quarantined,
         "run_urls": acc.run_urls,
         "ts": _now_iso(now),
     }
@@ -797,6 +812,14 @@ def to_stage_report(
     report["summary"] = summary
     report["per_project"] = per_project
     report["failures"] = failures
+    # Stage 3's retry and quarantine (PyAutoHeart#344), in the stage report's
+    # own vocabulary: a flaky pass keeps its first error; a quarantined skip
+    # keeps the bug ref of the entry that skipped it.
+    for key, extra in (("flaky", "first_error"), ("quarantined", "quarantined")):
+        rows = aggregate.get(key)
+        report[key] = [{"project": r.get("project"), "script": r.get("file"),
+                        extra: r.get(extra)}
+                       for r in (rows if isinstance(rows, list) else []) if isinstance(r, dict)]
     vi = normalize_verify_install(verify_install)
     if vi is not None:
         report["verify_install"] = vi

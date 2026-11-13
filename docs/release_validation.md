@@ -195,6 +195,28 @@ dispatching the `release-integrate.yml` channel), an ingested
 rehearsal-only report still (correctly) gates YELLOW: the source was built and
 TestPyPI-installed, but not yet exercised at release fidelity. `mode: release`
 is what supplies the `integrate` stage that flips this to GREEN-eligible.
+
+## One retry and the expiring quarantine (PyAutoHeart#344)
+
+Human ruling, M1 gate 2026-11-12. In Stage 3 (`mode: release` only):
+
+- **One retry.** A script that FAILS is re-run once (`run_python.py
+  --retry-failed`). A pass on the retry is recorded as **flaky** — `flaky`,
+  `attempts: 2` and the first error in the per-run JSON, the `flaky` list of
+  `report.json`, the stage report and `validation_report.json`, and
+  `stage3_flaky` in the readiness verdict — never hidden. A second failure
+  stays FAILED (RED). A TIMEOUT is not retried: it already spent its cap.
+- **Quarantine.** `config/stage3_quarantine.yaml` (schema in its header; one
+  reader, `heart/quarantine.py`). An entry names the workspace, the script, a
+  filed bug task, the filed date and an expiry at most 7 days later; at most 3
+  are active. Stage 3 resolves the ACTIVE entries per workspace
+  (`python -m heart.quarantine skip-list`) and the runner skips those scripts,
+  recorded as quarantined. Readiness is **YELLOW** while any entry is active,
+  with the list; an **expired** entry is RED and its script runs again; a
+  refused entry (no bug ref, over 7 days, a fourth active, not a workspace
+  script) is RED and not skipped. Quarantine never turns RED into GREEN, and
+  release approval is unchanged: the nightly still ships on GREEN only.
+
 # Bounded investigation of a failed wheel run
 
 `release-diagnostic.yml` investigates the saved `rectangular_rtu.py` timeout

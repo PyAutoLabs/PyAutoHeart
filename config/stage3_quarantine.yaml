@@ -1,0 +1,28 @@
+# Stage 3 script quarantine (PyAutoHeart#344; human ruling, M1 gate 2026-11-12).
+#
+# A failing release-validation (Stage 3) workspace script may be set aside so
+# one script does not hold the release RED — under this doctrine, enforced by
+# heart/quarantine.py (the one reader):
+#
+#   - an entry needs a FILED bug task (`bug`), or it is refused;
+#   - it expires at most 7 days after `filed`; an EXPIRED entry fails the gate
+#     again (readiness RED) and Stage 3 runs the script again — remove the
+#     entry once the bug is fixed;
+#   - at most 3 entries are active at once; a fourth is refused;
+#   - while any entry is active, readiness is YELLOW with the list — never
+#     GREEN: the script is skipped, the release decision stays the human's;
+#   - workspace scripts only: never unit tests or install checks.
+#
+# Schema of one entry (all required unless marked optional):
+#
+#   - workspace: autolens_workspace_test       # a polled Stage 3 workspace (config/repos.yaml)
+#     script: scripts/interferometer/model_fit.py   # .py path inside that workspace
+#     bug: PyAutoLens#123                      # filed bug task: Repo#N, Owner/Repo#N or issue URL
+#     filed: 2026-11-13                        # YYYY-MM-DD
+#     expires: 2026-11-20                      # YYYY-MM-DD, after filed, at most filed + 7 days
+#     owner: someone                           # optional — who is fixing it
+#     reason: one line                         # optional
+#
+# Check the file: `python3 -m heart.quarantine check` (exit 1 on a refused entry).
+
+entries: []

@@ -22,7 +22,9 @@ The verdict uses STRICT release gates:
   gate fails closed on evidence it cannot classify. Also RED: the release push
   credential (``heart/checks/token_push.py``, the ``pyautolabs-bot`` App's
   ``git push --dry-run``) was refused by any library; a missing, partial or
-  older-than-48 h proof is STALE.
+  older-than-48 h proof is STALE. Also RED: an expired or refused Stage 3
+  quarantine entry (``heart/quarantine.py``, PyAutoHeart#344); an ACTIVE one
+  is YELLOW with the list — a quarantined script is skipped, never green.
 - **YELLOW** (caution) for soft signals: workspace-validation not passing (the
   workspace scripts/notebooks carry standing debt, so this is advisory — never a
   hard block), script-timing regressions, stale open PRs, stale parked scripts, a
@@ -130,6 +132,7 @@ from typing import Any, Sequence
 
 import yaml
 
+from heart import quarantine as _quarantine
 from heart import state, validate
 from heart.checks.ci_status import FAILURE_CONCLUSIONS, load_required_workflows
 from heart.checks.test_run import counts_measured as tr_counts_measured
@@ -191,6 +194,9 @@ _WEIGHTS: dict[str, tuple[int, int]] = {
     "token_push_refused": (40, 40),
     "token_push_unknown": (10, 10),
     "token_push_stale": (10, 10),
+    "quarantine_active": (5, 15),
+    "quarantine_expired": (40, 40),
+    "quarantine_refused": (40, 40),
 }
 
 
@@ -284,8 +290,12 @@ def compute(
     libraries: Sequence[str] | None = None,
     required_workflows: dict[str, list[str]] | None = None,
     profile: str = "default",
+    quarantine: list[Any] | None = None,
 ) -> dict[str, Any]:
-    """Pure verdict function. Never raises on missing/partial data."""
+    """Pure verdict function. Never raises on missing/partial data.
+
+    ``quarantine`` is the Stage 3 quarantine's raw entries (default: the
+    repo-tracked ``config/stage3_quarantine.yaml``, PyAutoHeart#344)."""
     snapshot = snapshot or {}
     libs = list(libraries) if libraries is not None else load_release_gate_names()
     req_wf = required_workflows if required_workflows is not None else load_required_workflows()
@@ -721,6 +731,26 @@ def compute(
     else:
         add_stale("no release validation for current source", "validation_absent")
 
+    # --- Stage 3 quarantine (PyAutoHeart#344; ruling 2026-11-12) ---
+    # An ACTIVE entry is YELLOW with the list: its script was skipped, and a
+    # skipped script can never make the verdict GREEN. An EXPIRED or refused
+    # entry is RED — the script gates again. A file that cannot be read is RED
+    # too: an unreadable policy is never an empty one.
+    try:
+        q_entries = quarantine if quarantine is not None else _quarantine.load()
+        q_red, q_yellow = _quarantine.readiness_reasons(q_entries, ref.date())
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        q_red, q_yellow = [f"Stage 3 quarantine file unreadable: {exc}"], []
+    for t in q_red:
+        red.append(t)
+        hit("quarantine_expired" if "EXPIRED" in t else "quarantine_refused")
+    for t in q_yellow:
+        yellow.append(t)
+        hit("quarantine_active")
+    # A pass on Stage 3's one retry is recorded as flaky (shown, not a tier).
+    stage3_flaky = [f for f in ((vr or {}).get("flaky") or []) if isinstance(f, dict)] \
+        if isinstance(vr, dict) else []
+
     # --- release push credential (RED on a refused push, STALE if unproven) ---
     # heart/checks/token_push.py: the pyautolabs-bot App's `git push --dry-run`
     # to each release library. A refusal means the release's tag push would
@@ -838,6 +868,8 @@ def compute(
         # flat lists above are the contract every existing consumer reads.
         "stale_details": [{"text": t, "key": k} for t, k in zip(stale, stale_keys)],
         "na_reasons": na,
+        "stage3_quarantine": q_yellow,
+        "stage3_flaky": stage3_flaky,
         "validation_ahead": validation_ahead,
         "validation_note": (
             "release validation covers the rehearsed commits; main is ahead by "
