@@ -143,12 +143,17 @@ def count(value):
     return f"{value:,}"
 
 
-def plot(points, label, fmt=duration, *, gaps=True, values="Daily median values"):
+def plot(points, label, fmt=duration, *, gaps=True, values="Daily median values", min_span=1):
     """An SVG trend of ``[(date, value-or-None), ...]`` with its text twin.
 
     ``gaps=True`` breaks the line at a missing day (a gate measured daily: a
     hole is an unavailable measurement). ``gaps=False`` joins the measured
     points, for a series that is only observed on days something ran.
+
+    ``min_span`` floors the y-scale's span, in the series' own units. The gate
+    charts keep the historical floor of 1; a unit trend passes 0 so a
+    sub-second series (an import time) fills the chart height instead of
+    hugging its floor. A flat series is drawn on the floor either way.
     """
     points = sorted(points, key=lambda p: p[0])
     valid = [(d, v) for d, v in points if v is not None]
@@ -157,6 +162,7 @@ def plot(points, label, fmt=duration, *, gaps=True, values="Daily median values"
     if not gaps:
         points = valid
     low, high = min(v for _, v in valid), max(v for _, v in valid)
+    scale = max(high - low, min_span) or 1  # a flat series with no floor: no division by zero
     start, end = points[0][0], points[-1][0]
     span = max((end - start).days, 1)
     marks, segment, last = [], [], None
@@ -168,7 +174,7 @@ def plot(points, label, fmt=duration, *, gaps=True, values="Daily median values"
         last = day
         if value is None:
             continue
-        x, y = 10 + 300 * (day - start).days / span, 75 - 60 * (value - low) / max(high - low, 1)
+        x, y = 10 + 300 * (day - start).days / span, 75 - 60 * (value - low) / scale
         segment.append(f"{x:.1f},{y:.1f}")
         marks.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3"><title>{day}: {fmt(value)}</title></circle>')
     if segment:
@@ -223,15 +229,17 @@ def unit_trend(history, repo, python, field):
         value = row.get(field)
         value = (value if count(value) != "unavailable" else None) if field == "tests" else seconds(value)
         points.append((date, value))
-    measured = sum(v is not None for _, v in points)
+    measured = sorted(d for d, v in points if v is not None)
     if not measured:
         return '<p>No main-branch history in the timing record yet.</p>'
     what = {"tests": "tests collected", "wall_s": "suite wall-clock seconds",
             "import_s": "import seconds"}.get(field, field)
-    label = (f"{repo} · Python {python}: {what} on main, {points[0][0]} to {points[-1][0]}; "
-             f"{measured} days with a main run; days without one are joined")
+    # The axis joins measured points only (gaps=False), so the label's range
+    # names the same first and last day the axis does.
+    label = (f"{repo} · Python {python}: {what} on main, {measured[0]} to {measured[-1]}; "
+             f"{len(measured)} days with a main run; days without one are joined")
     return plot(points, label, count if field == "tests" else duration, gaps=False,
-                values="Values per main run day")
+                values="Values per main run day", min_span=0)
 
 
 def organism_total(history):
