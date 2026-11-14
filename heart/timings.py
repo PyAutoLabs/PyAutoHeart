@@ -913,9 +913,19 @@ def unit_history(
     would draw a branch's half-written tests as a dip in the trend.
 
     One point per (python leg, day): the day is when the run happened (``at``),
-    falling back to the line's ``date``; when a day holds several main runs the
-    one recorded last wins, the file being append-only. A value that is not a
-    measurement stays ``None`` and is drawn as missing, never as zero.
+    falling back to the line's ``date``. The epoch boundary is applied to that
+    same day, so the filter and the plotted x never disagree about which side
+    of the boundary a run fell on.
+
+    A day can hold several main runs, and a suite's wall-clock is noisy run to
+    run (one library on 2026-10-26: 100 s and 296 s, both cache hits). So
+    ``wall_s`` and ``import_s`` are the median of that day's runs, taken over
+    its cache-``hit`` runs when it has any (a cold run measures the cache, not
+    the suite) and over all of them otherwise. ``tests`` is the last run's
+    count, the file being append-only: the suite's size is not noisy, and the
+    newest run has the newest tests. A value that is not a measurement stays
+    ``None`` and is drawn as missing, never as zero; it is left out of a
+    median rather than counted as zero.
     ``since`` is the current epoch's date, as everywhere else in this record.
     ``cap`` keeps the last N days per leg.
     """
@@ -923,27 +933,41 @@ def unit_history(
     root = Path(unit_dir)
     if not root.is_dir():
         return out
+
+    def _median(runs: list[dict[str, Any]], field: str) -> float | None:
+        values = [run[field] for run in runs if run[field] is not None]
+        return statistics.median(values) if values else None
+
     for path in sorted(root.glob("*.jsonl")):
         repo = path.name[: -len(".jsonl")]
         records, _ = read_jsonl(path)
-        days: dict[tuple[str, str], dict[str, Any]] = {}
+        runs_by_day: dict[tuple[str, str], list[dict[str, Any]]] = {}
         for record in records:
-            if record.get("head_branch") != "main" or not _within_epoch(record, since):
+            if record.get("head_branch") != "main":
                 continue
             day = str(record.get("at") or "")[:10]
             if not _is_iso_date(day):
                 day = str(record.get("date") or "")
-            if not _is_iso_date(day):
+            if not _is_iso_date(day) or (since and day < since):
                 continue
             python = str(record.get("python") or "")
             suite = record.get("suite") if isinstance(record.get("suite"), dict) else {}
             tests = suite.get("tests")
-            days[(python, day)] = {
-                "date": day,
-                "python": python,
+            runs_by_day.setdefault((python, day), []).append({
                 "tests": tests if isinstance(tests, int) and not isinstance(tests, bool) and tests >= 0 else None,
                 "wall_s": _as_float(suite.get("wall_s")),
                 "import_s": _as_float(record.get("import_s")),
+                "hit": unit_cache_state(record.get("cache")) == "hit",
+            })
+        days: dict[tuple[str, str], dict[str, Any]] = {}
+        for (python, day), runs in runs_by_day.items():
+            timed = [run for run in runs if run["hit"]] or runs
+            days[(python, day)] = {
+                "date": day,
+                "python": python,
+                "tests": runs[-1]["tests"],
+                "wall_s": _median(timed, "wall_s"),
+                "import_s": _median(timed, "import_s"),
             }
         points: list[dict[str, Any]] = []
         for python in sorted({p for p, _ in days}):
