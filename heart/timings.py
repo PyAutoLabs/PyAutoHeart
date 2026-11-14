@@ -918,7 +918,7 @@ def unit_history(
     of the boundary a run fell on.
 
     A day can hold several main runs, and a suite's wall-clock is noisy run to
-    run (PyAutoArray on 2026-10-26: 100 s and 296 s, both cache hits). So
+    run (one library on 2026-10-26: 100 s and 296 s, both cache hits). So
     ``wall_s`` and ``import_s`` are the median of that day's runs, taken over
     its cache-``hit`` runs when it has any (a cold run measures the cache, not
     the suite) and over all of them otherwise. ``tests`` is the last run's
