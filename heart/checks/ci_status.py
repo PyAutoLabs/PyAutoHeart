@@ -226,9 +226,26 @@ def normalize_runs(payload: Any, branch: str = "main") -> list[dict[str, Any]]:
                 "url": run.get("url") or run.get("html_url") or "",
                 "event": run.get("event") or "",
                 "headBranch": head_branch or "",
+                "id": str(run.get("databaseId") or run.get("id") or ""),
             }
         )
     return runs
+
+
+def observer_run_id(name: str) -> str:
+    """The id of the Actions run doing this observation, when it observes itself.
+
+    Heart publishes from a workflow in its own repository, so a tick there
+    lists that very run — still ``in_progress`` — as the newest run of its
+    workflow. Read as evidence it is a permanent self-made "CI in progress"
+    that no repair can clear. Only the observer's own run is set aside; every
+    other in-progress run still reads as in progress.
+    """
+    run_id = os.environ.get("GITHUB_RUN_ID", "")
+    repo = os.environ.get("GITHUB_REPOSITORY", "").rsplit("/", 1)[-1]
+    if run_id and repo and repo.lower() == (name or "").lower():
+        return run_id
+    return ""
 
 
 def latest_per_workflow(runs: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -336,7 +353,10 @@ def build_sidecar(
     fetched itself from one an agent handed it.
     """
     required = required_for(group, config_path)
-    latest = latest_per_workflow(normalize_runs(runs))
+    own_run = observer_run_id(name)
+    observed = [r for r in normalize_runs(runs)
+                if not (own_run and r.get("id") == own_run)]
+    latest = latest_per_workflow(observed)
     workflows = {wf: _wf_entry(run, head_sha) for wf, run in latest.items()}
 
     if error:

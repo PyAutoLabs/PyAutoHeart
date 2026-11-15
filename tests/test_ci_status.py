@@ -479,3 +479,43 @@ class TestMainCloudFallback:
         assert sidecar["status"] == "unavailable"
         assert "gh: command not found" in sidecar["error"]
         assert "stale" in sidecar["error"]
+
+
+# --- the observer's own run (Heart publishing from its own repository) -----
+
+def _own_runs():
+    previous = dict(_run("Heart Health", "success", created="2026-06-29T00:00:00Z"), databaseId=1)
+    own = dict(_run("Heart Health", "", status="in_progress", created="2026-06-29T01:00:00Z"),
+               databaseId=2)
+    return [previous, own]
+
+
+def test_observer_skips_its_own_in_progress_run(tmp_path, monkeypatch):
+    monkeypatch.setenv("GITHUB_RUN_ID", "2")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "SomeOrg/PyAutoHeart")
+    side = ci.build_sidecar("PyAutoHeart", "organs", _own_runs(), HEAD, "T",
+                            config_path=_cfg(tmp_path))
+    assert side["workflows"]["Heart Health"]["status"] == "completed"
+    assert side["workflows"]["Heart Health"]["conclusion"] == "success"
+    assert side["conclusion"] == "success"
+
+
+def test_another_repos_in_progress_run_still_reads_in_progress(tmp_path, monkeypatch):
+    monkeypatch.setenv("GITHUB_RUN_ID", "2")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "SomeOrg/PyAutoHeart")
+    side = ci.build_sidecar("PyAutoFit", "organs", _own_runs(), HEAD, "T",
+                            config_path=_cfg(tmp_path))
+    assert side["workflows"]["Heart Health"]["status"] == "in_progress"
+
+
+def test_outside_actions_every_run_is_evidence(tmp_path, monkeypatch):
+    monkeypatch.delenv("GITHUB_RUN_ID", raising=False)
+    monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
+    side = ci.build_sidecar("PyAutoHeart", "organs", _own_runs(), HEAD, "T",
+                            config_path=_cfg(tmp_path))
+    assert side["workflows"]["Heart Health"]["status"] == "in_progress"
+
+
+def test_normalize_runs_keeps_the_run_id():
+    assert ci.normalize_runs([dict(_run("Tests", "success"), databaseId=7)])[0]["id"] == "7"
+    assert ci.normalize_runs({"workflow_runs": [dict(_rest_run("Tests", "success"), id=9)]})[0]["id"] == "9"
