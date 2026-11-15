@@ -170,9 +170,12 @@ DEFAULT_UNIT_TIMINGS_THRESHOLDS = {
 
 # The legacy "Unit-test timing" section says "(>3× baseline)" / "(>1.5×)" in its
 # own summary wording, which it inherited from the dev-box check's rolling
-# median. These two constants exist ONLY to keep that wording truthful when the
-# section is fed from CI rows; the rows' own advisory `warn` state is the
-# both-gates rule above, and nothing here changes it.
+# median. These two constants only split rows that ALREADY failed the
+# both-gates rule above (their own `warn` state) into the section's red and
+# yellow tiers; a row the policy calls `ok` is green, whatever its ratio. Before
+# 2026-11-15 the tiers read `ratio` alone, so a 28 ms change on a 15 ms test was
+# a "3× regression" and turned monitoring RED while the row itself said ok
+# (PyAutoMind draft/bug/pyautoheart/unit_timing_monitoring_ignores_min_delta.md).
 LEGACY_RED_FACTOR = 3.0
 LEGACY_YELLOW_FACTOR = 1.5
 
@@ -784,12 +787,15 @@ def legacy_summaries(
             "run_speed_factor": row.get("run_speed_factor", 1.0),
             "normalized_seconds": row.get("normalized_seconds", row.get("seconds")),
         }
-        if ratio > LEGACY_RED_FACTOR:
-            unit["red"].append(entry)
-        elif ratio > LEGACY_YELLOW_FACTOR:
-            unit["yellow"].append(entry)
-        else:
+        # One policy: the row's own both-gates state (`slow_factor` AND
+        # `min_delta_s`, config/repos.yaml) decides whether this is drift at
+        # all; the legacy factors only tier what it already called `warn`.
+        if row.get("state") != "warn":
             unit["green"].append(entry)
+        elif ratio > LEGACY_RED_FACTOR:
+            unit["red"].append(entry)
+        else:
+            unit["yellow"].append(entry)
 
     evidence_times = [str(r.get("at")) for r in repos if r.get("at")]
     evidence_ts = min(evidence_times) if evidence_times else None
