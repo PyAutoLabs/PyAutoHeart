@@ -532,6 +532,40 @@ def test_the_legacy_unit_buckets_keep_the_sections_wording_truthful(tmp_path):
     assert unit["yellow_count"] == 1 and unit["red_count"] == 0
 
 
+def test_a_large_ratio_under_the_absolute_floor_is_green_not_a_regression(tmp_path):
+    """2026-11-15: PyAutoNerves test_config 0.015 s -> 0.043 s (3.01x) turned
+    monitoring RED while its own row said ok; locally it measured 5 ms. The
+    policy's `min_delta_s` floor decides, the ratio alone never does."""
+    side = _sidecar(tmp_path, junit=_junit(_case(time="0.050")))
+    roll = ut.aggregate([side], "T", THRESHOLDS, record_prev_rows=_prev_rows(0.015))
+    (row,) = roll["tests"]
+    assert row["state"] == "ok" and row["ratio"] > ut.LEGACY_RED_FACTOR
+    unit, _ = ut.legacy_summaries(roll, THRESHOLDS)
+    assert unit["red_count"] == 0 and unit["yellow_count"] == 0
+    assert unit["green_count"] == 1
+
+
+def test_a_slowdown_under_the_slow_factor_is_green_even_past_the_floor(tmp_path):
+    """1.55x and +5.6 s (a JAX step0 test normalised on a fast runner) is no
+    drift: under `slow_factor`, whatever the absolute delta."""
+    side = _sidecar(tmp_path, junit=_junit(_case(time="15.8")))
+    roll = ut.aggregate([side], "T", THRESHOLDS, record_prev_rows=_prev_rows(10.2))
+    unit, _ = ut.legacy_summaries(roll, THRESHOLDS)
+    assert unit["red_count"] == 0 and unit["yellow_count"] == 0
+
+
+def test_only_rows_that_pass_both_gates_reach_the_red_and_yellow_tiers(tmp_path):
+    side = _sidecar(tmp_path, junit=_junit(_case(time="2.5")))
+    roll = ut.aggregate([side], "T", THRESHOLDS, record_prev_rows=_prev_rows(1.0))
+    unit, _ = ut.legacy_summaries(roll, THRESHOLDS)
+    # 2.5x but only +1.5 s: under the 2 s floor, so not a regression.
+    assert unit["yellow_count"] == 0 and unit["green_count"] == 1
+    side = _sidecar(tmp_path, sub="red", junit=_junit(_case(time="9.0")))
+    roll = ut.aggregate([side], "T", THRESHOLDS, record_prev_rows=_prev_rows(2.0))
+    unit, _ = ut.legacy_summaries(roll, THRESHOLDS)
+    assert unit["red_count"] == 1
+
+
 def test_an_unavailable_repo_is_listed_never_counted_as_measured(tmp_path):
     dead = ut.build_sidecar("RepoB", "libraries", OWNER, [], "T", error="boom")
     roll = ut.aggregate([_sidecar(tmp_path), dead], "T", THRESHOLDS)
