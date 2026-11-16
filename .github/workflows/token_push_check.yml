@@ -18,7 +18,10 @@ name: Token Push Check
 # JSON as an artifact and fails on any refusal — but commits nothing.
 #
 # Observer boundary: the only write is that sidecar commit to PyAutoHeart
-# (never from a pull_request run).
+# (never from a pull_request run). It pushes as the pyautolabs-bot App through
+# a second token scoped to PyAutoHeart alone: `main` is under the M2.2 ruleset,
+# whose bypass names the App, and a ruleset cannot name GitHub Actions
+# (PyAutoHands#341).
 
 on:
   schedule:
@@ -30,10 +33,10 @@ on:
       - .github/workflows/token_push_check.yml
       - heart/checks/token_push.py
 
-# contents: write → commit the sidecar into Heart's OWN repo (GITHUB_TOKEN).
-# The library probes use the App token only.
+# contents: read → the checkout only. Neither the library probes nor the
+# sidecar commit use GITHUB_TOKEN; each has its own App token.
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: token-push-check
@@ -46,6 +49,10 @@ jobs:
     steps:
       - name: Checkout PyAutoHeart
         uses: actions/checkout@v4
+        with:
+          # No GITHUB_TOKEN extraheader in .git/config: it would shadow the
+          # App credential the sidecar commit pushes with.
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -81,8 +88,8 @@ jobs:
           # never reaches them.
           gh auth setup-git
           PYTHONPATH="$PWD" python -m heart.checks.token_push --out state/token_push.json
-          # The commit below pushes Heart with checkout's GITHUB_TOKEN; drop
-          # the App helper so it plays no part in that.
+          # Drop the library-scoped helper: the commit below installs it
+          # again with its own PyAutoHeart-scoped token.
           git config --global --unset-all credential.https://github.com.helper || true
 
       - name: Upload the sidecar (pull_request runs)
@@ -92,11 +99,28 @@ jobs:
           name: token-push-sidecar
           path: state/token_push.json
 
+      - name: Mint App token (push to PyAutoHeart main)
+        # Scoped to this repo, contents write only — separate from the
+        # library-scoped probe token above. No fallback.
+        if: github.event_name != 'pull_request'
+        id: push_token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: PyAutoLabs
+          repositories: PyAutoHeart
+          permission-contents: write
+
       - name: Commit the sidecar (own repo only, never from a PR)
         if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ steps.push_token.outputs.token }}
         run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name  "pyautolabs-bot[bot]"
+          git config user.email "346909844+pyautolabs-bot[bot]@users.noreply.github.com"
+          # gh as git's credential helper, reading GH_TOKEN (the App token).
+          gh auth setup-git
           git add state/token_push.json
           if git diff --cached --quiet; then
             echo "token_push.json unchanged — nothing to commit."
