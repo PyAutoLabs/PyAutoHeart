@@ -202,3 +202,58 @@ def test_library_ci_on_main_sends_the_heart_refresh_event():
     assert "event_type=heart-refresh" in send
     # The event type sent is the one heart-health.yml listens for.
     assert "heart-refresh" in _triggers("heart-health.yml")["repository_dispatch"]["types"]
+
+
+# --- own-repo pushes go as the bot App (PyAutoHands#341) --------------------
+#
+# `main` is under the M2.2 ruleset. Its bypass can name the pyautolabs-bot App
+# but never GitHub Actions, so a GITHUB_TOKEN push to main would be refused.
+
+_PUSH_JOBS = {"heart-health.yml": "heart-health", "token_push_check.yml": "token-push"}
+
+
+def _push_wiring(name, commit_needle):
+    data = yaml.safe_load((WORKFLOWS / name).read_text())
+    steps = data["jobs"][_PUSH_JOBS[name]]["steps"]
+    mint_i = next(i for i, s in enumerate(steps) if s.get("id") == "push_token")
+    commit_i = next(i for i, s in enumerate(steps) if commit_needle in s.get("name", ""))
+    return data, steps, steps[mint_i], steps[commit_i], mint_i, commit_i
+
+
+def _assert_bot_push(name, commit_needle):
+    data, steps, mint, commit, mint_i, commit_i = _push_wiring(name, commit_needle)
+    # GITHUB_TOKEN can no longer write, so a leftover push fails loudly.
+    assert data["permissions"]["contents"] == "read"
+    # No persisted GITHUB_TOKEN header to shadow the App credential.
+    assert steps[0]["uses"].startswith("actions/checkout@")
+    assert steps[0]["with"]["persist-credentials"] is False
+    # A write token scoped to this repo alone, minted right before the push.
+    assert mint["uses"].startswith("actions/create-github-app-token@v3")
+    assert mint["with"]["repositories"] == "PyAutoHeart"
+    assert mint["with"]["permission-contents"] == "write"
+    assert mint["if"] == commit["if"]
+    assert mint_i == commit_i - 1
+    token = commit["env"]["GH_TOKEN"]
+    assert token == "${{ steps.push_token.outputs.token }}"
+    assert "||" not in token
+    body = commit["run"]
+    assert "gh auth setup-git" in body
+    assert body.index("gh auth setup-git") < body.index("git push")
+    assert "346909844+pyautolabs-bot[bot]@users.noreply.github.com" in body
+    assert "github-actions[bot]" not in body
+    assert "[skip ci]" in body
+
+
+def test_the_board_commit_pushes_as_the_bot_app():
+    _assert_bot_push("heart-health.yml", "timing record (own repo only")
+    # The read-only owner-wide mint for the checks is untouched.
+    _, job = _job()
+    read = next(s for s in job["steps"] if s.get("id") == "app_token")
+    assert read["with"]["permission-contents"] == "read"
+
+
+def test_the_token_push_sidecar_pushes_as_the_bot_app():
+    _assert_bot_push("token_push_check.yml", "Commit the sidecar")
+    _, steps, _, commit, _, _ = _push_wiring("token_push_check.yml", "Commit the sidecar")
+    assert "for attempt in 1 2 3" in commit["run"]
+    assert commit["if"] == "github.event_name != 'pull_request'"
