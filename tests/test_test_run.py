@@ -420,7 +420,7 @@ SKIP_RECORD = {
     "schema": 1, "run_id": 31, "swept": False,
     "reason": "no main moved since run 30",
     "full_sweep_run_id": 30, "full_sweep_created_at": "2026-11-18T03:00:05Z",
-    "pinned": {}, "commit_shas": {"PyAutoGalaxy": "a" * 40},
+    "pinned": {}, "commit_shas": {"LibA": "a" * 40},
 }
 
 
@@ -447,7 +447,7 @@ def test_skipped_night_takes_counts_from_the_attested_sweep(monkeypatch, tmp_pat
     assert out["full_sweep_ts"] == "2026-11-18T03:00:05Z"
     # Labelled as a re-attestation, never as a fresh sweep of run 31.
     assert out["run_label"] == "cloud#30 (re-attested by #31: no main moved)"
-    assert out["commit_shas"] == {"PyAutoGalaxy": "a" * 40}
+    assert out["commit_shas"] == {"LibA": "a" * 40}
 
 
 def test_skipped_night_keeps_the_evidence_fresh(monkeypatch, tmp_path):
@@ -494,10 +494,10 @@ def test_pinned_run_is_marked(monkeypatch, tmp_path):
     monkeypatch.setattr(tr, "_server_verdict", lambda: {
         "ready": False, "ts": "t", "run_id": 32, "url": "U"})
     record = {**SKIP_RECORD, "run_id": 32, "swept": True, "full_sweep_run_id": 32,
-              "pinned": {"PyAutoGalaxy": "b" * 40}}
+              "pinned": {"LibA": "b" * 40}}
     out = tr.run(results_dir=tmp_path, fetch_cloud=True,
                  cloud_sha_fetcher=lambda rid: record)
-    assert out["pinned"] == {"PyAutoGalaxy": "b" * 40}
+    assert out["pinned"] == {"LibA": "b" * 40}
 
 
 def test_main_caches_the_sha_record_per_run_id(monkeypatch, tmp_path):

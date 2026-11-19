@@ -46,29 +46,43 @@ import sys
 from pathlib import Path
 from typing import Callable
 
-# Must match what workspace-validation.yml checks out: the libraries cloned
-# in run_scripts/run_notebooks and the workspace map in find_scripts.
-# tests/test_smoke_sha_gate.py asserts the two lists agree.
-LIBRARIES = (
-    "PyAutoNerves", "PyAutoArray", "PyAutoFit", "PyAutoGalaxy", "PyAutoLens",
-)
-WORKSPACES = (
-    "autofit_workspace", "autogalaxy_workspace", "autolens_workspace",
-    "autofit_workspace_test", "autogalaxy_workspace_test", "autolens_workspace_test",
-    "HowToGalaxy", "HowToLens", "HowToFit",
-    "euclid_strong_lens_modeling_pipeline",
-)
-COVERED = LIBRARIES + WORKSPACES
-OWNER = "PyAutoLabs"
 FULL_SWEEP_MAX_AGE_DAYS = 7
 SCHEMA = 1
 _SHA = re.compile(r"[0-9a-f]{40}")
+# The body the sweep runs. It is the one source of truth for which repos the
+# sweep covers: load_covered() reads them from its checkout steps, so this
+# script names no repo itself (the organ tenant firewall keeps instance facts
+# out of Heart's Python).
+BODY = Path(".github/workflows/workspace-validation.yml")
+
+
+def load_covered(body: Path = BODY) -> tuple[str, ...]:
+    """Libraries then workspaces the body checks out, in order.
+
+    Libraries: the words of the body's `for lib in ...; do` clone loops (all
+    loops must agree). Workspaces: the values of find_scripts' `declare -A WS`
+    map. Raises if either is missing, so a reshaped body fails the gate loudly
+    instead of silently covering nothing."""
+    text = body.read_text()
+    loops = {tuple(m.split()) for m in re.findall(r"for lib in ([\w ]+); do", text)}
+    if len(loops) != 1:
+        raise ValueError(f"{body}: expected one library list, found {sorted(loops)}")
+    ws_map = re.search(r"declare -A WS=\((.*?)\)\n", text, re.S)
+    workspaces = tuple(re.findall(r"\]=(\w+)", ws_map.group(1))) if ws_map else ()
+    if not workspaces:
+        raise ValueError(f"{body}: no workspace map (declare -A WS) found")
+    return loops.pop() + workspaces
+
+
+def owner() -> str:
+    """The GitHub owner of the covered repos: this repository's owner."""
+    return os.environ.get("OWNER") or os.environ["GITHUB_REPOSITORY_OWNER"]
 
 
 def ls_remote(repo: str, ref: str) -> str:
-    """The commit `ref` names in PyAutoLabs/<repo>, or "" if none."""
+    """The commit `ref` names in <owner>/<repo>, or "" if none."""
     out = subprocess.run(
-        ["git", "ls-remote", f"https://github.com/{OWNER}/{repo}", ref],
+        ["git", "ls-remote", f"https://github.com/{owner()}/{repo}", ref],
         capture_output=True, text=True, timeout=60, check=True,
     ).stdout
     for line in out.splitlines():
@@ -78,24 +92,28 @@ def ls_remote(repo: str, ref: str) -> str:
     return ""  # short SHAs and unknown refs: resolve() reports them
 
 
-def parse_pins(raw: str | None) -> dict[str, str]:
+def parse_pins(raw: str | None, covered: tuple[str, ...]) -> dict[str, str]:
     """The dispatch input as a {repo: ref} dict; rejects unknown repos."""
     pins = json.loads(raw or "{}") or {}
     if not isinstance(pins, dict):
         raise ValueError("commit_shas must be a JSON object {repo: sha}")
-    unknown = sorted(set(pins) - set(COVERED))
+    unknown = sorted(set(pins) - set(covered))
     if unknown:
         raise ValueError(
             f"commit_shas names repos the sweep does not cover: {unknown}; "
-            f"covered: {list(COVERED)}"
+            f"covered: {list(covered)}"
         )
     return {k: str(v).strip() for k, v in pins.items() if str(v).strip()}
 
 
-def resolve(pins: dict[str, str], lookup: Callable[[str, str], str] = ls_remote) -> dict[str, str]:
+def resolve(
+    pins: dict[str, str],
+    covered: tuple[str, ...],
+    lookup: Callable[[str, str], str] = ls_remote,
+) -> dict[str, str]:
     """Full 40-hex SHA for every covered repo: the pin if given, else main."""
     shas = {}
-    for repo in COVERED:
+    for repo in covered:
         ref = pins.get(repo, "refs/heads/main")
         sha = ref.lower() if _SHA.fullmatch(ref.lower()) else lookup(repo, ref)
         if not _SHA.fullmatch(sha or ""):
@@ -142,7 +160,7 @@ def decide(
     else:
         full_id = previous.get("full_sweep_run_id") or previous_run_id
         full_ts = previous.get("full_sweep_created_at")
-        moved = sorted(r for r in COVERED if previous["commit_shas"].get(r) != shas[r])
+        moved = sorted(r for r in shas if previous["commit_shas"].get(r) != shas[r])
         age = _age_days(full_ts, now)
         if moved:
             sweep, reason = True, f"main moved since run {previous_run_id}: {', '.join(moved)}"
@@ -190,7 +208,8 @@ def summary_markdown(record: dict) -> str:
 
 
 def main() -> int:
-    pins = parse_pins(os.environ.get("PINS"))
+    covered = load_covered()
+    pins = parse_pins(os.environ.get("PINS"), covered)
     previous = None
     prev_path = os.environ.get("PREVIOUS_RECORD", "")
     if prev_path and Path(prev_path).is_file():
@@ -198,7 +217,7 @@ def main() -> int:
             previous = json.loads(Path(prev_path).read_text())
         except ValueError:
             previous = None
-    shas = resolve(pins)
+    shas = resolve(pins, covered)
     last_id = os.environ.get("LAST_RUN_ID", "")
     sweep, reason, record = decide(
         shas, pins, previous, os.environ.get("PREVIOUS_RUN_ID", ""),

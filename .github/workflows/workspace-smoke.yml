@@ -54,7 +54,7 @@ jobs:
       - name: Checkout PyAutoHeart (gate script)
         uses: actions/checkout@v4
         with:
-          sparse-checkout: .github/scripts
+          sparse-checkout: .github   # the gate script and the body it reads the covered repos from
       - name: Fetch the last successful run's SHA record
         id: previous
         env:
@@ -86,6 +86,7 @@ jobs:
           LAST_RUN_CONCLUSION: ${{ steps.previous.outputs.last_conclusion }}
           PREVIOUS_RECORD: previous/shas.json
           PREVIOUS_RUN_ID: ${{ steps.previous.outputs.run_id }}
+          OWNER: ${{ github.repository_owner }}
           RUN_ID: ${{ github.run_id }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           EVENT: ${{ github.event_name }}

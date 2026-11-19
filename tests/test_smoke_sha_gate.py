@@ -28,10 +28,13 @@ gate = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gate)
 
 NOW = datetime.datetime(2026, 11, 20, 3, 0, 5, tzinfo=datetime.timezone.utc)
+# Placeholder repos: the decision logic never needs a real name (and the organ
+# tenant firewall keeps real ones out of Heart's Python).
+COVERED = ("LibA", "LibB", "ws_a", "ws_b")
 
 
 def _shas(char="a"):
-    return {repo: char * 40 for repo in gate.COVERED}
+    return {repo: char * 40 for repo in COVERED}
 
 
 def _previous(shas, full_id="100", full_ts="2026-11-18T03:00:00Z", swept=True):
@@ -60,9 +63,9 @@ def test_a_skip_after_a_skip_still_attests_the_original_full_sweep():
 
 def test_one_moved_main_runs_the_sweep_and_names_it():
     now = _shas()
-    now["PyAutoGalaxy"] = "b" * 40
+    now["LibB"] = "b" * 40
     sweep, reason, record = gate.decide(now, {}, _previous(_shas()), "100", NOW)
-    assert sweep is True and "PyAutoGalaxy" in reason
+    assert sweep is True and reason.endswith(": LibB")
     assert record["full_sweep_run_id"] == record["run_id"]
 
 
@@ -79,7 +82,7 @@ def test_no_readable_record_runs_the_sweep(previous):
 
 
 def test_a_pinned_dispatch_never_skips():
-    pins = {"PyAutoGalaxy": "a" * 40}
+    pins = {"LibB": "a" * 40}
     sweep, reason, record = gate.decide(_shas(), pins, _previous(_shas()), "100", NOW)
     assert sweep is True and reason.startswith("pinned by dispatch")
     assert record["pinned"] == pins
@@ -111,7 +114,7 @@ def test_the_summary_carries_the_headline_and_every_sha():
     _, _, record = gate.decide(_shas(), {}, _previous(_shas()), "100", NOW)
     text = gate.summary_markdown(record)
     assert "no main moved since run 100" in text
-    for repo in gate.COVERED:
+    for repo in COVERED:
         assert f"| {repo} | `{'a' * 40}` | main |" in text
 
 
@@ -124,24 +127,24 @@ def test_resolve_uses_main_unless_pinned_and_resolves_refs():
         calls.append((repo, ref))
         return ("c" if ref == "feature/x" else "d") * 40
 
-    shas = gate.resolve({"PyAutoFit": "E" * 40, "PyAutoLens": "feature/x"}, lookup)
-    assert shas["PyAutoFit"] == "e" * 40          # full SHA: taken as given
-    assert shas["PyAutoLens"] == "c" * 40         # branch: resolved
-    assert shas["HowToLens"] == "d" * 40          # unpinned: main
-    assert ("PyAutoFit", "E" * 40) not in calls
-    assert ("HowToLens", "refs/heads/main") in calls
+    shas = gate.resolve({"LibA": "E" * 40, "LibB": "feature/x"}, COVERED, lookup)
+    assert shas["LibA"] == "e" * 40          # full SHA: taken as given
+    assert shas["LibB"] == "c" * 40          # branch: resolved
+    assert shas["ws_a"] == "d" * 40          # unpinned: main
+    assert ("LibA", "E" * 40) not in calls
+    assert ("ws_a", "refs/heads/main") in calls
 
 
 def test_resolve_rejects_an_unresolvable_ref():
     with pytest.raises(ValueError, match="cannot resolve"):
-        gate.resolve({"PyAutoFit": "abc123"}, lambda repo, ref: "")
+        gate.resolve({"LibA": "abc123"}, COVERED, lambda repo, ref: "")
 
 
 def test_pins_must_name_covered_repos():
     with pytest.raises(ValueError, match="does not cover"):
-        gate.parse_pins('{"PyAutoGalxy": "abc"}')
-    assert gate.parse_pins("") == {}
-    assert gate.parse_pins('{"PyAutoGalaxy": " %s "}' % ("a" * 40)) == {"PyAutoGalaxy": "a" * 40}
+        gate.parse_pins('{"LibC": "abc"}', COVERED)
+    assert gate.parse_pins("", COVERED) == {}
+    assert gate.parse_pins('{"LibB": " %s "}' % ("a" * 40), COVERED) == {"LibB": "a" * 40}
 
 
 def test_main_writes_record_outputs_and_summary(tmp_path, monkeypatch):
@@ -149,8 +152,8 @@ def test_main_writes_record_outputs_and_summary(tmp_path, monkeypatch):
     prev.write_text(json.dumps(_previous(_shas())))
     out, summ = tmp_path / "out", tmp_path / "summary"
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(gate, "ls_remote", lambda repo, ref: "a" * 40)
-    monkeypatch.setattr(gate, "resolve", lambda pins, lookup=None: _shas())
+    monkeypatch.setattr(gate, "load_covered", lambda body=None: COVERED)
+    monkeypatch.setattr(gate, "resolve", lambda pins, covered, lookup=None: _shas())
     for k, v in {"PINS": "", "PREVIOUS_RECORD": str(prev), "PREVIOUS_RUN_ID": "100",
                  "RUN_ID": "200", "GITHUB_OUTPUT": str(out),
                  "GITHUB_STEP_SUMMARY": str(summ)}.items():
@@ -175,7 +178,8 @@ def test_main_reads_force_and_the_latest_run_from_the_environment(tmp_path, monk
     prev = tmp_path / "prev.json"
     prev.write_text(json.dumps(_previous(_shas())))
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(gate, "resolve", lambda pins, lookup=None: _shas())
+    monkeypatch.setattr(gate, "load_covered", lambda body=None: COVERED)
+    monkeypatch.setattr(gate, "resolve", lambda pins, covered, lookup=None: _shas())
     for k, v in {"PINS": "", "PREVIOUS_RECORD": str(prev), "PREVIOUS_RUN_ID": "100",
                  "RUN_ID": "200", "GITHUB_OUTPUT": str(tmp_path / "o"),
                  "GITHUB_STEP_SUMMARY": str(tmp_path / "s"), **env}.items():
@@ -190,12 +194,38 @@ def _load(name):
     return yaml.safe_load((WORKFLOWS / name).read_text())
 
 
-def test_covered_repos_match_what_the_body_checks_out():
-    body = (WORKFLOWS / "workspace-validation.yml").read_text()
-    ws_map = re.search(r"declare -A WS=\((.*?)\)\n", body, re.S).group(1)
-    assert set(re.findall(r"=(\w+)", ws_map)) == set(gate.WORKSPACES)
-    loops = re.findall(r"for lib in ([\w ]+); do", body)
-    assert loops and all(tuple(l.split()) == gate.LIBRARIES for l in loops)
+def _body_covered():
+    return gate.load_covered(WORKFLOWS / "workspace-validation.yml")
+
+
+def test_covered_repos_are_read_from_the_body_and_agree_with_every_checkout():
+    """The body is the one source of truth for the covered repos. Every
+    workspace checkout in it must name a covered repo, and every library loop
+    must list the same libraries (load_covered raises otherwise)."""
+    covered = _body_covered()
+    assert len(covered) == len(set(covered)) and covered
+    body = _load("workspace-validation.yml")
+    notebook_ws = {p["workspace"] for p in
+                   body["jobs"]["generate_notebooks"]["strategy"]["matrix"]["project"]}
+    assert notebook_ws <= set(covered)
+    for job in ("run_scripts", "run_notebooks"):
+        route = next(s["run"] for s in body["jobs"][job]["steps"] if s.get("id") == "ws")
+        assert set(re.findall(r"repo=(\w+)", route)) <= set(covered), job
+    loops = re.findall(r"for lib in ([\w ]+); do",
+                       (WORKFLOWS / "workspace-validation.yml").read_text())
+    assert loops and all(tuple(l.split()) == covered[:len(l.split())] for l in loops)
+
+
+def test_load_covered_fails_loudly_on_a_reshaped_body(tmp_path):
+    body = tmp_path / "body.yml"
+    body.write_text("for lib in LibA LibB; do\n")
+    with pytest.raises(ValueError, match="no workspace map"):
+        gate.load_covered(body)
+    body.write_text("for lib in LibA; do\nfor lib in LibB; do\ndeclare -A WS=(\n [a]=ws_a\n)\n")
+    with pytest.raises(ValueError, match="one library list"):
+        gate.load_covered(body)
+    body.write_text("for lib in LibA LibB; do\ndeclare -A WS=(\n [a]=ws_a [b]=ws_b\n)\n")
+    assert gate.load_covered(body) == COVERED
 
 
 def test_smoke_entry_gates_the_sweep_and_passes_the_shas():
@@ -249,7 +279,7 @@ def test_body_pins_every_smoke_checkout_to_the_resolved_refs():
                 if s.get("name") == "Checkout workspace"]
         assert refs and all("needs.find_scripts.outputs.refs" in r for r in refs), job
     text = (WORKFLOWS / "workspace-validation.yml").read_text()
-    assert 'git clone --depth 1 "https://github.com/PyAutoLabs/$lib"' not in text
+    assert not re.search(r'git clone --depth 1 "https://github\.com/[^/]+/\$lib"', text)
 
 
 def test_resolve_mode_keeps_release_checkouts_on_main(tmp_path):
@@ -257,11 +287,11 @@ def test_resolve_mode_keeps_release_checkouts_on_main(tmp_path):
     import subprocess
     step = next(s for s in _load("workspace-validation.yml")["jobs"]["find_scripts"]["steps"]
                 if s.get("id") == "mode")
-    for mode, expected in [("smoke", {"PyAutoFit": "a" * 40}), ("release", {})]:
+    for mode, expected in [("smoke", {"LibA": "a" * 40}), ("release", {})]:
         out = tmp_path / f"out-{mode}"
         subprocess.run(["bash", "-ec", step["run"]], check=True, env={
             **os.environ, "MODE_INPUT": mode, "GITHUB_OUTPUT": str(out),
-            "COMMIT_SHAS": json.dumps({"PyAutoFit": "a" * 40}, indent=2)})
+            "COMMIT_SHAS": json.dumps({"LibA": "a" * 40}, indent=2)})
         lines = dict(l.split("=", 1) for l in out.read_text().splitlines())
         assert lines["mode"] == mode and json.loads(lines["refs"]) == expected
 
@@ -279,7 +309,13 @@ def test_library_clone_step_checks_out_the_pinned_sha(tmp_path):
 
     origin = tmp_path / "origin"
     first = {}
-    for lib in gate.LIBRARIES:
+    step = next(s for s in _load("workspace-validation.yml")["jobs"]["run_scripts"]["steps"]
+                if str(s.get("name", "")).startswith("Checkout libraries"))
+    libraries = re.search(r"for lib in ([\w ]+); do", step["run"]).group(1).split()
+    url_prefix = re.search(r'git clone --depth 1 "(https://github\.com/[^/"$]+/)\$1"',
+                           step["run"]).group(1)
+    pinned = libraries[0]
+    for lib in libraries:
         repo = origin / lib
         repo.mkdir(parents=True)
         git("init", "-q", "-b", "main", cwd=repo)
@@ -289,17 +325,15 @@ def test_library_clone_step_checks_out_the_pinned_sha(tmp_path):
             git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", str(n), cwd=repo)
             if n == 1:
                 first[lib] = git("rev-parse", "HEAD", cwd=repo)
-    step = next(s for s in _load("workspace-validation.yml")["jobs"]["run_scripts"]["steps"]
-                if str(s.get("name", "")).startswith("Checkout libraries"))
     work = tmp_path / "work"
     work.mkdir()
-    env = {**os.environ, "REFS": json.dumps({"PyAutoGalaxy": first["PyAutoGalaxy"]}),
+    env = {**os.environ, "REFS": json.dumps({pinned: first[pinned]}),
            "GIT_CONFIG_COUNT": "2",
            "GIT_CONFIG_KEY_0": f"url.file://{origin}/.insteadOf",
-           "GIT_CONFIG_VALUE_0": "https://github.com/PyAutoLabs/",
+           "GIT_CONFIG_VALUE_0": url_prefix,
            "GIT_CONFIG_KEY_1": "uploadpack.allowAnySHA1InWant",
            "GIT_CONFIG_VALUE_1": "true"}
     subprocess.run(["bash", "-ec", step["run"]], cwd=work, env=env, check=True,
                    capture_output=True, text=True)
-    for lib in gate.LIBRARIES:
-        assert (work / "libs" / lib / "f").read_text() == ("1" if lib == "PyAutoGalaxy" else "2")
+    for lib in libraries:
+        assert (work / "libs" / lib / "f").read_text() == ("1" if lib == pinned else "2")

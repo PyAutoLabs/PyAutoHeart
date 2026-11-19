@@ -36,11 +36,12 @@ jobs:
       - name: Checkout PyAutoHeart (gate script)
         uses: actions/checkout@v4
         with:
-          sparse-checkout: .github/scripts
+          sparse-checkout: .github   # the gate script and the body it reads the covered repos from
       - name: Resolve the pinned SHAs
         id: decide
         env:
           PINS: ${{ inputs.commit_shas }}
+          OWNER: ${{ github.repository_owner }}
           RUN_ID: ${{ github.run_id }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           EVENT: ${{ github.event_name }}
