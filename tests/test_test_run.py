@@ -4,7 +4,16 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from heart.checks import test_run as tr
+
+
+@pytest.fixture(autouse=True)
+def _no_live_sha_record(monkeypatch):
+    """main() now also fetches the run's SHA record; never reach `gh` from
+    the suite. Tests that need a record pass cloud_sha_fetcher or re-patch."""
+    monkeypatch.setattr(tr, "_cloud_sha_record", lambda rid: None)
 
 
 def test_from_report_extracts_ready_counts_and_stale_parked():
@@ -77,6 +86,19 @@ def test_cloud_verdict_parses_completed_run(monkeypatch):
                             "createdAt": "2026-06-23T00:00:00Z", "databaseId": 42, "url": "u"}])))
     v = tr._cloud_verdict()
     assert v["ready"] is True and v["run_id"] == 42 and v["ts"] == "2026-06-23T00:00:00Z"
+
+
+def test_cloud_verdict_reads_only_runs_on_main(monkeypatch):
+    """A dispatch from a feature branch (run 43034177136 was one) is not the
+    smoke verdict."""
+    import types
+    seen = []
+    monkeypatch.setattr(tr.subprocess, "run", lambda argv, **k: (
+        seen.append(argv), types.SimpleNamespace(stdout="[]"))[1])
+    tr._cloud_verdict()
+    argv = seen[0]
+    assert argv[argv.index("--branch") + 1] == "main"
+    assert argv[argv.index("--workflow") + 1] == "workspace-smoke.yml"
 
 
 def test_cloud_verdict_in_progress_is_unknown(monkeypatch):
@@ -387,3 +409,112 @@ def test_main_downloads_artifact_for_new_run_id(monkeypatch, tmp_path):
     assert written["failed"] == 1 and written["counts_measured"] is True
     assert written["cloud_report_run_id"] == 22
     assert written["failing_scripts"][0]["script"] == "scripts/a/b.py"
+
+
+# --- skipped nights (PyAutoHeart#354) ----------------------------------------
+#
+# workspace-smoke.yml skips the sweep when no main moved; the skip run concludes
+# success and its SHA record names the full sweep it re-attests.
+
+SKIP_RECORD = {
+    "schema": 1, "run_id": 31, "swept": False,
+    "reason": "no main moved since run 30",
+    "full_sweep_run_id": 30, "full_sweep_created_at": "2026-11-18T03:00:05Z",
+    "pinned": {}, "commit_shas": {"LibA": "a" * 40},
+}
+
+
+def _green_skip_verdict(monkeypatch):
+    monkeypatch.setattr(tr, "_server_verdict", lambda: {
+        "ready": True, "ts": "2026-11-19T03:00:04Z", "run_id": 31, "url": "U31"})
+
+
+def test_skipped_night_takes_counts_from_the_attested_sweep(monkeypatch, tmp_path):
+    _green_skip_verdict(monkeypatch)
+    fetched = []
+
+    def report(rid):
+        fetched.append(rid)
+        return {"passed": 120, "failed": 0, "skipped": 4, "timeout": 0}
+
+    out = tr.run(results_dir=tmp_path, fetch_cloud=True,
+                 cloud_report_fetcher=report,
+                 cloud_sha_fetcher=lambda rid: SKIP_RECORD)
+    assert fetched == [30]  # the full sweep's report, not the skip run's
+    assert out["ready"] is True and out["counts_measured"] is True
+    assert out["passed"] == 120 and out["cloud_report_run_id"] == 30
+    assert out["sweep_skipped"] is True and out["full_sweep_run_id"] == 30
+    assert out["full_sweep_ts"] == "2026-11-18T03:00:05Z"
+    # Labelled as a re-attestation, never as a fresh sweep of run 31.
+    assert out["run_label"] == "cloud#30 (re-attested by #31: no main moved)"
+    assert out["commit_shas"] == {"LibA": "a" * 40}
+
+
+def test_skipped_night_keeps_the_evidence_fresh(monkeypatch, tmp_path):
+    """The skip run's own timestamp is the evidence ts, so readiness' age rule
+    (TEST_STALE_DAYS) does not age a quiet week into STALE."""
+    _green_skip_verdict(monkeypatch)
+    out = tr.run(results_dir=tmp_path, fetch_cloud=True,
+                 cloud_report_fetcher=lambda rid: None,
+                 cloud_sha_fetcher=lambda rid: SKIP_RECORD)
+    assert out["ts"] == "2026-11-19T03:00:04Z"
+    import datetime
+    from heart import readiness
+    # A day after the skip: the age rule measures from the skip run.
+    ref = datetime.datetime(2026, 11, 20, 3, tzinfo=datetime.timezone.utc)
+    assert readiness._age_days(out["ts"], ref) < 1.01
+    assert readiness._age_days(out["full_sweep_ts"], ref) > 1.9
+
+
+def test_full_sweep_record_changes_nothing_but_carries_the_shas(monkeypatch, tmp_path):
+    monkeypatch.setattr(tr, "_server_verdict", lambda: {
+        "ready": True, "ts": "t", "run_id": 30, "url": "U30"})
+    record = {**SKIP_RECORD, "run_id": 30, "swept": True, "full_sweep_run_id": 30}
+    fetched = []
+    out = tr.run(results_dir=tmp_path, fetch_cloud=True,
+                 cloud_report_fetcher=lambda rid: fetched.append(rid),
+                 cloud_sha_fetcher=lambda rid: record)
+    assert fetched == [30]
+    assert "sweep_skipped" not in out and out["run_label"] == "cloud#30"
+    assert out["commit_shas"] == record["commit_shas"]
+
+
+def test_missing_sha_record_behaves_as_before(monkeypatch, tmp_path):
+    """Runs from before the gate, or an expired artifact: unchanged behaviour."""
+    monkeypatch.setattr(tr, "_server_verdict", lambda: {
+        "ready": True, "ts": "t", "run_id": 29, "url": "U"})
+    out = tr.run(results_dir=tmp_path, fetch_cloud=True,
+                 cloud_report_fetcher=lambda rid: None,
+                 cloud_sha_fetcher=lambda rid: None)
+    assert out["run_label"] == "cloud#29" and "sweep_skipped" not in out
+    assert "commit_shas" not in out
+
+
+def test_pinned_run_is_marked(monkeypatch, tmp_path):
+    monkeypatch.setattr(tr, "_server_verdict", lambda: {
+        "ready": False, "ts": "t", "run_id": 32, "url": "U"})
+    record = {**SKIP_RECORD, "run_id": 32, "swept": True, "full_sweep_run_id": 32,
+              "pinned": {"LibA": "b" * 40}}
+    out = tr.run(results_dir=tmp_path, fetch_cloud=True,
+                 cloud_sha_fetcher=lambda rid: record)
+    assert out["pinned"] == {"LibA": "b" * 40}
+
+
+def test_main_caches_the_sha_record_per_run_id(monkeypatch, tmp_path):
+    import os
+    from pathlib import Path
+    state_dir = Path(os.environ["HEART_STATE_DIR"])
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "test_run.json").write_text(json.dumps({
+        "sha_record_run_id": 31, "sha_record": SKIP_RECORD,
+        "cloud_report_run_id": 30,
+        "cloud_counts": {"passed": 9, "failed": 0, "skipped": 0, "timeout": 0},
+    }))
+    _green_skip_verdict(monkeypatch)
+    boom = lambda rid: (_ for _ in ()).throw(AssertionError("downloaded"))  # noqa: E731
+    monkeypatch.setattr(tr, "_cloud_sha_record", boom)
+    monkeypatch.setattr(tr, "_cloud_report", boom)
+    assert tr.main(["test_run", str(tmp_path)]) == 0
+    written = json.loads((state_dir / "test_run.json").read_text())
+    assert written["sweep_skipped"] is True and written["passed"] == 9
+    assert written["run_label"].startswith("cloud#30 (re-attested by #31")

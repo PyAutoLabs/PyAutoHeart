@@ -197,7 +197,15 @@ workspace repos are not gated, and no other skill blocks on it.
   workflows the libraries and workspaces call; Heart owns the definitions.
 - **workspace-smoke.yml** → **workspace-validation.yml** (workflow_call body) —
   scripts + notebooks against the libraries' current `main`; the run history
-  `test_run` + `readiness` consume. The release rehearsal has its own entry,
+  `test_run` + `readiness` consume. Nightly at 03:00 UTC: a `gate` job skips
+  the sweep when no library or workspace `main` moved since the last successful
+  run, the latest run on `main` concluded success, and the last full sweep is
+  under 7 days old; `-f force=true` sweeps regardless. Every run uploads the
+  SHAs it tested as the `workspace-smoke-shas` artifact; `test_run` reads only
+  runs on `main` and treats a skipped night as a re-attestation of the full
+  sweep it names. Bisect runs at pinned commits use their own entry,
+  **workspace-smoke-pinned.yml** (`-f commit_shas='{"<repo>":"<sha>"}'`), so
+  they never enter the smoke channel's history. The release rehearsal has its own entry,
   **release-integrate.yml**, so a failed rehearsal never overwrites the smoke
   verdict (see `docs/release_validation.md`).
 - **heart-tests.yml** — Heart's own pytest suite; **url-check.yml** — weekly

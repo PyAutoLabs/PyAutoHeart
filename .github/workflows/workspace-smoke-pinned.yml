@@ -1,0 +1,63 @@
+name: Workspace Smoke (pinned)
+
+# Bisect runs of the workspace smoke sweep at pinned commits (M3.7d,
+# PyAutoHeart#354). Same body as workspace-smoke.yml (workspace-validation.yml,
+# mode smoke), but its own entry, so its runs never enter the smoke channel's
+# history: Heart's test_run leg and the nightly gate read workspace-smoke.yml
+# only, and a pinned run that passes on an old SHA must not read as "main is
+# green".
+#
+#   gh workflow run workspace-smoke-pinned.yml -f commit_shas='{"PyAutoGalaxy":"<sha>"}'
+#
+# commit_shas is a JSON {repo: full-sha | branch | tag}; repos it does not name
+# use main, and a repo the sweep does not cover is rejected. The gate script
+# (.github/scripts/smoke_sha_gate.py) resolves every repo to a full SHA, and
+# the run records them in the `workspace-smoke-shas` artifact and its summary,
+# exactly as the nightly entry does. A pinned run always sweeps.
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_shas:
+        description: 'JSON {repo: sha-or-ref} to pin, e.g. {"PyAutoGalaxy":"<sha>"}; unlisted repos use main'
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      commit_shas: ${{ steps.decide.outputs.commit_shas }}
+    steps:
+      - name: Checkout PyAutoHeart (gate script)
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github   # the gate script and the body it reads the covered repos from
+      - name: Resolve the pinned SHAs
+        id: decide
+        env:
+          PINS: ${{ inputs.commit_shas }}
+          OWNER: ${{ github.repository_owner }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          python3 -c 'import json,os,sys; json.loads(os.environ["PINS"]) or sys.exit("::error::commit_shas pins nothing; use workspace-smoke.yml to test main")'
+          python3 .github/scripts/smoke_sha_gate.py
+      - name: Upload the SHA record
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-smoke-shas
+          path: shas.json
+          if-no-files-found: error
+
+  smoke:
+    needs: gate
+    uses: ./.github/workflows/workspace-validation.yml
+    with:
+      mode: smoke
+      commit_shas: ${{ needs.gate.outputs.commit_shas }}

@@ -7,7 +7,7 @@ name: Workspace Validation
 #     Runs every workspace's scripts AND generated notebooks against the
 #     CURRENT source `main` of the 5 libraries (source-shadowed via PYTHONPATH,
 #     under the `smoke` env profile — config/build/profile_smoke.yaml).
-#     This is the continuous readiness signal / weekly sweep;
+#     This is the continuous readiness signal / nightly sweep;
 #     `test_run`/`readiness` read the smoke channel's conclusion.
 #
 #   mode=release (entry: release-integrate.yml — Brain Release Agent dispatch
@@ -37,7 +37,8 @@ name: Workspace Validation
 # Triggers: workflow_call ONLY — this file is the shared body behind two thin
 # entry workflows, one per meaning:
 #
-#   workspace-smoke.yml     schedule + bare dispatch → mode=smoke
+#   workspace-smoke.yml     nightly schedule + dispatch, main only → mode=smoke
+#   workspace-smoke-pinned.yml  dispatch with commit_shas (bisect) → mode=smoke
 #   release-integrate.yml   dispatch + workflow_call → mode=release
 #
 # The split exists because `gh run list --workflow <file>` cannot filter on
@@ -94,24 +95,42 @@ jobs:
     outputs:
       matrix: ${{ steps.script_matrix.outputs.matrix }}
       mode: ${{ steps.mode.outputs.mode }}
+      refs: ${{ steps.mode.outputs.refs }}
     steps:
       # Resolved once here (rather than read from `inputs.mode` directly in
       # every downstream `if:`) so every mode check routes through one job
       # output; the entry workflows always pass mode explicitly, and a bare
       # input still resolves to plain "smoke", never an empty string.
+      #
+      # refs is the {repo: sha} map every smoke checkout below pins to (both
+      # smoke entries' gate job passes the SHAs it resolved; a repo missing from
+      # the map uses main). mode=release ignores commit_shas for checkouts —
+      # there it only labels the report — so refs is always {} in that mode.
       - name: Resolve mode
         id: mode
         env:
           MODE_INPUT: ${{ inputs.mode }}
-        run: echo "mode=${MODE_INPUT:-smoke}" >> "$GITHUB_OUTPUT"
+          COMMIT_SHAS: ${{ inputs.commit_shas }}
+        run: |
+          mode="${MODE_INPUT:-smoke}"
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          [ "$mode" = smoke ] || COMMIT_SHAS="{}"
+          printf 'refs=%s\n' "$(python3 -c 'import json,os; print(json.dumps(json.loads(os.environ["COMMIT_SHAS"] or "{}"), separators=(",", ":")))')" >> "$GITHUB_OUTPUT"
       - name: Checkout PyAutoHands (run primitives)
         uses: actions/checkout@v4
         with:
           repository: PyAutoLabs/PyAutoHands
           path: PyAutoHands
       - name: Clone workspaces (paths match script_matrix project names)
+        env:
+          REFS: ${{ steps.mode.outputs.refs }}
         run: |
           set -e
+          clone_at() {  # repo dest: at REFS[repo] if pinned, else main
+            ref=$(python3 -c 'import json,os,sys; print(json.loads(os.environ.get("REFS") or "{}").get(sys.argv[1], ""))' "$1")
+            if [ -z "$ref" ]; then git clone --depth 1 "https://github.com/PyAutoLabs/$1" "$2"; return; fi
+            git init -q "$2" && git -C "$2" fetch -q --depth 1 "https://github.com/PyAutoLabs/$1" "$ref" && git -C "$2" checkout -q FETCH_HEAD
+          }
           declare -A WS=(
             [autofit]=autofit_workspace [autogalaxy]=autogalaxy_workspace [autolens]=autolens_workspace
             [autofit_test]=autofit_workspace_test [autogalaxy_test]=autogalaxy_workspace_test
@@ -120,7 +139,7 @@ jobs:
             [euclid]=euclid_strong_lens_modeling_pipeline
           )
           for proj in "${!WS[@]}"; do
-            git clone --depth 1 "https://github.com/PyAutoLabs/${WS[$proj]}" "$proj"
+            clone_at "${WS[$proj]}" "$proj"
           done
       - name: Make script matrix
         id: script_matrix
@@ -177,7 +196,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: PyAutoLabs/${{ matrix.project.workspace }}
-          ref: main
+          ref: ${{ fromJSON(needs.find_scripts.outputs.refs)[matrix.project.workspace] || 'main' }}
           path: workspace
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -233,7 +252,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: PyAutoLabs/${{ steps.ws.outputs.repo }}
-          ref: main
+          ref: ${{ fromJSON(needs.find_scripts.outputs.refs)[steps.ws.outputs.repo] || 'main' }}
           path: workspace
       - name: Discard result files the workspace checkout carries
         # A workspace repo must never ship its own test-results/ — but one did:
@@ -270,12 +289,19 @@ jobs:
           )
           [ "$found" -eq 0 ] && echo "no stale result files under $ws"
           exit 0
-      - name: "Checkout libraries (current main; source-shadowed via PYTHONPATH) [mode=smoke]"
+      - name: "Checkout libraries (main or the pinned SHA; source-shadowed via PYTHONPATH) [mode=smoke]"
         if: needs.find_scripts.outputs.mode == 'smoke'
+        env:
+          REFS: ${{ needs.find_scripts.outputs.refs }}
         run: |
           set -e
+          clone_at() {  # repo dest: at REFS[repo] if pinned, else main
+            ref=$(python3 -c 'import json,os,sys; print(json.loads(os.environ.get("REFS") or "{}").get(sys.argv[1], ""))' "$1")
+            if [ -z "$ref" ]; then git clone --depth 1 "https://github.com/PyAutoLabs/$1" "$2"; return; fi
+            git init -q "$2" && git -C "$2" fetch -q --depth 1 "https://github.com/PyAutoLabs/$1" "$ref" && git -C "$2" checkout -q FETCH_HEAD
+          }
           for lib in PyAutoNerves PyAutoArray PyAutoFit PyAutoGalaxy PyAutoLens; do
-            git clone --depth 1 "https://github.com/PyAutoLabs/$lib" "libs/$lib"
+            clone_at "$lib" "libs/$lib"
           done
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
@@ -583,7 +609,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: PyAutoLabs/${{ steps.ws.outputs.repo }}
-          ref: main
+          ref: ${{ fromJSON(needs.find_scripts.outputs.refs)[steps.ws.outputs.repo] || 'main' }}
           path: workspace
       - name: Discard result files the workspace checkout carries
         if: steps.gate.outputs.run == 'true'
@@ -623,10 +649,17 @@ jobs:
           exit 0
       - name: Checkout libraries (source-shadowed via PYTHONPATH)
         if: steps.gate.outputs.run == 'true'
+        env:
+          REFS: ${{ needs.find_scripts.outputs.refs }}
         run: |
           set -e
+          clone_at() {  # repo dest: at REFS[repo] if pinned, else main
+            ref=$(python3 -c 'import json,os,sys; print(json.loads(os.environ.get("REFS") or "{}").get(sys.argv[1], ""))' "$1")
+            if [ -z "$ref" ]; then git clone --depth 1 "https://github.com/PyAutoLabs/$1" "$2"; return; fi
+            git init -q "$2" && git -C "$2" fetch -q --depth 1 "https://github.com/PyAutoLabs/$1" "$ref" && git -C "$2" checkout -q FETCH_HEAD
+          }
           for lib in PyAutoNerves PyAutoArray PyAutoFit PyAutoGalaxy PyAutoLens; do
-            git clone --depth 1 "https://github.com/PyAutoLabs/$lib" "libs/$lib"
+            clone_at "$lib" "libs/$lib"
           done
       - name: Download generated notebooks
         if: steps.gate.outputs.run == 'true'

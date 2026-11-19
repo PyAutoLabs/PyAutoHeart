@@ -2,22 +2,106 @@ name: Workspace Smoke
 
 # The CONTINUOUS workspace-readiness channel: every workspace's scripts and
 # generated notebooks against the current source `main` of the 5 libraries,
-# weekly and on demand. Thin entry over the shared body
+# nightly and on demand. Thin entry over the shared body
 # (workspace-validation.yml, workflow_call-only) — the split gives each
 # meaning its own run history, so Heart's test_run leg
 # (`gh run list --workflow workspace-smoke.yml`) can never confuse a failed
-# release rehearsal (release-integrate.yml) with the smoke verdict.
+# release rehearsal (release-integrate.yml) with the smoke verdict. For the
+# same reason this entry only ever tests `main`: bisect runs pinned to other
+# SHAs have their own entry, workspace-smoke-pinned.yml, so a pinned run that
+# passes on an old SHA can never read as "main is green".
+#
+# Nightly, but only when something moved (M3.7d, PyAutoHeart#354). The `gate`
+# job (.github/scripts/smoke_sha_gate.py) resolves the commit of every library
+# and workspace the sweep covers and compares it with the record of the last
+# successful run on main. When no `main` moved, the latest completed run
+# concluded success and the last full sweep is under 7 days old, the sweep is
+# skipped: the run ends in about a minute, concludes success and its summary
+# says "no main moved since run <id>". Otherwise the sweep runs at exactly the
+# SHAs the gate resolved, so every job tests the same commits even if a `main`
+# moves mid-run. A plain dispatch follows the same rule; dispatch with
+# `-f force=true` to sweep regardless.
+#
+# Every run, swept or skipped, uploads the `workspace-smoke-shas` artifact
+# (shas.json: the SHAs tested, whether it swept, and the full sweep it
+# re-attests) and prints the same table in its summary. Read it with
+#   gh run download <run-id> --repo PyAutoLabs/PyAutoHeart -n workspace-smoke-shas
+#
+# Bisecting: use workspace-smoke-pinned.yml, not this entry.
 
 on:
   schedule:
-    - cron: "0 3 * * 1"   # Mondays 03:00 UTC
+    - cron: "0 3 * * *"   # nightly 03:00 UTC (the old Monday run is one of these)
   workflow_dispatch:
+    inputs:
+      force:
+        description: "Sweep even when no main moved since the last successful run"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
+  actions: read   # the gate lists runs and downloads the last run's SHA record
 
 jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      sweep: ${{ steps.decide.outputs.sweep }}
+      commit_shas: ${{ steps.decide.outputs.commit_shas }}
+    steps:
+      - name: Checkout PyAutoHeart (gate script)
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github   # the gate script and the body it reads the covered repos from
+      - name: Fetch the last successful run's SHA record
+        id: previous
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        # Fail-open to "run the sweep": no previous run, an expired artifact or
+        # a run from before this gate all leave previous/ empty. The latest
+        # completed run (this one is still in progress, so never listed) feeds
+        # the "last run concluded failure → sweep again" rule.
+        run: |
+          last=$(gh run list --repo "$REPO" --workflow workspace-smoke.yml --branch main \
+                   --status completed --limit 5 --json databaseId,conclusion \
+                   --jq "[.[] | select(.databaseId != $RUN_ID)][0] // empty | \"\(.databaseId) \(.conclusion)\"" || true)
+          echo "last_id=${last%% *}" >> "$GITHUB_OUTPUT"
+          echo "last_conclusion=${last#* }" >> "$GITHUB_OUTPUT"
+          id=$(gh run list --repo "$REPO" --workflow workspace-smoke.yml --branch main \
+                 --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty' || true)
+          echo "run_id=$id" >> "$GITHUB_OUTPUT"
+          if [ -n "$id" ]; then
+            gh run download "$id" --repo "$REPO" -n workspace-smoke-shas -D previous \
+              || echo "::notice::run $id has no workspace-smoke-shas artifact; the sweep will run"
+          fi
+      - name: Resolve SHAs and decide
+        id: decide
+        env:
+          FORCE: ${{ inputs.force && 'true' || 'false' }}
+          LAST_RUN_ID: ${{ steps.previous.outputs.last_id }}
+          LAST_RUN_CONCLUSION: ${{ steps.previous.outputs.last_conclusion }}
+          PREVIOUS_RECORD: previous/shas.json
+          PREVIOUS_RUN_ID: ${{ steps.previous.outputs.run_id }}
+          OWNER: ${{ github.repository_owner }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          EVENT: ${{ github.event_name }}
+        run: python3 .github/scripts/smoke_sha_gate.py
+      - name: Upload the SHA record
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-smoke-shas
+          path: shas.json
+          if-no-files-found: error
+
   smoke:
+    needs: gate
+    if: needs.gate.outputs.sweep == 'true'
     uses: ./.github/workflows/workspace-validation.yml
     with:
       mode: smoke
+      commit_shas: ${{ needs.gate.outputs.commit_shas }}
