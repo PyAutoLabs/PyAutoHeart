@@ -64,6 +64,15 @@ VALIDATION_WORKFLOW = "workspace-smoke.yml"
 # the real counts and per-script failures for a cloud run — the only place they
 # exist when there is no local run_logs/.
 REPORT_ARTIFACT = "workspace-validation-report"
+# The SHA record every workspace-smoke run uploads from its gate job
+# (.github/scripts/smoke_sha_gate.py, PyAutoHeart#354). A run that skipped the
+# sweep because no `main` moved carries ``swept: false`` and the id of the full
+# sweep it re-attests; run() takes the counts from that sweep and labels the
+# verdict as a re-attestation, never as a fresh sweep. The skip run's own
+# createdAt stays the evidence timestamp: the code on main is still exactly
+# what that sweep passed, and the gate forces a full sweep at least every 7
+# days, so readiness' TEST_STALE_DAYS age rule needs no change.
+SHA_ARTIFACT = "workspace-smoke-shas"
 
 # Agent/MCP-supplied conclusion drop point. On a mobile/cloud session there is no
 # `gh` (and no local report.json); Brain queries the run conclusion via its MCP
@@ -260,6 +269,28 @@ def _cloud_report(run_id: Any) -> dict[str, Any] | None:
     return report if isinstance(report, dict) else None
 
 
+def _cloud_sha_record(run_id: Any) -> dict[str, Any] | None:
+    """Download run_id's ``workspace-smoke-shas`` record (shas.json).
+
+    Never raises; None if gh is unavailable, the run predates the gate, the
+    artifact expired, or the JSON is malformed. Cached per run id by main()."""
+    if not run_id:
+        return None
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            res = subprocess.run(
+                ["gh", "run", "download", str(run_id), "--repo", VALIDATION_REPO,
+                 "-n", SHA_ARTIFACT, "-D", td],
+                capture_output=True, text=True, timeout=60,
+            )
+            if res.returncode != 0:
+                return None
+            record = _read_json(Path(td) / "shas.json")
+    except Exception:
+        return None
+    return record if isinstance(record, dict) else None
+
+
 def counts_measured(summary: dict[str, Any]) -> bool:
     """True if the summary's counts came from an actual report.
 
@@ -280,6 +311,7 @@ def run(
     results_dir: Path | None = None,
     fetch_cloud: bool | None = None,
     cloud_report_fetcher: Callable[[Any], dict[str, Any] | None] | None = None,
+    cloud_sha_fetcher: Callable[[Any], dict[str, Any] | None] | None = None,
 ) -> dict[str, Any]:
     # fetch_cloud is decided by the CALLER, never inferred: the old
     # `results_dir is None` inference meant main() — the tick and the mobile
@@ -323,11 +355,31 @@ def run(
                 "per_project": {}, "parked_stale_count": 0, "parked_stale": [],
                 "failing_scripts": [], "counts_measured": False,
             }
+        # The run's SHA record (PyAutoHeart#354): what it tested and, for a
+        # night that skipped the sweep, which full sweep it re-attests. The
+        # report counts then come from that sweep, since the skip run has none.
+        report_run_id = cloud["run_id"]
+        attested = None
+        if cloud_sha_fetcher is not None and cloud["ready"] is not None:
+            record = cloud_sha_fetcher(cloud["run_id"])
+            if isinstance(record, dict):
+                summary["sha_record"] = record
+                summary["sha_record_run_id"] = cloud["run_id"]
+                if isinstance(record.get("commit_shas"), dict):
+                    summary["commit_shas"] = record["commit_shas"]
+                if record.get("pinned"):
+                    summary["pinned"] = record["pinned"]
+                if record.get("swept") is False and record.get("full_sweep_run_id"):
+                    attested = record["full_sweep_run_id"]
+                    report_run_id = attested
+                    summary["sweep_skipped"] = True
+                    summary["full_sweep_run_id"] = attested
+                    summary["full_sweep_ts"] = record.get("full_sweep_created_at")
         # Enrich from the run's own aggregated report artifact (counts + the
         # failing script names). The fetcher is injected by the tick/CLI
         # entrypoint only — run() itself stays no-network by default.
         if cloud_report_fetcher is not None and cloud["ready"] is not None:
-            cs = cloud_report_fetcher(cloud["run_id"])
+            cs = cloud_report_fetcher(report_run_id)
             if isinstance(cs, dict):
                 counts = {
                     k: int(cs.get(k, 0) or 0)
@@ -335,7 +387,7 @@ def run(
                 }
                 summary["cloud_counts"] = counts
                 summary["failing_scripts"] = list(cs.get("failing_scripts") or [])[:10]
-                summary["cloud_report_run_id"] = cloud["run_id"]
+                summary["cloud_report_run_id"] = report_run_id
                 if not had_local:
                     summary.update(counts)
                     summary["counts_measured"] = True
@@ -351,6 +403,10 @@ def run(
                     f"local ready={local_ready} vs cloud ready={cloud['ready']}"
                 )
         summary["ts"] = cloud["ts"]
+        if attested is not None and not had_local:
+            summary["run_label"] = (
+                f"cloud#{attested} (re-attested by #{cloud['run_id']}: no main moved)"
+            )
         summary["run_label"] = summary.get("run_label") or f"cloud#{cloud['run_id']}"
         summary["cloud_url"] = cloud["url"]
         summary["source"] = "cloud"
@@ -379,9 +435,22 @@ def main(argv: list[str]) -> int:
         report = _cloud_report(run_id)
         return _from_report(report) if isinstance(report, dict) else None
 
+    def _cached_sha_record(run_id: Any) -> dict[str, Any] | None:
+        if (
+            isinstance(prev, dict)
+            and prev.get("sha_record_run_id") == run_id
+            and isinstance(prev.get("sha_record"), dict)
+        ):
+            return prev["sha_record"]
+        return _cloud_sha_record(run_id)
+
     # The tick/CLI is the real path: always consult the server verdict here,
     # explicitly — this is the entrypoint the old inference silently disabled.
-    summary = run(results_dir, fetch_cloud=True, cloud_report_fetcher=_cached_cloud_counts)
+    summary = run(
+        results_dir, fetch_cloud=True,
+        cloud_report_fetcher=_cached_cloud_counts,
+        cloud_sha_fetcher=_cached_sha_record,
+    )
 
     sys.path.insert(0, str(HEART_HOME))
     from heart import state

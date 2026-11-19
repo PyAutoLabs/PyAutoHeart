@@ -38,7 +38,11 @@ def test_smoke_entry_owns_the_schedule_and_calls_body_in_smoke_mode():
     data = _load("workspace-smoke.yml")
     triggers = _triggers(data)
     assert set(triggers) == {"schedule", "workflow_dispatch"}
-    (job,) = data["jobs"].values()
+    # A `gate` job decides whether the nightly sweep runs (PyAutoHeart#354,
+    # tested in test_smoke_sha_gate.py); the sweep itself is the one job
+    # calling the body.
+    assert set(data["jobs"]) == {"gate", "smoke"}
+    job = data["jobs"]["smoke"]
     assert job["uses"].endswith("workspace-validation.yml")
     assert job["with"]["mode"] == "smoke"
 
