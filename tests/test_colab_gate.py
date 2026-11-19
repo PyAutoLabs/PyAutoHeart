@@ -588,9 +588,12 @@ def test_detail_line_names_the_first_failures_then_counts_the_rest():
 def test_shipped_config_accepts_exactly_the_three_argued_exemptions():
     """The shipped exemption list, read from the real file the gate loads.
 
-    Three of the five library-side holes the gate found are not notebook
-    paths: `colossus` and `hmf` (the line-of-sight tooling in
-    autolens/lens/los.py) and `mcp` (autofit/mcp/server.py, the MCP server
+    Three library-side holes are argued exemptions: `colossus` (the
+    line-of-sight tooling in autolens/lens/los.py, behind the autolens[los]
+    extra; the los_halos simulator notebooks reach it and stop on Colab with
+    a clear ImportError, accepted 2026-11-19), `hmf` (imported only by the
+    released autolens 2026.11.19.1 and earlier; deleted once a release
+    without it is on PyPI) and `mcp` (autofit/mcp/server.py, the MCP server
     entry point). Anything else appearing here is a hole in the `--no-deps`
     bootstrap being quietened rather than fixed, which is what the config
     file's own header forbids — so the set is asserted exactly, not as a
