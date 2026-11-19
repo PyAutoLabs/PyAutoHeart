@@ -52,6 +52,12 @@ class WorkspaceSpec:
     #: rather than inferred from the chain's contents, so the local runner
     #: and CI are configured by the same explicit statement.
     arcticpy: bool = False
+    #: The directory ``smoke_tests.txt`` entries are relative to — the
+    #: ``directory`` argument the workspace's own ``run_smoke.py`` passes to
+    #: PyAutoHands' ``run_python.py``. Only the targeted mode reads it (it runs
+    #: a filtered list through that same entry point); a full run still goes
+    #: through the workspace-owned runner.
+    scripts_dir: str = "scripts"
 
 
 #: The one place the arcticpy recipe lives, shared with the CI composite action
@@ -81,6 +87,7 @@ def load_smoke_config(
             spec["directory"],
             tuple(spec["chain"]),
             bool(spec.get("arcticpy", False)),
+            str(spec.get("scripts_dir", "scripts")),
         )
         for key, spec in block["workspaces"].items()
     }
@@ -248,6 +255,12 @@ def runtime_environment(
             "MPLCONFIGDIR": str(cache_dir / "matplotlib"),
         }
     )
+    # A `--jobs N` parent hands its thread caps down explicitly and they are
+    # applied last: the interpreter running this child may itself pin thread
+    # variables at startup (a venv site hook), which must not undo the cap.
+    caps = os.environ.get(THREAD_CAPS_VARIABLE)
+    if caps:
+        env.update(json.loads(caps))
     return env
 
 
@@ -666,6 +679,408 @@ def run_workspace(
     return _run_legacy_workspace(python, workspace, organism_root, env)
 
 
+# ---------------------------------------------------------------------------
+# Selection: --affected-by and --targeted (PyAutoHeart#352)
+#
+# A shift worker runs a *targeted* smoke (only the curated scripts that touch
+# the changed code); the shift close-out runs every *affected* workspace, in
+# parallel, before an unattended merge. A human `pyauto-heart smoke` with no
+# flags keeps the full serial sweep.
+# ---------------------------------------------------------------------------
+
+
+def affected_workspaces(
+    repos: Iterable[str],
+    workspaces: Mapping[str, WorkspaceSpec] | None = None,
+) -> tuple[list[str], list[str]]:
+    """Workspace keys whose install ``chain`` contains any of ``repos`` (or
+    whose own ``directory`` is one of them), in config order.
+
+    Returns ``(selected, unmatched)``: ``unmatched`` are the names that select
+    nothing — an organ or a typo. They are reported, never an error, so a
+    close-out can pass every changed repo without first filtering out the ones
+    no smoke workspace installs.
+    """
+    workspaces = WORKSPACES if workspaces is None else workspaces
+    wanted = [r for r in (r.strip() for r in repos) if r]
+    selected = [
+        key
+        for key, spec in workspaces.items()
+        if any(r in spec.chain or r == spec.directory for r in wanted)
+    ]
+    known = {r for spec in workspaces.values() for r in spec.chain}
+    known |= {spec.directory for spec in workspaces.values()}
+    return selected, [r for r in wanted if r not in known]
+
+
+def own_workspace(
+    repo: str, workspaces: Mapping[str, WorkspaceSpec] | None = None
+) -> str | None:
+    """The workspace that is ``repo``'s own: the workspace repo itself, else
+    the first (config order) whose chain ENDS in ``repo``, else the first whose
+    chain contains it."""
+    workspaces = WORKSPACES if workspaces is None else workspaces
+    for key, spec in workspaces.items():
+        if spec.directory == repo:
+            return key
+    for key, spec in workspaces.items():
+        if spec.chain and spec.chain[-1] == repo:
+            return key
+    for key, spec in workspaces.items():
+        if repo in spec.chain:
+            return key
+    return None
+
+
+@dataclass
+class ChangeSummary:
+    """What a set of changed files touches, for targeted script matching."""
+
+    #: repos the files live in — chain libraries or workspace directories
+    repos: list[str]
+    #: dotted import paths and public names; a script mentioning any matches
+    tokens: set[str]
+    #: changed files that are themselves workspace scripts (resolved paths)
+    scripts: set[Path]
+
+
+_HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@", re.M)
+
+
+def _changed_ranges(
+    repo_dir: Path, relative: str, base: str
+) -> list[tuple[int, int]] | None:
+    """New-side line ranges the branch changed in one file, against the merge
+    base of ``base`` and HEAD (working-tree edits included). ``None`` when git
+    cannot say — the caller then treats the whole file as touched."""
+    try:
+        merge_base = subprocess.run(
+            ["git", "merge-base", base, "HEAD"],
+            cwd=repo_dir, capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        diff = subprocess.run(
+            ["git", "diff", "-U0", merge_base, "--", relative],
+            cwd=repo_dir, capture_output=True, text=True, check=True,
+        ).stdout
+    except (subprocess.CalledProcessError, OSError):
+        return None
+    ranges = []
+    for match in _HUNK.finditer(diff):
+        start = int(match.group(1))
+        count = int(match.group(2)) if match.group(2) is not None else 1
+        # A pure deletion (count 0) sits between two lines: mark the line it
+        # follows, so the enclosing definition still counts as touched.
+        ranges.append((max(start, 1), max(start + count - 1, start, 1)))
+    return ranges
+
+
+def _public_names(source: str, ranges: list[tuple[int, int]] | None) -> set[str]:
+    """Public module-level names (``def``/``class``/``NAME =``) whose span
+    meets a changed range; every public one when ``ranges`` is None. A change
+    inside a method counts for its class: method names alone are too generic
+    (``fit``, ``image``) to select scripts by."""
+    import ast
+
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return set()
+    names = set()
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            found = [node.name]
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            found = [t.id for t in targets if isinstance(t, ast.Name)]
+        else:
+            continue
+        start = min(
+            [node.lineno] + [d.lineno for d in getattr(node, "decorator_list", [])]
+        )
+        end = node.end_lineno or node.lineno
+        if ranges is not None and not any(a <= end and b >= start for a, b in ranges):
+            continue
+        names.update(n for n in found if not n.startswith("_"))
+    return names
+
+
+def summarise_changes(
+    organism_root: Path,
+    changed_files: Iterable[str | os.PathLike[str]],
+    *,
+    base: str = "origin/main",
+    names: Iterable[str] = (),
+    workspaces: Mapping[str, WorkspaceSpec] | None = None,
+    import_names: Mapping[str, str] | None = None,
+) -> ChangeSummary:
+    """Map changed files to the repos they live in and the tokens a script
+    must mention to be affected: each changed library module's dotted import
+    path (``pkg.sub.module``) and the public names the diff touches in it,
+    plus any ``names`` given explicitly."""
+    workspaces = WORKSPACES if workspaces is None else workspaces
+    import_names = IMPORT_NAMES if import_names is None else import_names
+    candidates = {r for spec in workspaces.values() for r in spec.chain}
+    candidates |= {spec.directory for spec in workspaces.values()}
+    homes = {}
+    for repo in sorted(candidates):
+        try:
+            homes[repo] = _workspace.repo_path(organism_root, repo).resolve()
+        except (RuntimeError, FileNotFoundError):
+            continue
+    repos: list[str] = []
+    tokens = {n.strip() for n in names if n.strip()}
+    scripts: set[Path] = set()
+    for raw in changed_files:
+        path = Path(raw)
+        if not path.is_absolute() and not path.exists():
+            path = organism_root / path
+        path = path.resolve()
+        owner = next(
+            (repo for repo, home in homes.items() if path.is_relative_to(home)), None
+        )
+        if owner is None:
+            continue
+        if owner not in repos:
+            repos.append(owner)
+        if path.suffix != ".py":
+            continue
+        relative = path.relative_to(homes[owner])
+        package = import_names.get(owner)
+        if package is None:
+            scripts.add(path)  # a workspace file: it may itself be a curated script
+            continue
+        if not relative.parts or relative.parts[0] != package:
+            continue  # tests/, docs, tooling — not importable library code
+        parts = list(relative.with_suffix("").parts)
+        if parts[-1] == "__init__":
+            parts = parts[:-1]
+        if len(parts) > 1:  # the bare package name would match every script
+            tokens.add(".".join(parts))
+        if path.is_file():
+            ranges = _changed_ranges(homes[owner], relative.as_posix(), base)
+            tokens |= _public_names(path.read_text(errors="replace"), ranges)
+    return ChangeSummary(repos, tokens, scripts)
+
+
+def curated_scripts(workspace: Path) -> list[str]:
+    """The entries of a workspace's ``smoke_tests.txt``, in list order."""
+    return _load_nonempty_lines(workspace / "smoke_tests.txt")
+
+
+def _mentions(source: str, tokens: Iterable[str]) -> bool:
+    for token in tokens:
+        if re.search(r"(?<!\w)" + re.escape(token) + r"(?!\w)", source):
+            return True
+    return False
+
+
+def cheapest_script(workspace: Path, spec: WorkspaceSpec) -> str | None:
+    """The curated entry with the smallest recorded passing time in the
+    workspace's ``test-results/smoke_timings.json``; the list's first entry
+    when there is no timing record."""
+    entries = curated_scripts(workspace)
+    if not entries:
+        return None
+    timings = {}
+    try:
+        record = json.loads((workspace / "test-results" / "smoke_timings.json").read_text())
+        for item in record.get("entries", []):
+            if item.get("kind", "script") == "script" and item.get("status") == "passed":
+                timings[str(item["entry"])] = float(item["seconds"])
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        pass
+    prefix = "" if spec.scripts_dir in ("", ".") else spec.scripts_dir.rstrip("/") + "/"
+    timed = [
+        (timings[key], index, entry)
+        for index, entry in enumerate(entries)
+        for key in (prefix + entry, entry)
+        if key in timings
+    ]
+    return min(timed)[2] if timed else entries[0]
+
+
+def targeted_selection(
+    organism_root: Path,
+    changes: ChangeSummary,
+    keys: Iterable[str],
+    workspaces: Mapping[str, WorkspaceSpec] | None = None,
+) -> tuple[dict[str, list[str]], str]:
+    """Per workspace, the curated entries that reference the changed code.
+
+    An entry matches when the script IS a changed file, or its source mentions
+    a change token (a dotted module path or a touched public name, as a whole
+    word). List order is kept. When nothing matches anywhere, the single
+    cheapest curated script of the first changed repo's own workspace runs as
+    an import check. Returns ``(selection, reason)``; workspaces with no
+    ``smoke_tests.txt`` are not selectable."""
+    workspaces = WORKSPACES if workspaces is None else workspaces
+    selection: dict[str, list[str]] = {}
+    for key in keys:
+        spec = workspaces[key]
+        workspace = _workspace.repo_path(organism_root, spec.directory)
+        script_root = workspace / spec.scripts_dir
+        matched = []
+        for entry in curated_scripts(workspace):
+            script = (script_root / entry).resolve()
+            if script in changes.scripts:
+                matched.append(entry)
+                continue
+            try:
+                source = script.read_text(errors="replace")
+            except OSError:
+                continue
+            if _mentions(source, changes.tokens):
+                matched.append(entry)
+        if matched:
+            selection[key] = matched
+    if selection:
+        return selection, "scripts referencing the changed code"
+    for repo in changes.repos:
+        key = own_workspace(repo, workspaces)
+        if key is None:
+            continue
+        spec = workspaces[key]
+        entry = cheapest_script(_workspace.repo_path(organism_root, spec.directory), spec)
+        if entry:
+            return {key: [entry]}, f"no script references the change; import check in {key}"
+    return {}, "no curated script references the change and no own workspace to import-check"
+
+
+def run_script_list(
+    environment: Path,
+    organism_root: Path,
+    state_root: Path,
+    spec: WorkspaceSpec,
+    list_file: Path,
+) -> int:
+    """Run an explicit script list through the same PyAutoHands entry point the
+    workspace runners use, reporting to ``test-results/targeted/`` so the full
+    run's result files and timings are never overwritten. ``output/`` is not
+    wiped: a targeted script may read an earlier entry's committed or
+    previously generated output."""
+    workspace = _workspace.repo_path(organism_root, spec.directory)
+    env = runtime_environment(environment, organism_root, spec, state_root)
+    python = _environment_python(environment)
+    runner = _workspace.repo_path(organism_root, "PyAutoHands") / "autohands" / "run_python.py"
+    command = [
+        str(python), str(runner), spec.directory, spec.scripts_dir,
+        "--list", str(list_file),
+        "--report-dir", str(workspace / "test-results" / "targeted"),
+    ]
+    return subprocess.run(command, cwd=workspace, env=env).returncode
+
+
+# ---------------------------------------------------------------------------
+# Parallel workspaces: --jobs N
+# ---------------------------------------------------------------------------
+
+#: Thread-pool variables capped in each concurrent workspace's process so N
+#: workspaces never oversubscribe the machine. XLA is capped via XLA_FLAGS.
+THREAD_CAP_VARIABLES = (
+    "OMP_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "NUMBA_NUM_THREADS",
+)
+
+
+#: Carries ``thread_caps`` from a ``--jobs N`` parent to each workspace child.
+THREAD_CAPS_VARIABLE = "HEART_SMOKE_THREAD_CAPS"
+
+
+def thread_caps(
+    jobs: int, cpu_count: int | None = None, xla_flags: str = ""
+) -> dict[str, str]:
+    """Per-process thread limits so ``jobs`` × threads ≤ the machine's cores."""
+    cores = cpu_count or os.cpu_count() or 1
+    threads = max(1, cores // max(1, jobs))
+    caps = {name: str(threads) for name in THREAD_CAP_VARIABLES}
+    xla = [f for f in xla_flags.split() if not f.startswith(
+        ("--xla_cpu_multi_thread_eigen", "intra_op_parallelism_threads")
+    )]
+    xla.append(f"--xla_cpu_multi_thread_eigen={'true' if threads > 1 else 'false'}")
+    xla.append(f"intra_op_parallelism_threads={threads}")
+    caps["XLA_FLAGS"] = " ".join(xla)
+    return caps
+
+
+def _child_command(args: argparse.Namespace, key: str, list_file: Path | None) -> list[str]:
+    command = [
+        sys.executable, "-m", "heart.smoke", key, "--jobs", "1",
+        "--python", str(args.python),
+        "--root", str(args.root.resolve()),
+        "--state-dir", str(args.state_dir.resolve()),
+    ]
+    if args.rebuild:
+        command.append("--rebuild")
+    if args.prepare_only:
+        command.append("--prepare-only")
+    if list_file is not None:
+        command += ["--script-list", str(list_file)]
+    return command
+
+
+def _log_tail(path: Path, lines: int = 25) -> str:
+    try:
+        return "\n".join(path.read_text(errors="replace").splitlines()[-lines:])
+    except OSError:
+        return "(no log)"
+
+
+def run_parallel(
+    args: argparse.Namespace,
+    selected: Sequence[str],
+    jobs: int,
+    list_files: Mapping[str, Path] | None = None,
+) -> int:
+    """Run each selected workspace as its own ``heart.smoke`` process, ``jobs``
+    at a time, thread-capped, its output in its own log file. Each child
+    prepares (or reuses) its own cached environment and writes its own
+    ``test-results/``; the run fails when any workspace fails."""
+    from concurrent.futures import ThreadPoolExecutor
+    import time
+
+    state_root = args.state_dir.resolve()
+    env = os.environ.copy()
+    caps = thread_caps(jobs, xla_flags=env.get("XLA_FLAGS", ""))
+    env.update(caps)
+    env[THREAD_CAPS_VARIABLE] = json.dumps(caps)
+    env["PYTHONPATH"] = os.pathsep.join(
+        p for p in (str(HEART_HOME), env.get("PYTHONPATH", "")) if p
+    )
+    list_files = list_files or {}
+    print(
+        f"running {len(selected)} workspace(s), {jobs} at a time, "
+        f"{env['OMP_NUM_THREADS']} thread(s) each"
+    )
+
+    def one(key: str) -> tuple[str, int, float, Path]:
+        log = state_root / "smoke-runtime" / key / "smoke.log"
+        log.parent.mkdir(parents=True, exist_ok=True)
+        started = time.monotonic()
+        with log.open("w") as stream:
+            code = subprocess.run(
+                _child_command(args, key, list_files.get(key)),
+                cwd=HEART_HOME, env=env, stdout=stream, stderr=subprocess.STDOUT,
+            ).returncode
+        result = (key, code, time.monotonic() - started, log)
+        print(f"[{key}] {'PASS' if code == 0 else f'FAIL ({code})'} "
+              f"in {result[2]:.0f}s — log {log}", flush=True)
+        return result
+
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        results = list(pool.map(one, selected))
+
+    failed = [r for r in results if r[1] != 0]
+    print("\n=== Smoke summary (parallel) ===")
+    for key, code, seconds, log in results:
+        print(f"  {key:<16} {'PASS' if code == 0 else 'FAIL':<5} {seconds:7.0f}s  {log}")
+    for key, _, _, log in failed:
+        print(f"\n--- {key}: last lines of {log} ---\n{_log_tail(log)}")
+    print(f"=== {len(results) - len(failed)}/{len(results)} workspaces passed ===")
+    return 1 if failed else 0
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Prepare isolated workspace smoke environments and run their suites."
@@ -701,13 +1116,103 @@ def _parser() -> argparse.ArgumentParser:
         default=Path(os.environ.get("HEART_STATE_DIR", Path.home() / ".pyauto-heart")),
         help="Heart state/cache directory",
     )
+    parser.add_argument(
+        "--affected-by",
+        action="append",
+        default=[],
+        metavar="REPO[,REPO...]",
+        help="only workspaces whose install chain contains (or which are) one of these repos",
+    )
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=1,
+        help="workspaces to run at once (default 1 = serial); each runs in its own "
+        "process with thread pools capped so jobs x threads <= cores",
+    )
+    parser.add_argument(
+        "--targeted",
+        action="store_true",
+        help="run only the curated scripts that reference the changed code "
+        "(needs --changed-files); none match -> the cheapest script of the "
+        "changed repo's own workspace, as an import check",
+    )
+    parser.add_argument(
+        "--changed-files",
+        nargs="+",
+        default=[],
+        metavar="PATH",
+        help="files the change touches (absolute, or relative to cwd / --root)",
+    )
+    parser.add_argument(
+        "--names",
+        action="append",
+        default=[],
+        metavar="NAME[,NAME...]",
+        help="extra public names a matching script may mention (--targeted)",
+    )
+    parser.add_argument(
+        "--base",
+        default="origin/main",
+        help="ref the change is diffed against to find touched names (--targeted)",
+    )
+    parser.add_argument("--script-list", type=Path, help=argparse.SUPPRESS)
     return parser
 
 
+def _repo_list(values: Sequence[str]) -> list[str]:
+    return [r for value in values for r in value.split(",") if r.strip()]
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    args = _parser().parse_args(argv)
+    parser = _parser()
+    args = parser.parse_args(argv)
     root = args.root.resolve()
-    selected = args.workspaces or list(WORKSPACES)
+    state_root = args.state_dir.resolve()
+    if args.jobs < 1:
+        parser.error("--jobs must be at least 1")
+    if args.targeted and not args.changed_files:
+        parser.error("--targeted needs --changed-files")
+    if args.script_list and len(args.workspaces) != 1:
+        parser.error("--script-list runs exactly one workspace")
+
+    selected = list(args.workspaces) or list(WORKSPACES)
+    if args.affected_by:
+        affected, unmatched = affected_workspaces(_repo_list(args.affected_by))
+        for repo in unmatched:
+            print(f"--affected-by {repo}: no smoke workspace installs it")
+        selected = [key for key in selected if key in affected]
+
+    list_files: dict[str, Path] = {}
+    if args.targeted:
+        changes = summarise_changes(
+            root, args.changed_files, base=args.base, names=_repo_list(args.names)
+        )
+        affected, _ = affected_workspaces(changes.repos)
+        selected = [key for key in selected if key in affected]
+        selection, reason = targeted_selection(root, changes, selected)
+        print(f"targeted smoke: {reason}")
+        for key in selected:
+            if key not in selection:
+                print(f"[{key}] no curated script references the change; skipped")
+        for key, entries in selection.items():
+            list_file = state_root / "smoke-runtime" / key / "targeted_smoke_tests.txt"
+            list_file.parent.mkdir(parents=True, exist_ok=True)
+            list_file.write_text("\n".join(entries) + "\n")
+            list_files[key] = list_file
+            print(f"[{key}] {len(entries)} script(s): " + ", ".join(entries))
+        selected = [key for key in selected if key in selection]
+    elif args.script_list:
+        list_files[selected[0]] = args.script_list.resolve()
+
+    if not selected:
+        print("no smoke workspace selected; nothing to run")
+        return 0
+
+    jobs = min(args.jobs, len(selected))
+    if jobs > 1:
+        return run_parallel(args, selected, jobs, list_files)
+
     failures = 0
     for key in selected:
         spec = WORKSPACES[key]
@@ -719,17 +1224,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         try:
             environment, built = prepare_environment(
                 root,
-                args.state_dir.resolve(),
+                state_root,
                 spec,
                 python=args.python,
                 rebuild=args.rebuild,
             )
             print(f"[{key}] {'built' if built else 'reused'} {environment}")
-            if not args.prepare_only:
-                failures += (
-                    run_workspace(environment, root, args.state_dir.resolve(), spec)
-                    != 0
-                )
+            if args.prepare_only:
+                continue
+            if key in list_files:
+                code = run_script_list(environment, root, state_root, spec, list_files[key])
+            else:
+                code = run_workspace(environment, root, state_root, spec)
+            failures += code != 0
         except (SmokeEnvironmentError, subprocess.CalledProcessError, OSError) as exc:
             print(
                 f"[{key}] environment FAILED before smoke execution: {exc}",

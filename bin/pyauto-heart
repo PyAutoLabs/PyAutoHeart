@@ -454,6 +454,8 @@ cmd_verify_install() {
 help_smoke() { cat <<EOF
 pyauto-heart smoke [WORKSPACE ...] [--prepare-only] [--rebuild]
                    [--python PATH] [--root DIR] [--state-dir DIR]
+                   [--affected-by REPO[,REPO...]] [--jobs N]
+                   [--targeted --changed-files PATH... [--names N,...] [--base REF]]
 
 Prepare a separate, cached Python environment for each selected workspace,
 then run its workspace-owned smoke runner. The workspace table (keys,
@@ -471,6 +473,29 @@ source imports, and Jupyter kernel ownership before science scripts begin.
   --python PATH   Base Python used to create environments (default: current)
   --root DIR      organism root (default: \$PYAUTO_ROOT)
   --state-dir DIR Environment/cache root (default: \$HEART_STATE_DIR)
+
+Selection and speed (PyAutoHeart#352; with no flags: every workspace, serially):
+  --affected-by REPO[,REPO...]
+                  Only the workspaces whose install chain contains one of these
+                  repos (or which are one of them). A repo no workspace
+                  installs is reported and ignored.
+  --jobs N        Run N workspaces at once (default 1 = serial). Each runs in
+                  its own process and cached environment, with OMP/MKL/
+                  OPENBLAS/NUMBA thread counts and XLA's CPU pool capped so
+                  N x threads <= cores; its output goes to
+                  \$HEART_STATE_DIR/smoke-runtime/<workspace>/smoke.log. Fails
+                  if any workspace fails.
+  --targeted      Run only the curated smoke_tests.txt scripts that reference
+                  the change: the script is a changed file, or its source
+                  names a changed library module's import path
+                  (pkg.sub.module) or a public def/class/NAME the diff touches
+                  in it. Nothing matches -> the cheapest curated script of the
+                  changed repo's own workspace, as an import check. Results go
+                  to <workspace>/test-results/targeted/; output/ is not wiped.
+  --changed-files PATH...
+                  The changed files (needed by --targeted).
+  --names N,...   Extra public names a matching script may mention.
+  --base REF      Ref the change is diffed against (default origin/main).
 EOF
 }
 cmd_smoke() {

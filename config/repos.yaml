@@ -202,6 +202,8 @@ dependencies:
 # proves. Read strictly by heart/smoke.py (a missing block fails loudly rather
 # than silently preparing nothing); an adopter replaces this with their own
 # workspaces. Repo IDENTITY here must match the body map, same as above.
+# `chain:` is also what `pyauto-heart smoke --affected-by REPO` and
+# `--targeted` select workspaces by (PyAutoHeart#352).
 smoke:
   import_names:
     PyAutoNerves: autonerves
@@ -226,6 +228,10 @@ smoke:
     euclid:
       directory: euclid_strong_lens_modeling_pipeline
       chain: [PyAutoNerves, PyAutoFit, PyAutoArray, PyAutoGalaxy, PyAutoLens]
+      # Its smoke_tests.txt entries are relative to the repo root, not
+      # scripts/ (the "." its run_smoke.py passes). Read only by the targeted
+      # mode (`pyauto-heart smoke --targeted`); default "scripts".
+      scripts_dir: "."
     howtolens:
       directory: HowToLens
       chain: [PyAutoNerves, PyAutoFit, PyAutoArray, PyAutoGalaxy, PyAutoLens]
