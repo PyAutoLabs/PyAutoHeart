@@ -47,6 +47,21 @@ lists `.ipynb` notebooks under `notebooks/`. Notebook + env-var semantics:
 dependency chain, so never assume only one is affected. Run a subset only when
 the user explicitly passes workspace names.
 
+Narrower and faster forms, for the shift (PyAutoHeart#352; the human default
+above is unchanged):
+
+```bash
+pyauto-heart smoke --affected-by PyAutoGalaxy --jobs 3   # close-out: every workspace whose chain has it, 3 at once
+pyauto-heart smoke --targeted --changed-files <paths>    # worker: only curated scripts that reference the change
+```
+
+`--affected-by` reads each workspace's `chain:` in Heart `config/repos.yaml`.
+`--jobs N` caps each workspace's thread pools so N × threads ≤ cores and logs to
+`$HEART_STATE_DIR/smoke-runtime/<workspace>/smoke.log`. `--targeted` keeps a
+curated script when it is a changed file or names a changed module's import
+path or a public name the diff touches (`--names` adds more); none match → the
+cheapest script of the changed repo's own workspace runs as an import check.
+
 ### 2. Prepare and preflight isolated environments
 
 Run `pyauto-heart smoke` with the selected workspace keys. Do not invoke the
