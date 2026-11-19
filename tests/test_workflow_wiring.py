@@ -47,6 +47,17 @@ def test_smoke_entry_owns_the_schedule_and_calls_body_in_smoke_mode():
     assert job["with"]["mode"] == "smoke"
 
 
+def test_pinned_entry_is_dispatch_only_and_calls_body_in_smoke_mode():
+    """Bisect runs at pinned SHAs get their own run history (PyAutoHeart#354)
+    so they can never become the smoke channel's latest run."""
+    data = _load("workspace-smoke-pinned.yml")
+    assert set(_triggers(data)) == {"workflow_dispatch"}
+    job = data["jobs"]["smoke"]
+    assert job["uses"].endswith("workspace-validation.yml")
+    assert job["with"]["mode"] == "smoke"
+    assert VALIDATION_WORKFLOW != "workspace-smoke-pinned.yml"
+
+
 def test_release_entry_has_no_mode_input_and_calls_body_in_release_mode():
     data = _load("release-integrate.yml")
     triggers = _triggers(data)

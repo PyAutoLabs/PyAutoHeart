@@ -1,28 +1,34 @@
 """Decide whether tonight's workspace smoke sweep runs, and record its SHAs.
 
-The first job of workspace-smoke.yml runs this. It resolves the commit every
-repo the sweep covers will be tested at (the `main` head, or the SHA/ref a
-dispatch pinned through the `commit_shas` input), compares that map with the
-record of the last successful run, and writes:
+The first job of workspace-smoke.yml (main only) and of
+workspace-smoke-pinned.yml (bisect runs) runs this. It resolves the commit
+every repo the sweep covers will be tested at (the `main` head, or the
+SHA/ref the pinned entry's `commit_shas` input names), compares that map with
+the record of the last successful run, and writes:
 
   shas.json            the record, uploaded as the `workspace-smoke-shas`
                        artifact of EVERY run (swept or skipped);
   $GITHUB_OUTPUT       sweep=true|false and commit_shas=<compact JSON>;
   $GITHUB_STEP_SUMMARY one headline plus a table of the tested SHAs.
 
-The sweep is skipped only when all of these hold: nothing was pinned, a
-previous record exists and is readable, every covered repo's SHA equals that
-record's, and the last full sweep is younger than FULL_SWEEP_MAX_AGE_DAYS (so
-a dependency that moved on PyPI without any `main` moving is still caught
-within a week, as before). Anything else runs the sweep. A previous record
-that expired or predates this script counts as "no record": run the sweep.
+The sweep is skipped only when all of these hold: nothing was pinned, the
+dispatch did not set force, the latest completed run on main concluded
+success (a red run at the same SHAs must be swept again, not masked by an
+older green one), a previous record exists and is readable, every covered
+repo's SHA equals that record's, and the last full sweep is younger than
+FULL_SWEEP_MAX_AGE_DAYS (so a dependency that moved on PyPI without any
+`main` moving is still caught within a week, as before). Anything else runs
+the sweep. A previous record that expired or predates this script counts as
+"no record": run the sweep.
 
 Heart's test_run leg reads the record: a skipped run carries `swept: false`
 and the id of the full sweep it re-attests (`full_sweep_run_id`), so Heart
 takes the counts from that run and never reports the skip as a fresh sweep.
 
 Environment (all optional except where the workflow sets them):
-  PINS              JSON {repo: sha-or-ref}; default "{}"
+  PINS              JSON {repo: sha-or-ref}; default "{}" (pinned entry only)
+  FORCE             "true" sweeps even when nothing moved
+  LAST_RUN_ID, LAST_RUN_CONCLUSION   latest completed run on main (not this one)
   PREVIOUS_RECORD   path to the last successful run's shas.json
   PREVIOUS_RUN_ID   that run's id
   RUN_ID, RUN_URL, EVENT   this run's identity
@@ -112,12 +118,21 @@ def decide(
     previous: dict | None,
     previous_run_id: str,
     now: datetime.datetime,
+    force: bool = False,
+    last_run: tuple[str, str] | None = None,
 ) -> tuple[bool, str, dict]:
-    """(sweep, reason, record) for this run."""
+    """(sweep, reason, record) for this run.
+
+    last_run is (id, conclusion) of the latest completed run on main, or None
+    when there is none."""
     stamp = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     full_id, full_ts = None, None
     if pins:
         sweep, reason = True, f"pinned by dispatch: {', '.join(sorted(pins))}"
+    elif force:
+        sweep, reason = True, "forced by dispatch"
+    elif last_run and last_run[1] != "success":
+        sweep, reason = True, f"last run {last_run[0]} concluded {last_run[1] or 'unknown'}"
     elif not isinstance(previous, dict) or not isinstance(previous.get("commit_shas"), dict):
         sweep = True
         reason = (
@@ -184,9 +199,12 @@ def main() -> int:
         except ValueError:
             previous = None
     shas = resolve(pins)
+    last_id = os.environ.get("LAST_RUN_ID", "")
     sweep, reason, record = decide(
         shas, pins, previous, os.environ.get("PREVIOUS_RUN_ID", ""),
         datetime.datetime.now(datetime.timezone.utc),
+        force=os.environ.get("FORCE", "").lower() == "true",
+        last_run=(last_id, os.environ.get("LAST_RUN_CONCLUSION", "")) if last_id else None,
     )
     Path("shas.json").write_text(json.dumps(record, indent=2) + "\n")
     compact = json.dumps(shas, separators=(",", ":"))

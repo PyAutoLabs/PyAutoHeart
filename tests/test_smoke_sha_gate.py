@@ -85,6 +85,28 @@ def test_a_pinned_dispatch_never_skips():
     assert record["pinned"] == pins
 
 
+def test_force_sweeps_even_when_nothing_moved():
+    sweep, reason, record = gate.decide(_shas(), {}, _previous(_shas()), "100", NOW, force=True)
+    assert sweep is True and reason == "forced by dispatch"
+    assert record["full_sweep_run_id"] == record["run_id"]
+
+
+@pytest.mark.parametrize("conclusion", ["failure", "cancelled", "timed_out", ""])
+def test_a_red_latest_run_is_swept_again_not_masked_by_an_older_green(conclusion):
+    """Run 100 passed; run 101 failed at the same SHAs (a flake or a PyPI
+    move). Nothing moved since 100, but the night must sweep, not skip."""
+    sweep, reason, _ = gate.decide(_shas(), {}, _previous(_shas()), "100", NOW,
+                                   last_run=("101", conclusion))
+    assert sweep is True
+    assert reason == f"last run 101 concluded {conclusion or 'unknown'}"
+
+
+def test_a_green_latest_run_still_allows_the_skip():
+    sweep, reason, _ = gate.decide(_shas(), {}, _previous(_shas()), "100", NOW,
+                                   last_run=("100", "success"))
+    assert sweep is False and reason == "no main moved since run 100"
+
+
 def test_the_summary_carries_the_headline_and_every_sha():
     _, _, record = gate.decide(_shas(), {}, _previous(_shas()), "100", NOW)
     text = gate.summary_markdown(record)
@@ -142,6 +164,26 @@ def test_main_writes_record_outputs_and_summary(tmp_path, monkeypatch):
     assert "no main moved since run 100" in summ.read_text()
 
 
+@pytest.mark.parametrize("env, reason", [
+    ({"FORCE": "true"}, "forced by dispatch"),
+    ({"FORCE": "false", "LAST_RUN_ID": "101", "LAST_RUN_CONCLUSION": "failure"},
+     "last run 101 concluded failure"),
+    ({"FORCE": "false", "LAST_RUN_ID": "", "LAST_RUN_CONCLUSION": ""},
+     "no main moved since run 100"),
+])
+def test_main_reads_force_and_the_latest_run_from_the_environment(tmp_path, monkeypatch, env, reason):
+    prev = tmp_path / "prev.json"
+    prev.write_text(json.dumps(_previous(_shas())))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(gate, "resolve", lambda pins, lookup=None: _shas())
+    for k, v in {"PINS": "", "PREVIOUS_RECORD": str(prev), "PREVIOUS_RUN_ID": "100",
+                 "RUN_ID": "200", "GITHUB_OUTPUT": str(tmp_path / "o"),
+                 "GITHUB_STEP_SUMMARY": str(tmp_path / "s"), **env}.items():
+        monkeypatch.setenv(k, v)
+    assert gate.main() == 0
+    assert json.loads((tmp_path / "shas.json").read_text())["reason"] == reason
+
+
 # --- wiring -----------------------------------------------------------------
 
 def _load(name):
@@ -160,7 +202,14 @@ def test_smoke_entry_gates_the_sweep_and_passes_the_shas():
     data = _load("workspace-smoke.yml")
     triggers = data.get("on", data.get(True))
     assert triggers["schedule"] == [{"cron": "0 3 * * *"}]
-    assert "commit_shas" in triggers["workflow_dispatch"]["inputs"]
+    # The smoke channel only ever tests main: no pin input, only force.
+    inputs = triggers["workflow_dispatch"]["inputs"]
+    assert set(inputs) == {"force"}
+    assert inputs["force"]["type"] == "boolean" and inputs["force"]["default"] is False
+    decide = next(s for s in data["jobs"]["gate"]["steps"] if s.get("id") == "decide")
+    assert "PINS" not in decide["env"]
+    assert decide["env"]["FORCE"] == "${{ inputs.force && 'true' || 'false' }}"
+    assert {"LAST_RUN_ID", "LAST_RUN_CONCLUSION"} <= set(decide["env"])
     jobs = data["jobs"]
     smoke = jobs["smoke"]
     assert smoke["needs"] == "gate"
@@ -171,6 +220,24 @@ def test_smoke_entry_gates_the_sweep_and_passes_the_shas():
     assert upload["with"]["name"] == test_run.SHA_ARTIFACT
     assert upload["with"]["path"] == "shas.json"
     assert data["permissions"]["actions"] == "read"
+
+
+def test_pinned_entry_has_its_own_history_and_always_sweeps():
+    data = _load("workspace-smoke-pinned.yml")
+    triggers = data.get("on", data.get(True))
+    assert set(triggers) == {"workflow_dispatch"}
+    assert triggers["workflow_dispatch"]["inputs"]["commit_shas"]["required"] is True
+    jobs = data["jobs"]
+    decide = next(s for s in jobs["gate"]["steps"] if s.get("id") == "decide")
+    assert decide["env"]["PINS"] == "${{ inputs.commit_shas }}"
+    smoke = jobs["smoke"]
+    assert smoke["needs"] == "gate" and "if" not in smoke
+    assert smoke["uses"].endswith("workspace-validation.yml")
+    assert smoke["with"] == {"mode": "smoke",
+                             "commit_shas": "${{ needs.gate.outputs.commit_shas }}"}
+    upload = next(s for s in jobs["gate"]["steps"]
+                  if str(s.get("uses", "")).startswith("actions/upload-artifact"))
+    assert upload["with"]["name"] == test_run.SHA_ARTIFACT
 
 
 def test_body_pins_every_smoke_checkout_to_the_resolved_refs():

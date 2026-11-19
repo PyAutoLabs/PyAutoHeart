@@ -10,7 +10,7 @@ readiness hard gate. **M3 wires the acceptance criteria below into the shared
 `workspace-validation.yml` body** via a `mode: release` input. The two modes
 now have separate entry workflows (one run history per meaning):
 `workspace-smoke.yml` (the continuous smoke channel: nightly, skipped when no
-`main` moved, pinnable with `commit_shas`) and
+`main` moved; bisect runs at pinned SHAs go through `workspace-smoke-pinned.yml`) and
 `release-integrate.yml` (this release-fidelity channel):
 
 - The `release` env profile lives in each workspace/`*_workspace_test` repo as

@@ -88,6 +88,19 @@ def test_cloud_verdict_parses_completed_run(monkeypatch):
     assert v["ready"] is True and v["run_id"] == 42 and v["ts"] == "2026-06-23T00:00:00Z"
 
 
+def test_cloud_verdict_reads_only_runs_on_main(monkeypatch):
+    """A dispatch from a feature branch (run 43034177136 was one) is not the
+    smoke verdict."""
+    import types
+    seen = []
+    monkeypatch.setattr(tr.subprocess, "run", lambda argv, **k: (
+        seen.append(argv), types.SimpleNamespace(stdout="[]"))[1])
+    tr._cloud_verdict()
+    argv = seen[0]
+    assert argv[argv.index("--branch") + 1] == "main"
+    assert argv[argv.index("--workflow") + 1] == "workspace-smoke.yml"
+
+
 def test_cloud_verdict_in_progress_is_unknown(monkeypatch):
     import types
     monkeypatch.setattr(tr.subprocess, "run", lambda *a, **k: types.SimpleNamespace(

@@ -37,7 +37,8 @@ name: Workspace Validation
 # Triggers: workflow_call ONLY — this file is the shared body behind two thin
 # entry workflows, one per meaning:
 #
-#   workspace-smoke.yml     nightly schedule + dispatch (commit_shas pins) → mode=smoke
+#   workspace-smoke.yml     nightly schedule + dispatch, main only → mode=smoke
+#   workspace-smoke-pinned.yml  dispatch with commit_shas (bisect) → mode=smoke
 #   release-integrate.yml   dispatch + workflow_call → mode=release
 #
 # The split exists because `gh run list --workflow <file>` cannot filter on
@@ -101,8 +102,8 @@ jobs:
       # output; the entry workflows always pass mode explicitly, and a bare
       # input still resolves to plain "smoke", never an empty string.
       #
-      # refs is the {repo: sha} map every smoke checkout below pins to (the
-      # workspace-smoke gate passes the SHAs it resolved; a repo missing from
+      # refs is the {repo: sha} map every smoke checkout below pins to (both
+      # smoke entries' gate job passes the SHAs it resolved; a repo missing from
       # the map uses main). mode=release ignores commit_shas for checkouts —
       # there it only labels the report — so refs is always {} in that mode.
       - name: Resolve mode

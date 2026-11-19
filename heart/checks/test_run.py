@@ -125,11 +125,13 @@ def _cloud_verdict() -> dict[str, Any] | None:
     """Latest cloud workspace-validation run via `gh`: {ready, ts, run_id, url}.
 
     ready is True/False on a completed run, None while in progress. Never raises;
-    returns None if gh is unavailable or no run exists."""
+    returns None if gh is unavailable or no run exists. Only runs on main
+    count: a dispatch from a feature branch (run 43034177136 was one) tests
+    that branch's workflow, not the smoke channel."""
     try:
         out = subprocess.run(
             ["gh", "run", "list", "--repo", VALIDATION_REPO,
-             "--workflow", VALIDATION_WORKFLOW, "--limit", "1",
+             "--workflow", VALIDATION_WORKFLOW, "--branch", "main", "--limit", "1",
              "--json", "conclusion,status,createdAt,databaseId,url"],
             capture_output=True, text=True, timeout=30,
         )
