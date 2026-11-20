@@ -26,7 +26,9 @@ copy → paste, on a laptop or a phone.
 <!-- The line below is auto-updated by .github/workflows/heart-health.yml (everything -->
 <!-- between the heart:begin/heart:end markers is replaced with the rendered strip). -->
 <!-- heart:begin -->
-🟢 Monitoring 38/100 · release **GREEN** · [dashboard →](https://pyautolabs.github.io/PyAutoHeart/)
+🟡 Monitoring 21/100 · release **YELLOW** · [dashboard →](https://pyautolabs.github.io/PyAutoHeart/)
+
+**Warnings:** workspace validation not passing (4 failed, cloud#44724643935: autolens notebooks/imaging/simulator.ipynb, autolens notebooks/imaging/simulator_jax.ipynb, autolens scripts/imaging/simulator.py, +1 more)
 <!-- heart:end -->
 
 ## How PyAutoHeart works
