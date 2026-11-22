@@ -327,9 +327,9 @@ the evidence and restales the rehearsal (~75 minutes, measured 2026-08-29).
 
 Heart OWNS the flag and is the only writer; \$HEART_STATE_DIR/freeze.json holds
 {reason, set_at, until, set_by}. PyAutoBrain reads it and never writes it:
-\`pyauto-brain vitals\` prints it as a warning line, \`/prm\` refuses to merge a
-LIBRARY repo's PR while it is active (\`--thaw\` overrides, logged), and
-\`batch collect\` carries one line. It does NOT enter the readiness verdict —
+\`pyauto-brain vitals\` prints it as a warning line, and \`/prm\` refuses to
+merge a LIBRARY repo's PR while it is active (\`--thaw\` overrides, logged).
+It does NOT enter the readiness verdict —
 a freeze is not a health problem, and gating every skill on it was never the
 intent.
 
