@@ -184,9 +184,10 @@ is advice — with teeth in exactly one place.
 | the scheduled nightly release run (`PyAutoBrain/agents/conductors/release/nightly.sh` → Hands `release.yml`) | **not wired**: it runs unattended in CI, where this dev-box state file does not exist. Set the freeze on the dev box if a nightly run's window needs to be visible locally; wiring CI would need the flag to live somewhere both can see, which is a bigger change than this one |
 
 Readers are all in PyAutoBrain and all read-only: the `vitals` faculty prints
-`FROZEN: <reason> until <ts>` as a warning line, `/prm` refuses to merge a
+`FROZEN: <reason> until <ts>` as a warning line, and `/prm` refuses to merge a
 **library** repo's PR while it is active (`--thaw` overrides, logged to
-`PyAutoMind/autonomy_log.md`), and `batch collect` carries one line. Organ and
+`PyAutoMind/autonomy_log.md`). (`batch collect` also carried one line until it
+was retired in PyAutoBrain#701.) Organ and
 workspace repos are not gated, and no other skill blocks on it.
 
 ## GitHub workflows (`.github/workflows/`)
