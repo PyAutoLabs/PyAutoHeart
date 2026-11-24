@@ -106,6 +106,8 @@ jobs:
           # No GITHUB_TOKEN extraheader in .git/config: it would shadow the
           # App credential the commit step pushes with.
           persist-credentials: false
+          # Reruns retain the event SHA. Collect main's evidence on current main.
+          ref: ${{ github.ref == 'refs/heads/main' && 'refs/heads/main' || github.sha }}
 
       # The shared board look the dashboard renders with — imported from the
       # Brain, never copied here.
@@ -261,41 +263,18 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.push_token.outputs.token }}
         run: |
-          python - <<'PY'
-          import pathlib, re
-          readme = pathlib.Path("README.md")
-          text = readme.read_text()
-          board = pathlib.Path("readme_strip.md").read_text().strip()
-          begin, end = "<!-- heart:begin -->", "<!-- heart:end -->"
-          block = f"{begin}\n{board}\n{end}"
-          if begin in text and end in text:
-              text = re.sub(re.escape(begin) + r".*?" + re.escape(end), block,
-                            text, flags=re.DOTALL)
-          else:
-              # First run: insert the block just after the H1 title line.
-              lines = text.splitlines()
-              for i, ln in enumerate(lines):
-                  if ln.startswith("# "):
-                      lines.insert(i + 1, "\n" + block + "\n")
-                      break
-              text = "\n".join(lines)
-          readme.write_text(text)
-          PY
-          # `git status --porcelain` rather than `git diff --quiet`, because
-          # the record's first line for a repo creates an UNTRACKED file, which
-          # a diff of the working tree cannot see. One commit a day carries both
-          # the README block and the day's appended lines.
+          gh auth setup-git
+          git fetch --no-tags origin refs/heads/main
+          python scripts/prepare_health_writeback.py
           if [ -n "$(git status --porcelain README.md timings/)" ]; then
             git config user.name  "pyautolabs-bot[bot]"
             git config user.email "346909844+pyautolabs-bot[bot]@users.noreply.github.com"
             git add README.md timings/
             git commit -m "docs(heart): daily board block + timing record [skip ci]"
-            # gh as git's credential helper, reading GH_TOKEN (the App token).
-            gh auth setup-git
-            git push
-          else
-            echo "README health block and timing record unchanged — nothing to commit."
           fi
+          # Also check a no-op publication. A racing writer wins and Pages skips.
+          git push origin HEAD:refs/heads/main
+
 
       # Transition-only push alert. Compare the feed published by the PREVIOUS
       # run (live on Pages until this run deploys) with the one just rendered
