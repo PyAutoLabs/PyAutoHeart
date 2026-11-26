@@ -147,9 +147,20 @@ def test_pins_must_name_covered_repos():
     assert gate.parse_pins('{"LibB": " %s "}' % ("a" * 40), COVERED) == {"LibB": "a" * 40}
 
 
+def _recent_full_sweep_ts():
+    """A full-sweep time one day before the REAL clock.
+
+    `main()` reads `datetime.now()`, not `NOW`, so a fixed timestamp here ages
+    past FULL_SWEEP_MAX_AGE_DAYS as the calendar moves on and flips these tests
+    onto the forced-sweep path (PyAutoHeart#374).
+    """
+    then = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=1)
+    return then.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def test_main_writes_record_outputs_and_summary(tmp_path, monkeypatch):
     prev = tmp_path / "prev.json"
-    prev.write_text(json.dumps(_previous(_shas())))
+    prev.write_text(json.dumps(_previous(_shas(), full_ts=_recent_full_sweep_ts())))
     out, summ = tmp_path / "out", tmp_path / "summary"
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(gate, "load_covered", lambda body=None: COVERED)
@@ -176,7 +187,7 @@ def test_main_writes_record_outputs_and_summary(tmp_path, monkeypatch):
 ])
 def test_main_reads_force_and_the_latest_run_from_the_environment(tmp_path, monkeypatch, env, reason):
     prev = tmp_path / "prev.json"
-    prev.write_text(json.dumps(_previous(_shas())))
+    prev.write_text(json.dumps(_previous(_shas(), full_ts=_recent_full_sweep_ts())))
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(gate, "load_covered", lambda body=None: COVERED)
     monkeypatch.setattr(gate, "resolve", lambda pins, covered, lookup=None: _shas())
