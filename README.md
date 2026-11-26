@@ -28,7 +28,7 @@ copy → paste, on a laptop or a phone.
 <!-- heart:begin -->
 🔴 Monitoring 14/100 · release **RED** · [dashboard →](https://pyautolabs.github.io/PyAutoHeart/)
 
-**Blockers:** release validation FAILED (stage integrate)
+**Blockers:** [PyAutoFit](https://github.com/PyAutoLabs/PyAutoFit): CI failure ([run](https://api.github.com/repos/PyAutoLabs/PyAutoFit/actions/runs/45821676293)); release validation FAILED (stage integrate)
 <!-- heart:end -->
 
 ## How PyAutoHeart works
