@@ -5,7 +5,9 @@ description: >-
   CI consumes this action rather than carrying its own copy.
 
 # The recipe, the reasoning behind its two awkward pip flags, and the single
-# `arcticpy==2.6` pin all live in `install_arcticpy.sh` beside this file. This
+# arcticpy pin (currently a pinned jkeger/arctic GitHub commit building 2.7 — a
+# stopgap until 2.7 is on PyPI, PyAutoHeart#372) all live in
+# `install_arcticpy.sh` beside this file. This
 # action is a thin CI wrapper over it — read that script, not this, to
 # understand or change what gets installed.
 #
@@ -20,7 +22,9 @@ inputs:
     description: >-
       Override the arcticpy version to build. Leave EMPTY (the default) to use
       the organism's pin, which lives in exactly one place — the
-      ARCTICPY_VERSION default at the top of install_arcticpy.sh. Bump it there.
+      ARCTICPY_VERSION / ARCTICPY_SOURCE defaults at the top of
+      install_arcticpy.sh (currently a pinned GitHub commit of 2.7). A value
+      (e.g. 2.6) builds that version from PyPI instead. Bump the pin there.
       A default here would be a second copy of the pin, which is the thing #170
       removed.
     required: false
@@ -50,7 +54,7 @@ runs:
     # these steps. That is deliberate: `heart/smoke.py` prepares the same
     # arcticpy for the LOCAL smoke runner, and a composite action cannot be
     # invoked from Python. A shell script is the one shape both consumers can
-    # execute, so the recipe and the `2.6` pin stay in exactly one place —
+    # execute, so the recipe and the arcticpy pin stay in exactly one place —
     # which is the whole point of #170 (it replaced four divergent copies).
     #
     # `github.action_path` is the directory this action was downloaded into, so

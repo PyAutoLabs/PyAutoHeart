@@ -21,7 +21,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "arcticpy version to test (default: the action's own pin)"
+        description: "PyPI arcticpy version to test (default: the action's own pin, currently a pinned GitHub commit of 2.7)"
         required: false
         type: string
 
@@ -51,10 +51,12 @@ jobs:
         uses: ./.github/actions/install-arcticpy
         with:
           # Pass the dispatch input straight through. It used to fall back to a
-          # literal '2.6', which was a second copy of the pin: bumping the pin
+          # literal version, which was a second copy of the pin: bumping the pin
           # would not have changed what this self-test built, so the test would
           # have gone on proving the OLD version worked. Empty means "use the
-          # action's own default", i.e. the one pin in install_arcticpy.sh.
+          # action's own default", i.e. the one pin in install_arcticpy.sh
+          # (currently the pinned jkeger/arctic commit building 2.7; a value
+          # here builds that version from PyPI instead).
           version: ${{ inputs.version }}
 
       - name: Report the version the action installed

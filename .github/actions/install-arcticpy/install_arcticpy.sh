@@ -2,7 +2,18 @@
 #
 # install_arcticpy.sh — THE canonical arcticpy install for the whole organism.
 #
-# This file is the single home of the recipe and of the `arcticpy==2.6` pin.
+# This file is the single home of the recipe and of the organism's arcticpy pin.
+#
+# STOPGAP (2026-11-26, PyAutoHeart#372): the pin is currently a GitHub COMMIT,
+# not a PyPI release. arcticpy 2.7 (numpy 2 / Cython 3 support, upstream PRs
+# #73 + #75) is merged into jkeger/arctic main but cannot be published to PyPI
+# for now, so the default builds it from source at a pinned commit
+# (ARCTICPY_SOURCE below). That needs `git` on PATH — present on GitHub-hosted
+# runners and on Colab; a local `pyauto-heart smoke` run now needs git and
+# github.com access instead of PyPI. To REVERT once 2.7 is on PyPI: set the ARCTICPY_VERSION
+# default back to a PyPI version (`2.7`), and the git source stops being used.
+# See the Mind draft
+# draft/maintenance/pyautoheart/arcticpy_pin_bump_after_upstream_release.md.
 # Two consumers execute these exact bytes:
 #
 #   * CI  — `.github/actions/install-arcticpy/action.yml` (the composite action
@@ -22,8 +33,9 @@
 #
 #   * its PyPI distribution is a source-only C++ sdist — it needs libgsl-dev
 #     headers and a toolchain to build, and there is no wheel;
-#   * its own requirements downgrade numpy below 2.0, which breaks a modern
-#     PyAuto stack.
+#   * its own requirements (up to 2.6) downgrade numpy below 2.0, which breaks
+#     a modern PyAuto stack. 2.7's metadata now allows numpy<3, but this
+#     stopgap keeps --no-deps anyway so the recipe stays the proven one.
 #
 # So it is built with --no-build-isolation (reusing the numpy already present
 # instead of resolving its own) and --no-deps (so it cannot drag numpy back
@@ -51,8 +63,14 @@
 #
 # ENVIRONMENT CONTRACT (all optional; defaults match the previous action)
 #
-#   ARCTICPY_VERSION      arcticpy version to build.  Default 2.6.
-#                         THE single pin for the organism — bump it HERE.
+#   ARCTICPY_VERSION      PyPI arcticpy version to build. Default EMPTY,
+#                         which means "build ARCTICPY_SOURCE instead". A value
+#                         (e.g. 2.6, or 2.7 once published) installs
+#                         `arcticpy==<value>` from PyPI.
+#   ARCTICPY_SOURCE       pip URL used when ARCTICPY_VERSION is empty. Default
+#                         git+https://github.com/jkeger/arctic@<pinned commit>
+#                         (2.7). Together with ARCTICPY_VERSION, THE single pin
+#                         for the organism — bump it HERE.
 #   ARCTICPY_INSTALL_GSL  "true"/"false". Install libgsl-dev via apt.
 #                         Default true. `false` means "GSL is already present",
 #                         and the script PROVES that rather than assuming it.
@@ -75,7 +93,13 @@
 
 set -euo pipefail
 
-ARCTICPY_VERSION="${ARCTICPY_VERSION:-2.6}"
+ARCTICPY_VERSION="${ARCTICPY_VERSION:-}"
+ARCTICPY_SOURCE="${ARCTICPY_SOURCE:-git+https://github.com/jkeger/arctic@6f5153582aca00b7b0cc11ab04b2c58a7502400d}"
+if [ -n "$ARCTICPY_VERSION" ]; then
+    ARCTICPY_SPEC="arcticpy==${ARCTICPY_VERSION}"
+else
+    ARCTICPY_SPEC="arcticpy @ ${ARCTICPY_SOURCE}"
+fi
 ARCTICPY_INSTALL_GSL="${ARCTICPY_INSTALL_GSL:-true}"
 ARCTICPY_SUDO="${ARCTICPY_SUDO:-true}"
 PYTHON="${PYTHON:-python}"
@@ -119,9 +143,11 @@ fi
 
 echo "==> Installing arcticpy build dependencies"
 # --no-build-isolation reads NOTHING from arcticpy's build-system requires, so
-# these must be present before the build starts.
+# these must be present before the build starts. 2.7 builds against numpy>=2,
+# Cython>=3 and setuptools>=64; the floors make an older Cython already in the
+# environment get upgraded rather than silently reused.
 "$PYTHON" -m pip install --upgrade pip setuptools wheel
-"$PYTHON" -m pip install numpy cython
+"$PYTHON" -m pip install "numpy>=2" "cython>=3"
 
 echo "==> Installing arcticpy runtime dependencies"
 # --no-deps suppresses these, but arcticpy/read_noise.py imports both at import
@@ -135,7 +161,7 @@ echo "==> Installing arcticpy runtime dependencies"
 # only inside an already-built stack.
 "$PYTHON" -m pip install scipy matplotlib
 
-echo "==> Building and installing arcticpy ${ARCTICPY_VERSION}"
+echo "==> Building and installing ${ARCTICPY_SPEC}"
 # --no-cache-dir: the wheel built here links the MACHINE's libgsl by soname, so
 # a copy cached in ~/.cache/pip is only valid on the image that built it. CI
 # caches that directory across runs (smoke-tests.yml) with no image identity in
@@ -144,7 +170,7 @@ echo "==> Building and installing arcticpy ${ARCTICPY_VERSION}"
 # "libgsl.so.27: cannot open shared object file" (PyAutoHeart#330). Always
 # building fresh costs ~15 s and makes a system-library change impossible to
 # mask. Only this install opts out: the others are image-independent wheels.
-"$PYTHON" -m pip install "arcticpy==${ARCTICPY_VERSION}" \
+"$PYTHON" -m pip install "$ARCTICPY_SPEC" \
     --no-build-isolation --no-deps --no-cache-dir
 
 echo "==> Verifying arcticpy imports"
