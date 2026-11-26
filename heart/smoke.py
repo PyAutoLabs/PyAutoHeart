@@ -376,7 +376,7 @@ def _install_environment(
 
 #: `pip check` lines that a CTI environment ALWAYS produces, and must.
 #:
-#: arcticpy declares ``numpy~=1.21`` but is installed with ``--no-deps`` on
+#: arcticpy <= 2.6 declares ``numpy~=1.21`` but is installed with ``--no-deps`` on
 #: purpose: honouring that requirement downgrades numpy below 2.0 and breaks the
 #: rest of the PyAuto stack. The dependency metadata therefore stays permanently
 #: unsatisfied, and ``pip check`` reports it every single time:
@@ -387,6 +387,9 @@ def _install_environment(
 #: after building it, which would make `arcticpy: true` useless. The exception is
 #: deliberately narrow -- one package, one requirement -- so a real conflict, in
 #: arcticpy or anything else, still fails the preflight.
+#:
+#: arcticpy 2.7 (the current pin) allows numpy<3 and no longer triggers this;
+#: the exception stays for the ARCTICPY_VERSION=2.6 PyPI override.
 _ARCTICPY_EXPECTED_CONFLICT = re.compile(
     r"^arcticpy \S+ has requirement numpy\S+, but you have numpy \S+\.?$"
 )

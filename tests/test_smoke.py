@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -571,6 +572,12 @@ def test_shipped_arcticpy_installer_exists_and_is_the_only_pin():
     assert smoke.ARCTICPY_INSTALLER.is_file()
     body = smoke.ARCTICPY_INSTALLER.read_text()
     assert 'ARCTICPY_VERSION="${ARCTICPY_VERSION:-' in body
+    assert 'ARCTICPY_SOURCE="${ARCTICPY_SOURCE:-' in body
+    # The git source must be pinned to a full commit, never a moving branch.
+    assert re.search(
+        r'ARCTICPY_SOURCE="\$\{ARCTICPY_SOURCE:-git\+https://github\.com/jkeger/arctic@[0-9a-f]{40}\}"',
+        body,
+    ), "ARCTICPY_SOURCE must pin a full 40-hex commit"
 
 
 def test_arcticpy_build_never_reuses_a_pip_cached_wheel():
@@ -587,7 +594,7 @@ def test_arcticpy_build_never_reuses_a_pip_cached_wheel():
     installs = [
         line
         for line in logical.splitlines()
-        if "pip install" in line and '"arcticpy==' in line
+        if "pip install" in line and '"$ARCTICPY_SPEC"' in line
     ]
     assert len(installs) == 1, installs
     assert "--no-cache-dir" in installs[0].split()
