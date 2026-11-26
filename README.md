@@ -26,9 +26,9 @@ copy → paste, on a laptop or a phone.
 <!-- The line below is auto-updated by .github/workflows/heart-health.yml (everything -->
 <!-- between the heart:begin/heart:end markers is replaced with the rendered strip). -->
 <!-- heart:begin -->
-🔴 Monitoring 19/100 · release **RED** · [dashboard →](https://pyautolabs.github.io/PyAutoHeart/)
+🟡 Monitoring 34/100 · release **YELLOW** · [dashboard →](https://pyautolabs.github.io/PyAutoHeart/)
 
-**Blockers:** release validation FAILED (stage integrate)
+**Warnings:** workspace validation not passing (2 failed, 1 timeout, cloud#45815945322: autofit scripts/plot/emcee_plotter.py, autogalaxy_test scripts/misc/fit_imaging_sparse_operator.py, autogalaxy_test scripts/misc/fit_interferometer_sparse_operator.py)
 <!-- heart:end -->
 
 ## How PyAutoHeart works
