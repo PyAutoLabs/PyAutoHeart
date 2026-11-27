@@ -774,8 +774,6 @@ jobs:
           import subprocess
           from pathlib import Path
 
-          warnings.simplefilter("ignore", SyntaxWarning)  # a script's own escapes are not ours to report
-
 
           def as_int(text):
               try:

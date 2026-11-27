@@ -602,3 +602,99 @@ def test_stage3_release_leg_resolves_the_quarantine_and_retries_once():
     assert '--quarantine "$GITHUB_WORKSPACE/stage3_quarantine.json"' in release["run"]
     smoke = _step(job, "Run Python scripts [mode=smoke")
     assert "--retry-failed" not in smoke["run"] and "--quarantine" not in smoke["run"]
+
+
+# --- stdin Python blocks in workflows compile and name nothing undefined ----
+# PyAutoHeart#365: the smoke cache-state step called `warnings.simplefilter`
+# without importing `warnings`, copied in from the download scanner step that
+# does import it. The step is `continue-on-error`, so every run since #326 lost
+# its cache_state.json silently, and the three cache-save steps gated on its
+# outputs never ran. A Python heredoc inside a workflow is code no linter
+# reads, so these tests read it: each `python - <<'TAG'` block must compile and
+# must reference no name that is neither bound, imported nor a builtin.
+
+import builtins
+import re
+import symtable
+import textwrap
+
+import pytest
+
+_HEREDOC = re.compile(
+    r"python3?[ \t]+-[ \t]*<<-?[ \t]*(['\"]?)(\w+)\1[^\n]*\n(.*?)\n[ \t]*\2[ \t]*$",
+    re.S | re.M,
+)
+_GHA_EXPR = re.compile(r"\$\{\{.*?\}\}", re.S)
+_ALWAYS_BOUND = set(dir(builtins)) | {"__file__", "__name__", "__builtins__"}
+
+
+def _stdin_python_blocks():
+    """(id, source) for every stdin-fed Python heredoc in every workflow."""
+    blocks = []
+    for path in sorted(WORKFLOWS.glob("*.y*ml")):
+        for job_name, job in (_load(path.name).get("jobs") or {}).items():
+            for i, step in enumerate(job.get("steps") or []):
+                run = step.get("run") or ""
+                for m in _HEREDOC.finditer(run):
+                    label = step.get("name") or step.get("id") or f"step{i}"
+                    source = _GHA_EXPR.sub("__gha_expr__", textwrap.dedent(m.group(3)))
+                    blocks.append((f"{path.name}::{job_name}::{label}", source))
+    return blocks
+
+
+def _tables(table):
+    yield table
+    for child in table.get_children():
+        yield from _tables(child)
+
+
+def _undefined_names(source, filename="<workflow>"):
+    """Global names a block reads but never binds (not imported, assigned,
+    def'd/class'd, nor builtin). Raises SyntaxError if it does not compile."""
+    compile(source, filename, "exec")
+    top = symtable.symtable(source, filename, "exec")
+    bound = set(_ALWAYS_BOUND) | {"__gha_expr__"}
+    read = set()
+    for table in _tables(top):
+        for sym in table.get_symbols():
+            name = sym.get_name()
+            module_level = table is top
+            if module_level and (sym.is_assigned() or sym.is_imported()):
+                bound.add(name)
+            elif sym.is_declared_global() and sym.is_assigned():
+                bound.add(name)
+            if sym.is_referenced() and (module_level or sym.is_global()):
+                read.add(name)
+    return sorted(read - bound)
+
+
+_BLOCKS = _stdin_python_blocks()
+
+
+def test_the_block_scanner_finds_the_workflow_heredocs():
+    """Guards against the parametrized test going vacuous: the smoke
+    cache-state step (the #365 site) and the other known blocks are seen."""
+    ids = [block_id for block_id, _src in _BLOCKS]
+    assert len(ids) >= 9, ids
+    assert any("Record cache state" in block_id for block_id in ids), ids
+
+
+@pytest.mark.parametrize("block_id,source", _BLOCKS, ids=[b[0] for b in _BLOCKS])
+def test_stdin_python_block_compiles_and_names_nothing_undefined(block_id, source):
+    assert _undefined_names(source, block_id) == []
+
+
+def test_the_undefined_name_check_catches_the_365_shape():
+    """The exact defect: a module-level call on a name never imported."""
+    src = 'import json\n\nwarnings.simplefilter("ignore", SyntaxWarning)\n'
+    assert _undefined_names(src) == ["warnings"]
+    inner = "import os\n\ndef f():\n    return os.sep + missing\n"
+    assert _undefined_names(inner) == ["missing"]
+    fine = (
+        "import os\nfrom pathlib import Path\nG = 1\n\n"
+        "def f(x):\n    global H\n    H = x\n    return [y for y in Path(os.sep).iterdir()] + [G, len(x)]\n\n"
+        "class C:\n    attr = G\n\nprint(f, C, H)\n"
+    )
+    assert _undefined_names(fine) == []
+    with pytest.raises(SyntaxError):
+        _undefined_names("def broken(:\n")
